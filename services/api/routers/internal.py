@@ -18,6 +18,7 @@ from ..auth.audit import audit_logger
 from ..rate_limiter import enforce_rate_limit
 from ..database import get_db
 from ..repositories.ingestion import ingestion_repository
+from ..repositories.quality import quality_repository
 
 router = APIRouter(prefix="/internal/v1", tags=["Internal Operational & Curation"])
 
@@ -44,59 +45,38 @@ async def list_reconciliation_candidates(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Fetches reconciliation candidates flagged for human review or merge/split curation."""
-    return [
-        ReconciliationCandidateSummary(
-            candidate_id="cand_001",
-            source_provider="TMDB",
-            suggested_action="MERGE_CANDIDATE",
-            match_confidence=0.92,
-            status="PENDING_REVIEW"
-        )
-    ]
+    return await quality_repository.list_reconciliation_candidates(db=db)
 
 @router.post("/reconciliation/candidates/{candidate_id}/promote", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def promote_candidate(
     candidate_id: str,
     body: PromotionDecisionRequest,
-    claims: SecurityTokenClaims = Depends(require_curator)
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Approves human curation decision and promotes record to CAT-1 Canonical Platform Data."""
-    audit_record = audit_logger.log_event(
-        event_type="AUDIT_CANONICAL_PROMOTION",
+    return await quality_repository.promote_candidate(
+        db=db,
+        candidate_id=candidate_id,
         actor_id=claims.sub,
-        target_id=candidate_id,
-        details={"rationale": body.rationale, "override_fields": body.override_fields}
+        rationale=body.rationale,
+        override_fields=body.override_fields
     )
-    return {
-        "status": "PROMOTED",
-        "candidate_id": candidate_id,
-        "promoted_by": claims.sub,
-        "rationale": body.rationale,
-        "promoted_at": datetime.now(timezone.utc).isoformat(),
-        "integrity_hash": audit_record["integrity_hash"]
-    }
 
 @router.post("/reconciliation/candidates/{candidate_id}/reject", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def reject_candidate(
     candidate_id: str,
     body: PromotionDecisionRequest,
-    claims: SecurityTokenClaims = Depends(require_curator)
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Rejects reconciliation candidate with logged audit rationale."""
-    audit_record = audit_logger.log_event(
-        event_type="AUDIT_AI_PROPOSAL_DECISION",
+    return await quality_repository.reject_candidate(
+        db=db,
+        candidate_id=candidate_id,
         actor_id=claims.sub,
-        target_id=candidate_id,
-        details={"action": "REJECT", "rationale": body.rationale}
+        rationale=body.rationale
     )
-    return {
-        "status": "REJECTED",
-        "candidate_id": candidate_id,
-        "rejected_by": claims.sub,
-        "rationale": body.rationale,
-        "rejected_at": datetime.now(timezone.utc).isoformat(),
-        "integrity_hash": audit_record["integrity_hash"]
-    }
 
 @router.get("/ai/proposals", response_model=List[AIProposalSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def list_ai_proposals(
@@ -104,14 +84,4 @@ async def list_ai_proposals(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Inspects CAT-6 AI proposal candidates. AI endpoints cannot directly write to CAT-1."""
-    return [
-        AIProposalSummary(
-            proposal_id="prop_ai_991",
-            target_title_id="018f2e4a-7b31-7000-8000-123456789abc",
-            proposal_type="SYNOPSIS_ENHANCEMENT",
-            confidence_score=0.88,
-            provenance_type="AI_GENERATED",
-            model_id="cinevault-synopsis-v1",
-            suggested_attributes={"enhanced_synopsis": "An AI proposed localized synopsis summary."}
-        )
-    ]
+    return await quality_repository.list_ai_proposals(db=db)
