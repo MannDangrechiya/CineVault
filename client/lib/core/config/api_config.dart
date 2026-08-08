@@ -1,8 +1,29 @@
 // CineVault OS — Client API Configuration Baseline
 // Defines server endpoint routes, default timeouts, and client headers
 
+import 'package:flutter/foundation.dart';
+
 class ApiConfig {
-  static const String baseUrl = 'http://localhost:8000';
+  /// Base API URL.
+  /// Overridable at compile time via `--dart-define=API_BASE_URL=http://<host>:8000`.
+  /// Defaults to development LAN IP for physical device testing or localhost.
+  static String get baseUrl {
+    const overrideUrl = String.fromEnvironment('API_BASE_URL');
+    if (overrideUrl.isNotEmpty) {
+      return overrideUrl;
+    }
+
+    if (kReleaseMode) {
+      return 'https://api.cinevault.internal';
+    }
+
+    // Physical Android device / LAN development fallback:
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      return 'http://192.168.29.87:8000';
+    }
+
+    return 'http://localhost:8000';
+  }
   
   // Timeout settings
   static const Duration connectTimeout = Duration(seconds: 10);

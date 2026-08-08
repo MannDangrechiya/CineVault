@@ -58,7 +58,13 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CorrelationAndMetricsMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8000", "http://localhost:8080"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://localhost:8080",
+        "http://192.168.29.87:3000",
+        "http://192.168.29.87:8000",
+    ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Correlation-ID", "X-Idempotency-Key", "X-Service-Identity", "X-Service-Action"],
