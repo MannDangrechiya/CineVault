@@ -4,6 +4,8 @@
 from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ..schemas.internal import (
     IngestionRunSummary, RawPayloadDetail,
     ReconciliationCandidateSummary, PromotionDecisionRequest,
@@ -14,37 +16,33 @@ from ..auth.jwt_validator import SecurityTokenClaims
 from ..auth.rbac import RBACPolicyEngine, HighRiskAuthError
 from ..auth.audit import audit_logger
 from ..rate_limiter import enforce_rate_limit
+from ..database import get_db
+from ..repositories.ingestion import ingestion_repository
 
 router = APIRouter(prefix="/internal/v1", tags=["Internal Operational & Curation"])
 
 @router.get("/ingestion/runs", response_model=List[IngestionRunSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
-async def list_ingestion_runs(claims: SecurityTokenClaims = Depends(require_curator)):
+async def list_ingestion_runs(
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
     """Inspects historical and active ingestion pipeline executions."""
-    return [
-        IngestionRunSummary(
-            run_id="run_20260808_001",
-            provider_id="KOBIS",
-            status="COMPLETED",
-            started_at="2026-08-08T10:00:00Z",
-            completed_at="2026-08-08T10:05:00Z",
-            records_fetched=150,
-            records_quarantined=2
-        )
-    ]
+    return await ingestion_repository.list_ingestion_runs(db=db)
 
 @router.get("/ingestion/raw-payloads/{raw_payload_id}", response_model=RawPayloadDetail, dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
-async def get_raw_payload(raw_payload_id: str, claims: SecurityTokenClaims = Depends(require_curator)):
+async def get_raw_payload(
+    raw_payload_id: str,
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
     """Retrieves immutable raw provider payload (CAT-5)."""
-    return RawPayloadDetail(
-        raw_payload_id=raw_payload_id,
-        provider_id="TMDB",
-        payload_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        payload_data={"id": 496243, "title": "Parasite", "vote_average": 8.5},
-        captured_at="2026-08-08T10:01:00Z"
-    )
+    return await ingestion_repository.get_raw_payload_by_id(db=db, raw_payload_id=raw_payload_id)
 
 @router.get("/reconciliation/candidates", response_model=List[ReconciliationCandidateSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
-async def list_reconciliation_candidates(claims: SecurityTokenClaims = Depends(require_curator)):
+async def list_reconciliation_candidates(
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
     """Fetches reconciliation candidates flagged for human review or merge/split curation."""
     return [
         ReconciliationCandidateSummary(
@@ -101,7 +99,10 @@ async def reject_candidate(
     }
 
 @router.get("/ai/proposals", response_model=List[AIProposalSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
-async def list_ai_proposals(claims: SecurityTokenClaims = Depends(require_curator)):
+async def list_ai_proposals(
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
     """Inspects CAT-6 AI proposal candidates. AI endpoints cannot directly write to CAT-1."""
     return [
         AIProposalSummary(
