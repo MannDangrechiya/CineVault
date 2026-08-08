@@ -1,6 +1,7 @@
 # CineVault OS — Valkey Integration Module
 # Implements Valkey in-memory caching and rate-limiting distributed state boundary
 
+import json
 import socket
 import logging
 from typing import Dict, Any, Optional
@@ -111,15 +112,29 @@ class ValkeyManager:
             logger.error(f"Valkey GET error key={key}: {e}")
             return None
 
+    def _sanitize_cache_value(self, value: str) -> str:
+        """Sanitizes sensitive secret fields and CAT-2 personal data before storing in Valkey cache."""
+        try:
+            from .telemetry import sanitize_value
+            # If JSON string, parse and sanitize keys
+            if value.startswith("{") or value.startswith("["):
+                data = json.loads(value)
+                sanitized_data = sanitize_value("cache_value", data)
+                return json.dumps(sanitized_data)
+        except Exception:
+            pass
+        return value
+
     def set(self, key: str, value: str, ttl: Optional[int] = None) -> bool:
-        """Sets a cached value in Valkey with optional TTL (seconds)."""
+        """Sets a cached value in Valkey with optional TTL (seconds) and PII/Secret sanitization."""
         client = self.get_client()
+        clean_value = self._sanitize_cache_value(value)
         if not client:
             return False
         try:
             if ttl:
-                return bool(client.setex(key, ttl, value))
-            return bool(client.set(key, value))
+                return bool(client.setex(key, ttl, clean_value))
+            return bool(client.set(key, clean_value))
         except Exception as e:
             logger.error(f"Valkey SET error key={key}: {e}")
             return False

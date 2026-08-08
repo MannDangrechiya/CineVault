@@ -11,6 +11,8 @@ from ..schemas.internal import (
 )
 from ..auth.dependencies import require_curator, require_system_admin, verify_service_identity
 from ..auth.jwt_validator import SecurityTokenClaims
+from ..auth.rbac import RBACPolicyEngine, HighRiskAuthError
+from ..auth.audit import audit_logger
 from ..rate_limiter import enforce_rate_limit
 
 router = APIRouter(prefix="/internal/v1", tags=["Internal Operational & Curation"])
@@ -61,12 +63,19 @@ async def promote_candidate(
     claims: SecurityTokenClaims = Depends(require_curator)
 ):
     """Approves human curation decision and promotes record to CAT-1 Canonical Platform Data."""
+    audit_record = audit_logger.log_event(
+        event_type="AUDIT_CANONICAL_PROMOTION",
+        actor_id=claims.sub,
+        target_id=candidate_id,
+        details={"rationale": body.rationale, "override_fields": body.override_fields}
+    )
     return {
         "status": "PROMOTED",
         "candidate_id": candidate_id,
         "promoted_by": claims.sub,
         "rationale": body.rationale,
-        "promoted_at": datetime.now(timezone.utc).isoformat()
+        "promoted_at": datetime.now(timezone.utc).isoformat(),
+        "integrity_hash": audit_record["integrity_hash"]
     }
 
 @router.post("/reconciliation/candidates/{candidate_id}/reject", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
@@ -76,12 +85,19 @@ async def reject_candidate(
     claims: SecurityTokenClaims = Depends(require_curator)
 ):
     """Rejects reconciliation candidate with logged audit rationale."""
+    audit_record = audit_logger.log_event(
+        event_type="AUDIT_AI_PROPOSAL_DECISION",
+        actor_id=claims.sub,
+        target_id=candidate_id,
+        details={"action": "REJECT", "rationale": body.rationale}
+    )
     return {
         "status": "REJECTED",
         "candidate_id": candidate_id,
         "rejected_by": claims.sub,
         "rationale": body.rationale,
-        "rejected_at": datetime.now(timezone.utc).isoformat()
+        "rejected_at": datetime.now(timezone.utc).isoformat(),
+        "integrity_hash": audit_record["integrity_hash"]
     }
 
 @router.get("/ai/proposals", response_model=List[AIProposalSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
