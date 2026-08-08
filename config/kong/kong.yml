@@ -18,7 +18,10 @@ services:
       - name: rate-limiting
         config:
           minute: 600
-          policy: local
+          policy: redis
+          redis_host: valkey
+          redis_port: 6379
+          redis_timeout: 2000
       - name: cors
         config:
           origins:
@@ -48,7 +51,10 @@ services:
       - name: rate-limiting
         config:
           minute: 1200
-          policy: local
+          policy: redis
+          redis_host: valkey
+          redis_port: 6379
+          redis_timeout: 2000
 
   - name: cinevault-health-api
     url: http://host.docker.internal:8000/health

@@ -20,6 +20,13 @@ class APIConfig(BaseModel):
     valkey_host: str = os.getenv("VALKEY_HOST", "localhost")
     valkey_port: int = int(os.getenv("VALKEY_PORT", "6379"))
     
+    # Message Queue Broker (RabbitMQ AMQP 0-9-1)
+    rabbitmq_host: str = os.getenv("RABBITMQ_HOST", "localhost")
+    rabbitmq_port: int = int(os.getenv("RABBITMQ_PORT", "5672"))
+    rabbitmq_user: str = os.getenv("RABBITMQ_USER", "cinevault_dev")
+    rabbitmq_password: str = os.getenv("RABBITMQ_PASSWORD", "dev_rabbitmq_password_change_me")
+    rabbitmq_vhost: str = os.getenv("RABBITMQ_VHOST", "/")
+    
     # OIDC / Keycloak Authentication
     keycloak_issuer: str = os.getenv("KEYCLOAK_ISSUER", "http://localhost:8080/realms/cinevault-dev")
     keycloak_audience: str = os.getenv("KEYCLOAK_AUDIENCE", "cinevault-api-gateway")
