@@ -64,7 +64,7 @@ class TitleDetailScreen extends ConsumerWidget {
                             children: [
                               Chip(
                                 label: Text(title.contentType),
-                                backgroundColor: AppTheme.primaryViolet.withOpacity(0.2),
+                                backgroundColor: AppTheme.primaryViolet.withValues(alpha: 0.2),
                               ),
                               const SizedBox(width: 8),
                               if (title.releaseYear != null)
@@ -179,7 +179,7 @@ class TitleDetailScreen extends ConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                value: watchMode,
+                initialValue: watchMode,
                 decoration: const InputDecoration(labelText: 'Watch Environment'),
                 items: const [
                   DropdownMenuItem(value: 'STREAMING', child: Text('Streaming')),

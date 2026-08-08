@@ -183,7 +183,7 @@ class CatalogScreen extends ConsumerWidget {
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                         decoration: BoxDecoration(
-                                                          color: AppTheme.primaryViolet.withOpacity(0.2),
+                                                          color: AppTheme.primaryViolet.withValues(alpha: 0.2),
                                                           borderRadius: BorderRadius.circular(4),
                                                         ),
                                                         child: Text(

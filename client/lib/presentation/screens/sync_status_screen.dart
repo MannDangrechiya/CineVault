@@ -86,7 +86,7 @@ class SyncStatusScreen extends ConsumerWidget {
           if (syncState.errorMessage != null)
             Container(
               padding: const EdgeInsets.all(12),
-              color: AppTheme.stateError.withOpacity(0.15),
+              color: AppTheme.stateError.withValues(alpha: 0.15),
               child: Row(
                 children: [
                   const Icon(Icons.error_outline, color: AppTheme.stateError),
@@ -138,7 +138,7 @@ class SyncStatusScreen extends ConsumerWidget {
                           trailing: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: AppTheme.stateWarning.withOpacity(0.2),
+                              color: AppTheme.stateWarning.withValues(alpha: 0.2),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(

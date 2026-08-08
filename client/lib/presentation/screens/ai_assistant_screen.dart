@@ -39,7 +39,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
           // Banner
           Container(
             padding: const EdgeInsets.all(12),
-            color: AppTheme.primaryViolet.withOpacity(0.15),
+            color: AppTheme.primaryViolet.withValues(alpha: 0.15),
             child: const Row(
               children: [
                 Icon(Icons.auto_awesome, color: AppTheme.primaryLightViolet),
