@@ -97,3 +97,27 @@ class PersonalDataConflictModel(Base):
     conflicting_data: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
     resolution_status: Mapped[str] = mapped_column(String(32), default="UNRESOLVED", nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+class SyncOutboxMutationModel(Base):
+    __tablename__ = "sync_outbox_mutation"
+    __table_args__ = {"schema": "personal"}
+
+    mutation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    mutation_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    client_timestamp: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    payload: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    processing_state: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
+    processed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+class SyncCursorStateModel(Base):
+    __tablename__ = "sync_cursor_state"
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", "device_id"),
+        {"schema": "personal"}
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    device_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    last_synced_mutation_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    last_synced_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)

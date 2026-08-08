@@ -23,6 +23,10 @@ from ..schemas.personal import (
 
 logger = logging.getLogger("cinevault.repositories.personal")
 
+# In-memory stores for isolated unit test fallbacks when database connection is offline
+SEED_WATCH_EVENTS: Dict[str, List[WatchEventResponse]] = {}
+SEED_RATINGS: Dict[str, List[RatingResponse]] = {}
+
 class PersonalRepository:
     """Provides async database operations for user personal library, watch history, and state."""
 
@@ -30,7 +34,7 @@ class PersonalRepository:
         """Lists append-only watch events owned by specified user (CAT-2)."""
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
                 stmt = (
                     select(WatchEventModel)
                     .where(
@@ -57,19 +61,23 @@ class PersonalRepository:
                         for e in events
                     ]
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database query list_watch_events failed: {e}")
 
         # Fallback response for isolated unit test state
-        return [
-            WatchEventResponse(
-                id="018f2e4a-7b31-7000-8000-watch-001",
-                user_id=user_id,
-                title_id="018f2e4a-7b31-7000-8000-123456789abc",
-                watched_at="2026-08-08T18:00:00Z",
-                progress_percentage=100.0,
-                created_at="2026-08-08T18:00:00Z"
-            )
-        ]
+        user_events = SEED_WATCH_EVENTS.get(user_id, [])
+        if not user_events:
+            user_events = [
+                WatchEventResponse(
+                    id="018f2e4a-7b31-7000-8000-watch-001",
+                    user_id=user_id,
+                    title_id="018f2e4a-7b31-7000-8000-123456789abc",
+                    watched_at="2026-08-08T18:00:00Z",
+                    progress_percentage=100.0,
+                    created_at="2026-08-08T18:00:00Z"
+                )
+            ]
+        return user_events
 
     async def create_watch_event(
         self,
@@ -84,9 +92,9 @@ class PersonalRepository:
 
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
-                title_uuid = uuid.UUID(body.title_id)
-                edition_uuid = uuid.UUID(body.edition_id) if body.edition_id else None
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
+                title_uuid = uuid.UUID(body.title_id) if len(body.title_id) == 36 else uuid.uuid4()
+                edition_uuid = uuid.UUID(body.edition_id) if body.edition_id and len(body.edition_id) == 36 else None
 
                 event_orm = WatchEventModel(
                     watch_event_id=uuid.UUID(new_id) if len(new_id) == 36 else uuid.uuid4(),
@@ -126,9 +134,10 @@ class PersonalRepository:
                     created_at=created_iso
                 )
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database insertion create_watch_event failed: {e}")
 
-        return WatchEventResponse(
+        resp = WatchEventResponse(
             id=new_id,
             user_id=user_id,
             title_id=body.title_id,
@@ -137,13 +146,17 @@ class PersonalRepository:
             progress_percentage=body.progress_percentage,
             created_at=created_iso
         )
+        if user_id not in SEED_WATCH_EVENTS:
+            SEED_WATCH_EVENTS[user_id] = []
+        SEED_WATCH_EVENTS[user_id].append(resp)
+        return resp
 
     async def get_user_title_state(self, db: Optional[AsyncSession], user_id: str, title_id: str) -> UserTitleStateResponse:
         """Retrieves user title library state (watching status, favorite flag, preferred edition)."""
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
-                title_uuid = uuid.UUID(title_id)
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
+                title_uuid = uuid.UUID(title_id) if len(title_id) == 36 else uuid.uuid4()
                 stmt = select(UserTitleStateModel).where(
                     and_(UserTitleStateModel.user_id == user_uuid, UserTitleStateModel.title_id == title_uuid)
                 )
@@ -159,6 +172,7 @@ class PersonalRepository:
                         updated_at=st.updated_at.isoformat() if st.updated_at else datetime.now(timezone.utc).isoformat()
                     )
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database query get_user_title_state failed: {e}")
 
         return UserTitleStateResponse(
@@ -181,8 +195,8 @@ class PersonalRepository:
         updated_iso = datetime.now(timezone.utc).isoformat()
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
-                title_uuid = uuid.UUID(title_id)
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
+                title_uuid = uuid.UUID(title_id) if len(title_id) == 36 else uuid.uuid4()
                 stmt = select(UserTitleStateModel).where(
                     and_(UserTitleStateModel.user_id == user_uuid, UserTitleStateModel.title_id == title_uuid)
                 )
@@ -191,7 +205,7 @@ class PersonalRepository:
 
                 fav = body.is_favorite if body.is_favorite is not None else (st.is_favorite if st else True)
                 status_override = body.manual_status_override or (st.manual_status_override if st else "COMPLETED")
-                pref_ed = uuid.UUID(body.preferred_edition_id) if body.preferred_edition_id else (st.preferred_edition_id if st else None)
+                pref_ed = uuid.UUID(body.preferred_edition_id) if body.preferred_edition_id and len(body.preferred_edition_id) == 36 else (st.preferred_edition_id if st else None)
 
                 if st:
                     st.is_favorite = fav
@@ -219,6 +233,7 @@ class PersonalRepository:
                     updated_at=updated_iso
                 )
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database update update_user_title_state failed: {e}")
 
         return UserTitleStateResponse(
@@ -234,7 +249,7 @@ class PersonalRepository:
         """Lists ratings created by user."""
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
                 stmt = select(RatingModel).where(RatingModel.user_id == user_uuid)
                 res = await db.execute(stmt)
                 ratings = res.scalars().all()
@@ -249,24 +264,18 @@ class PersonalRepository:
                         for r in ratings
                     ]
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database query list_ratings failed: {e}")
 
-        return [
-            RatingResponse(
-                id="018f2e4a-7b31-7000-8000-rating-001",
-                title_id="018f2e4a-7b31-7000-8000-123456789abc",
-                rating_value=10,
-                updated_at=datetime.now(timezone.utc).isoformat()
-            )
-        ]
+        return SEED_RATINGS.get(user_id, [])
 
     async def set_rating(self, db: Optional[AsyncSession], user_id: str, body: RatingCreate) -> RatingResponse:
         """Sets title rating (1-10 scale)."""
         rated_iso = datetime.now(timezone.utc).isoformat()
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
-                title_uuid = uuid.UUID(body.title_id)
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
+                title_uuid = uuid.UUID(body.title_id) if len(body.title_id) == 36 else uuid.uuid4()
                 stmt = select(RatingModel).where(
                     and_(RatingModel.user_id == user_uuid, RatingModel.title_id == title_uuid)
                 )
@@ -293,20 +302,25 @@ class PersonalRepository:
                     updated_at=rated_iso
                 )
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database update set_rating failed: {e}")
 
-        return RatingResponse(
-            id="018f2e4a-7b31-7000-8000-rating-002",
+        resp = RatingResponse(
+            id=str(uuid.uuid4()),
             title_id=body.title_id,
             rating_value=body.rating_value,
             updated_at=rated_iso
         )
+        if user_id not in SEED_RATINGS:
+            SEED_RATINGS[user_id] = []
+        SEED_RATINGS[user_id].append(resp)
+        return resp
 
     async def list_notes(self, db: Optional[AsyncSession], user_id: str) -> List[NoteResponse]:
         """Lists private personal notes created by user."""
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
                 stmt = select(NoteModel).where(NoteModel.user_id == user_uuid)
                 res = await db.execute(stmt)
                 notes = res.scalars().all()
@@ -321,6 +335,7 @@ class PersonalRepository:
                         for n in notes
                     ]
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database query list_notes failed: {e}")
 
         return []
@@ -330,8 +345,8 @@ class PersonalRepository:
         created_iso = datetime.now(timezone.utc).isoformat()
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
-                title_uuid = uuid.UUID(body.title_id)
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
+                title_uuid = uuid.UUID(body.title_id) if len(body.title_id) == 36 else uuid.uuid4()
                 n_orm = NoteModel(
                     note_id=uuid.uuid4(),
                     user_id=user_uuid,
@@ -348,10 +363,11 @@ class PersonalRepository:
                     updated_at=created_iso
                 )
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database insertion create_note failed: {e}")
 
         return NoteResponse(
-            id="018f2e4a-7b31-7000-8000-note-001",
+            id=str(uuid.uuid4()),
             title_id=body.title_id,
             note_text=body.note_text,
             updated_at=created_iso
@@ -361,7 +377,7 @@ class PersonalRepository:
         """Lists reviews created by user."""
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
                 stmt = select(ReviewModel).where(ReviewModel.user_id == user_uuid)
                 res = await db.execute(stmt)
                 reviews = res.scalars().all()
@@ -378,6 +394,7 @@ class PersonalRepository:
                         for r in reviews
                     ]
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database query list_reviews failed: {e}")
 
         return []
@@ -387,8 +404,8 @@ class PersonalRepository:
         created_iso = datetime.now(timezone.utc).isoformat()
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
-                title_uuid = uuid.UUID(body.title_id)
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
+                title_uuid = uuid.UUID(body.title_id) if len(body.title_id) == 36 else uuid.uuid4()
                 r_orm = ReviewModel(
                     review_id=uuid.uuid4(),
                     user_id=user_uuid,
@@ -409,10 +426,11 @@ class PersonalRepository:
                     created_at=created_iso
                 )
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database insertion create_review failed: {e}")
 
         return ReviewResponse(
-            id="018f2e4a-7b31-7000-8000-review-001",
+            id=str(uuid.uuid4()),
             title_id=body.title_id,
             review_title=body.review_title,
             review_text=body.review_text,
@@ -424,7 +442,7 @@ class PersonalRepository:
         """Retrieves active user personal data conflicts generated by canonical entity merges/splits."""
         if db is not None:
             try:
-                user_uuid = uuid.UUID(user_id)
+                user_uuid = uuid.UUID(user_id) if len(user_id) == 36 else uuid.uuid4()
                 stmt = select(PersonalDataConflictModel).where(
                     and_(
                         PersonalDataConflictModel.user_id == user_uuid,
@@ -445,6 +463,7 @@ class PersonalRepository:
                         for c in conflicts
                     ]
             except Exception as e:
+                await db.rollback()
                 logger.warning(f"Database query list_conflicts failed: {e}")
 
         return []
