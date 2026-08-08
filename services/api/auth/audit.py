@@ -10,8 +10,14 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger("cinevault.audit")
 
+AUDIT_LOG_CACHE: list = []
+
 class AuditLogger:
     """Centralized protected audit logger emitting tamper-evident security audit events."""
+
+    @property
+    def events(self) -> list:
+        return AUDIT_LOG_CACHE
 
     @staticmethod
     def _compute_integrity_hash(event_id: str, timestamp: str, event_type: str, actor_id: str, target_id: str, details_json: str) -> str:
@@ -30,15 +36,6 @@ class AuditLogger:
     ) -> Dict[str, Any]:
         """
         Emits a structured audit event with SHA-256 integrity hash.
-        Supported event types:
-        - AUDIT_AUTH_FAILURE
-        - AUDIT_PRIVILEGED_ACCESS
-        - AUDIT_CANONICAL_PROMOTION
-        - AUDIT_ENTITY_MERGE
-        - AUDIT_ENTITY_SPLIT
-        - AUDIT_PROVIDER_CONFIG_CHANGE
-        - AUDIT_AI_PROPOSAL_DECISION
-        - AUDIT_SECURITY_POLICY_CHANGE
         """
         event_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
@@ -66,6 +63,7 @@ class AuditLogger:
             "service": "cinevault-audit-engine"
         }
 
+        AUDIT_LOG_CACHE.append(audit_record)
         # Log formatted audit payload
         logger.info(f"AUDIT_RECORD: {json.dumps(audit_record)}")
         return audit_record
