@@ -1,7 +1,7 @@
 # CineVault OS — Cache & Queue Infrastructure Specification V1
 
-**Document Type:** Master Infrastructure Specification  
-**Status:** Approved Phase 4 Baseline  
+**Document Type:** Master Infrastructure Specification & Governance Alignment  
+**Status:** Implementation Proposal Baseline (Validated / Owner Approval Pending)  
 **Date:** 2026-08-08  
 **Scope:** Distributed In-Memory Cache (Valkey), API Gateway Rate Limiting Integration (Kong → Valkey), AMQP Message Broker (RabbitMQ), Quorum Queues, Dead-Letter Exchanges (DLX), Retry/Rejection Topologies, Correlation Tracking, Ephemeral Idempotency, and Health Probes.
 
@@ -9,13 +9,13 @@
 
 ## 1. Purpose & Scope
 
-The purpose of the **Cache & Queue Infrastructure Specification V1** is to establish the authoritative physical architecture and execution mechanics for CineVault OS's distributed state caching and asynchronous messaging infrastructure.
+The purpose of the **Cache & Queue Infrastructure Specification V1** is to establish the authoritative physical architecture, execution mechanics, and governance alignment for CineVault OS's distributed state caching and asynchronous messaging infrastructure.
 
 This specification details:
-1. **Valkey** as the approved RESP-compatible distributed cache and rate-limiting state store.
-2. **Kong Gateway → Valkey** distributed rate-limiting integration.
-3. **RabbitMQ** as the approved AMQP 0-9-1 message broker.
-4. **Quorum Queues** (`x-queue-type: quorum`) for data durability and fault tolerance.
+1. **Valkey** as the proposed RESP-compatible distributed cache and rate-limiting state store.
+2. **Kong Gateway → Valkey** distributed rate-limiting integration (`policy: redis`).
+3. **RabbitMQ** as the proposed AMQP 0-9-1 message broker.
+4. **Quorum Queues** (`x-queue-type: quorum`) for data durability and Raft-based fault tolerance.
 5. **Dead-Letter Exchange (DLX)** (`cinevault.dlx`) and rejection routing for failed messages.
 6. **Retry Topology** with exponential backoff and message TTL routing.
 7. **Message Safety & Correlation ID** propagation (UUIDv7) across transport boundaries.
@@ -24,24 +24,33 @@ This specification details:
 
 ---
 
-## 2. Governance Distinction Matrix
+## 2. Governance Alignment & Distinction Matrix
 
-| Feature / Topology | Governance Level | Approved Baseline Reference / Dev Default |
-|---|---|---|
-| Distributed Cache Engine | **OWNER APPROVED ARCHITECTURE** | Valkey 8.0 (Linux Foundation BSD 3-Clause RESP engine) |
-| Message Broker Standard | **OWNER APPROVED ARCHITECTURE** | RabbitMQ 4.0 (AMQP 0-9-1 protocol) |
-| Queue Storage Engine | **OWNER APPROVED ARCHITECTURE** | Quorum Queues (`x-queue-type: quorum` Raft consensus) |
-| Dead-Letter Exchange | **OWNER APPROVED ARCHITECTURE** | `cinevault.dlx` Direct Exchange |
-| Egress & Public Rate Limits | **DEVELOPMENT IMPLEMENTATION DEFAULT** | Public Read: 600 req/min; Search: 120 req/min; Admin: 1200 req/min |
-| Retry TTL Window | **DEVELOPMENT IMPLEMENTATION DEFAULT** | 5000 ms retry TTL delay; 3 max retry attempts |
-| Max Message Payload Size | **DEVELOPMENT IMPLEMENTATION DEFAULT** | 512 KB per payload |
+Every component in this specification is categorized according to three governance dimensions:
+- **ARCHITECTURAL REQUIREMENT:** Immutable rule derived from baseline governance (`ADR-001..004`, `Architecture Baseline V1`, `Security V1`).
+- **IMPLEMENTATION SELECTION:** Specific software candidate selected and verified in Phase 4 code artifacts.
+- **OWNER APPROVAL STATUS:** Current formal governance approval state.
+
+| Feature / Topology | Architectural Requirement | Implementation Selection | Owner Approval Status |
+|---|---|---|---|
+| Distributed Cache Engine | Sub-millisecond L2 read cache & atomic rate-limit state | Valkey 8.0 (Linux Foundation BSD 3-Clause RESP engine) | `PROPOSED (DEC-CQI-PRP-01 / DEC-API-DEF-04)` |
+| Message Broker Standard | Durable AMQP asynchronous task distribution & DLQ | RabbitMQ 4.0 (AMQP 0-9-1 protocol) | `PROPOSED (DEC-CQI-PRP-02 / DEC-INFRA-OPN-01)` |
+| Queue Storage Engine | At-least-once persistence across node restarts | Quorum Queues (`x-queue-type: quorum` Raft consensus) | `PROPOSED (DEC-CQI-PRP-02)` |
+| Dead-Letter Exchange | Non-destructive failure isolation for malformed jobs | `cinevault.dlx` Direct Exchange (`queue.dead_letter`) | `PROPOSED (DEC-CQI-PRP-02)` |
+| Edge API Gateway | 3-tier perimeter isolation & distributed rate limiting | Kong Gateway 3.6 (DB-less mode with `policy: redis`) | `PROPOSED (DEC-CQI-PRP-03 / DEC-API-DEF-03)` |
+| Connection Pooler | Insulate PostgreSQL from client thread scaling | PgBouncer (Transaction mode pooler) | `PROPOSED (DEC-CQI-PRP-04 / DEC-PHYS-DEF-03)` |
+| Correlation Tracking | End-to-end tracing across HTTP and AMQP transport | `UUIDv7` correlation ID (`x-correlation-id`) | **`APPROVED REQUIREMENT (ADR-001)`** |
+| Payload Safety Cap | Prevent memory overflow and queue poisoning | 512 KB maximum payload size cap | **`DEVELOPMENT IMPLEMENTATION DEFAULT`** |
+| Retry TTL Window | Delay window for transient task failure retry | 5000 ms retry TTL delay queue | **`DEVELOPMENT IMPLEMENTATION DEFAULT`** |
 
 ---
 
 ## 3. Valkey Distributed Cache Architecture
 
 ### 3.1 Overview & Responsibilities
-Valkey serves as the L2 distributed cache and fast state backend.
+- **Architectural Requirement:** High-performance in-memory L2 state backend.
+- **Implementation Selection:** Valkey 8.0-alpine (RESP protocol).
+- **Owner Approval Status:** `PROPOSED (DEC-CQI-PRP-01 / DEC-API-DEF-04)`.
 
 **Permitted Cache Workloads:**
 - API Gateway Rate-Limit counters and token bucket states.
@@ -94,14 +103,16 @@ plugins:
 ### 4.3 Limits & Failure Behavior
 - Public API Route (`/v1/*`): 600 requests / minute default limit.
 - Internal Admin Route (`/internal/v1/*`): 1200 requests / minute default limit.
-- **Failure Behavior:** If Valkey becomes unreachable, Kong logs the error and falls open (or returns HTTP 500 depending on policy), maintaining service availability for non-rate-limited routes while raising critical readiness alerts.
+- **Fail-Open Boundary:** Valkey cache GET errors fail open to PostgreSQL read replicas for non-critical metadata reads. However, rate-limiting failures MUST NOT automatically disable or bypass edge CORS, authentication controls, or public API abuse limits.
 
 ---
 
 ## 5. RabbitMQ AMQP Message Broker & Queue Topology
 
 ### 5.1 Architecture Overview
-RabbitMQ manages asynchronous task queues for background workers (ingestion, quality checks, reconciliation, sync, artwork media).
+- **Architectural Requirement:** Asynchronous task queueing for ingestion, quality check, reconciliation, sync, and media processing.
+- **Implementation Selection:** RabbitMQ 4.0-management-alpine (AMQP 0-9-1).
+- **Owner Approval Status:** `PROPOSED (DEC-CQI-PRP-02 / DEC-INFRA-OPN-01)`.
 
 ### 5.2 Required Exchanges
 1. `cinevault.ingestion.direct` (Direct Exchange, Durable) — Main workload distribution exchange.
@@ -215,7 +226,7 @@ Every message published to RabbitMQ preserves the `UUIDv7` correlation ID:
 ```
 
 *HTTP 200 OK* when all 3 dependencies are HEALTHY.  
-*HTTP 503 SERVICE UNAVAILABLE* if any dependency fails.
+*HTTP 503 SERVICE UNAVAILABLE* if any dependency fails. Zero credentials exposed in health response.
 
 ---
 

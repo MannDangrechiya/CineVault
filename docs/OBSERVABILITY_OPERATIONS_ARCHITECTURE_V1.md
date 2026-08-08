@@ -136,6 +136,23 @@ Operational telemetry tracks the approved 12-state ingestion lifecycle:
 └───────────────────────────────┴───────────────────────────────────┴───────────────────────────────────────────┘
 ```
 
+### 8.1 Phase 4 Cache & Queue Operational Telemetry Metrics (Phase 4 Baseline)
+
+```text
+┌───────────────────────────────┬───────────────────────────────────┬───────────────────────────────────────────┐
+│ Cache / Queue Telemetry Metric│ Metric Type & Label               │ Operational Threshold / Alert Trigger     │
+├───────────────────────────────┼───────────────────────────────────┼───────────────────────────────────────────┤
+│ `valkey_health_status`        │ Gauge (target, status)            │ Status == UNHEALTHY (Alert: CRITICAL)     │
+│ `valkey_rate_limit_hits_total`│ Counter (route_id, policy)        │ HTTP 429 rate > 5% of total requests      │
+│ `rabbitmq_health_status`      │ Gauge (target, status)            │ Status == UNHEALTHY (Alert: CRITICAL)     │
+│ `rabbitmq_queue_depth`        │ Gauge (queue_name, type)          │ Depth > 1000 messages (Alert: WARNING)    │
+│ `rabbitmq_dead_letter_total`  │ Counter (dlx_routing_key)         │ DLQ depth > 10 messages (Alert: HIGH)     │
+│ `rabbitmq_retry_events_total` │ Counter (queue_name)              │ Retry rate > 15% of processed jobs        │
+│ `pgbouncer_health_status`     │ Gauge (target, status)            │ Status == UNHEALTHY (Alert: CRITICAL)     │
+│ `kong_rate_limit_redis_latency`│ Histogram (plugin: rate-limiting) │ p99 latency > 10ms (Alert: WARNING)       │
+└───────────────────────────────┴───────────────────────────────────┴───────────────────────────────────────────┘
+```
+
 ---
 
 ## 9. API & Offline Sync SLA Monitoring (DEC-OBS-PRP-08 Proposed Framework)
