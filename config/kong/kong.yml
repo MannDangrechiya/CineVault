@@ -14,7 +14,28 @@ services:
         config:
           add:
             headers:
-              - "X-Correlation-ID:uuidv7-generated-header"
+              - "X-Correlation-ID:018f2e4a-7b31-7000-8000-000000000000"
+      - name: rate-limiting
+        config:
+          minute: 600
+          policy: local
+      - name: cors
+        config:
+          origins:
+            - "*"
+          methods:
+            - GET
+            - POST
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Authorization
+            - Content-Type
+            - X-Correlation-ID
+            - X-Idempotency-Key
+          credentials: true
+          max_age: 3600
 
   - name: cinevault-internal-api
     url: http://host.docker.internal:8000/internal/v1
@@ -22,4 +43,17 @@ services:
       - name: internal-api-route
         paths:
           - /internal/v1
+        strip_path: false
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 1200
+          policy: local
+
+  - name: cinevault-health-api
+    url: http://host.docker.internal:8000/health
+    routes:
+      - name: health-api-route
+        paths:
+          - /health
         strip_path: false
