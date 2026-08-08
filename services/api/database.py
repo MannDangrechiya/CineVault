@@ -3,10 +3,44 @@
 
 import socket
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, AsyncGenerator, Optional
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from .config import config
 
 logger = logging.getLogger("cinevault.database")
+
+# Build async database connection URL
+async_db_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_password}@{config.pgbouncer_host}:{config.pgbouncer_port}/{config.postgres_db}"
+
+engine = create_async_engine(
+    async_db_url,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,
+    echo=config.debug
+)
+
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False
+)
+
+async def get_db() -> AsyncGenerator[Optional[AsyncSession], None]:
+    """Dependency for providing asynchronous database session per request."""
+    try:
+        async with AsyncSessionLocal() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+    except (socket.error, OSError) as e:
+        logger.warning(f"Database connection unavailable, falling back to seed repository: {e}")
+        yield None
 
 class DatabaseManager:
     """Manages PgBouncer connection pool checks and health status."""
