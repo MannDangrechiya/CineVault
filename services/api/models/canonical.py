@@ -78,6 +78,7 @@ class TitleModel(Base):
     external_ids: Mapped[List["TitleExternalIdModel"]] = relationship("TitleExternalIdModel", back_populates="title", cascade="all, delete-orphan")
     genres: Mapped[List[GenreModel]] = relationship("GenreModel", secondary="canonical.title_genre")
     countries: Mapped[List[TitleCountryModel]] = relationship("TitleCountryModel", cascade="all, delete-orphan")
+    platform_offers: Mapped[List["PlatformOfferModel"]] = relationship("PlatformOfferModel", back_populates="title", cascade="all, delete-orphan")
 
 class EditionModel(Base):
     __tablename__ = "edition"
@@ -109,6 +110,31 @@ class ReleaseModel(Base):
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
 
     edition: Mapped[EditionModel] = relationship("EditionModel", back_populates="releases")
+
+class PlatformModel(Base):
+    __tablename__ = "platform"
+    __table_args__ = {"schema": "canonical"}
+
+    platform_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+
+    offers: Mapped[List["PlatformOfferModel"]] = relationship("PlatformOfferModel", back_populates="platform", cascade="all, delete-orphan")
+
+class PlatformOfferModel(Base):
+    __tablename__ = "platform_offer"
+    __table_args__ = {"schema": "canonical"}
+
+    offer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    platform_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.platform.platform_id", ondelete="RESTRICT"), nullable=False)
+    title_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.title.title_id", ondelete="RESTRICT"), nullable=False)
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False)
+    offer_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    valid_from: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    valid_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+
+    title: Mapped[TitleModel] = relationship("TitleModel", back_populates="platform_offers")
+    platform: Mapped[PlatformModel] = relationship("PlatformModel", back_populates="offers")
 
 class PersonModel(Base):
     __tablename__ = "person"
