@@ -92,3 +92,45 @@ PROPOSED ──▶ OWNER REVIEW ──▶ OWNER APPROVED / BASELINE LOCKED (2026
 | `DEC-PHYS-OPN-01` | **Raw Payload Partition Granularity** | Monthly vs weekly range partition granularity for `ingestion.raw_payload_capture`. | Ingest volume benchmarking in implementation phase. |
 
 ---
+
+### E. PHASE 5 IMPLEMENTATION CANDIDATE PROPOSALS (Awaiting Project Owner Approval)
+
+| Decision ID | Implementation Title | Scope of Implementation Candidate | Current Status | Owner Approval Requirement |
+|---|---|---|---|---|
+| `DEC-OBS-IMP-01` | **Python Logging + JSONFormatter Engine** | Implementation of structured JSON log formatter (`JSONFormatter`) in `services/api/telemetry.py` with mandatory `UUIDv7` correlation ID and automated PII redaction filters (`sanitize_value`). | `PROPOSED (IMPLEMENTATION CANDIDATE)` | Project Owner sign-off required to finalize JSON logging implementation. |
+| `DEC-OBS-IMP-02` | **Prometheus TSDB Exposition Metrics Collector** | Implementation of `MetricsCollector` and `GET /metrics` endpoint in `services/api/routers/metrics.py` exposing HTTP request counters, latency duration histograms, auth failure counters, and dependency health gauges. | `PROPOSED (IMPLEMENTATION CANDIDATE)` | Project Owner sign-off required to finalize Prometheus exposition engine. |
+| `DEC-OBS-IMP-03` | **W3C Traceparent & Correlation Context Middleware** | Implementation of `CorrelationAndMetricsMiddleware` in `services/api/telemetry.py` propagating W3C `traceparent` (`00-<trace_id>-<span_id>-01`) and `X-Correlation-ID` headers across all endpoints. | `PROPOSED (IMPLEMENTATION CANDIDATE)` | Project Owner sign-off required to finalize trace context middleware. |
+| `DEC-OBS-IMP-04` | **Prometheus Scraper & OTel Collector Target Config** | Configuration of `config/prometheus/prometheus.yml` (`api-service` scrape target) and `config/otel/otel-collector-config.yml` (OTLP receivers, PII transform processor). | `PROPOSED (IMPLEMENTATION CANDIDATE)` | Project Owner sign-off required to finalize scraper topology. |
+
+---
+
+## 3. Governance Summary Dashboard
+
+```text
+===============================================================================
+CINEVAULT OS — OBSERVABILITY & OPERATIONS DECISION DASHBOARD
+===============================================================================
+
+LOCKED ARCHITECTURAL BASELINE:
+DEC-OBS-PRP-01   🟢 OWNER APPROVED / BASELINE LOCKED
+DEC-OBS-PRP-02   🟢 OWNER APPROVED / BASELINE LOCKED
+DEC-OBS-PRP-03   🟢 OWNER APPROVED / BASELINE LOCKED
+DEC-OBS-PRP-04   🟢 OWNER APPROVED / BASELINE LOCKED
+DEC-OBS-PRP-05   🟢 OWNER APPROVED / BASELINE LOCKED
+DEC-OBS-PRP-06   🟢 OWNER APPROVED / BASELINE LOCKED
+DEC-OBS-PRP-07   🟢 OWNER APPROVED / BASELINE LOCKED
+DEC-OBS-PRP-08   🟢 OWNER APPROVED / BASELINE LOCKED
+
+PHASE 5 IMPLEMENTATION CANDIDATES:
+DEC-OBS-IMP-01   🟡 IMPLEMENTATION PROPOSAL (JSONFormatter + PII Sanitization)
+DEC-OBS-IMP-02   🟡 IMPLEMENTATION PROPOSAL (MetricsCollector + /metrics)
+DEC-OBS-IMP-03   🟡 IMPLEMENTATION PROPOSAL (W3C traceparent Middleware)
+DEC-OBS-IMP-04   🟡 IMPLEMENTATION PROPOSAL (Prometheus Scraper Target)
+
+===============================================================================
+FINAL GOVERNANCE AUDIT STATUS:
+IMPLEMENTATION VALIDATED
+GOVERNANCE TRANSITION RECORDED
+OWNER APPROVAL PENDING
+===============================================================================
+```
