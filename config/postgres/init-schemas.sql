@@ -1,17 +1,8 @@
--- CineVault OS — Local PostgreSQL Schema Initialization Script
--- Executed automatically on local postgres container startup
+-- CineVault OS — Local PostgreSQL Container Bootstrap Script
+-- BOUNDARY SPECIFICATION: Container startup bootstrap ONLY.
+-- DDL migration authority belongs strictly to Flyway Community Edition (sql/migrations/).
+-- This file MUST NOT contain table definitions or compete with Flyway migration history.
 
-CREATE SCHEMA IF NOT EXISTS core;
-CREATE SCHEMA IF NOT EXISTS catalog;
-CREATE SCHEMA IF NOT EXISTS ingestion;
-CREATE SCHEMA IF NOT EXISTS quality;
-CREATE SCHEMA IF NOT EXISTS personal;
-
--- Basic status check table in ingestion schema
-CREATE TABLE IF NOT EXISTS ingestion.local_dev_status (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    initialized_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
-    status TEXT NOT NULL DEFAULT 'READY'
-);
-
-INSERT INTO ingestion.local_dev_status (status) VALUES ('LOCAL_DATABASE_INITIALIZED');
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+CREATE EXTENSION IF NOT EXISTS "citext";

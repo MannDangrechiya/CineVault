@@ -23,6 +23,17 @@ services:
       timeout: 5s
       retries: 5
 
+  # 1b. Migration Engine: Flyway Community Edition
+  flyway:
+    image: flyway/flyway:10-alpine
+    container_name: cinevault-local-flyway
+    command: -url=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-cinevault} -user=${POSTGRES_USER:-cinevault_dev} -password=${POSTGRES_PASSWORD:-dev_postgres_password_change_me} -connectRetries=10 migrate
+    volumes:
+      - ./sql/migrations:/flyway/sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # 2. Connection Pooler: PgBouncer
   pgbouncer:
     image: edoburu/pgbouncer:latest
