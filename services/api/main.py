@@ -19,7 +19,8 @@ from .routers import (
     personal,
     sync,
     internal,
-    metrics
+    metrics,
+    recommendations
 )
 
 @asynccontextmanager
@@ -75,6 +76,7 @@ app.include_router(personal.router)
 app.include_router(sync.router)
 app.include_router(internal.router)
 app.include_router(metrics.router)
+app.include_router(recommendations.router)
 
 if __name__ == "__main__":
     import uvicorn
