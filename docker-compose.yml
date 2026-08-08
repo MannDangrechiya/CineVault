@@ -89,7 +89,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.0
     container_name: cinevault-local-keycloak
-    command: start-dev
+    command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-dev_keycloak_admin_password_change_me}
@@ -97,6 +97,8 @@ services:
       KC_HOSTNAME_STRICT: "false"
     ports:
       - "8080:8080"
+    volumes:
+      - ./config/keycloak/cinevault-realm-dev.json:/opt/keycloak/data/import/cinevault-realm-dev.json:ro
     depends_on:
       postgres:
         condition: service_healthy
