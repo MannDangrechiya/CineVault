@@ -1,0 +1,25 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: cinevault-public-api
+    url: http://host.docker.internal:8000/v1
+    routes:
+      - name: public-api-route
+        paths:
+          - /v1
+        strip_path: false
+    plugins:
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Correlation-ID:uuidv7-generated-header"
+
+  - name: cinevault-internal-api
+    url: http://host.docker.internal:8000/internal/v1
+    routes:
+      - name: internal-api-route
+        paths:
+          - /internal/v1
+        strip_path: false

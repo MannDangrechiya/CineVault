@@ -1,0 +1,331 @@
+erDiagram
+
+    %% ==========================================
+    %% CINEVAULT OS — MASTER CONCEPTUAL/LOGICAL ERD v1.0
+    %% ==========================================
+
+    %% ------------------------------------------
+    %% 1. CANONICAL CONTENT DOMAIN (CAT-1)
+    %% ------------------------------------------
+
+    Title {
+        uuid title_id PK "UUIDv7 Permanent Identity"
+        string display_id UK "Immutable Display ID (e.g. MOV-000001)"
+        string content_type "Authoritative Mutable Classification"
+        string canonical_title "Primary Canonical Name"
+        string original_title "Original Language Title"
+        int production_year "Production Year"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    Edition {
+        uuid edition_id PK "UUIDv7 Permanent Identity"
+        uuid title_id FK "Parent Title"
+        string edition_name "e.g. Theatrical Cut, Director's Cut"
+        boolean is_primary "True for Primary Edition"
+        int runtime_minutes "Runtime in Minutes"
+    }
+
+    Release {
+        uuid release_id PK "UUIDv7 Permanent Identity"
+        uuid edition_id FK "Parent Edition"
+        string release_type "Festival, Theatrical, Streaming, Physical"
+        date release_date "Distribution Event Date"
+        string release_name "Optional Dist Name"
+    }
+
+    Season {
+        uuid season_id PK "UUIDv7 Permanent Identity"
+        uuid title_id FK "Parent Episodic Title"
+        int season_number "Canonical Season Sequence"
+        string canonical_name "Season Title"
+    }
+
+    Episode {
+        uuid episode_id PK "UUIDv7 Permanent Identity"
+        uuid season_id FK "Parent Season"
+        uuid title_id FK "Parent Title Denormalized"
+        int episode_number "Canonical Episode Sequence"
+        string canonical_title "Episode Name"
+        int runtime_minutes "Runtime in Minutes"
+    }
+
+    Universe {
+        uuid universe_id PK "UUIDv7 Permanent Identity"
+        string name "Universe Name (e.g. MCU)"
+    }
+
+    Franchise {
+        uuid franchise_id PK "UUIDv7 Permanent Identity"
+        uuid universe_id FK "Optional Parent Universe"
+        string name "Franchise Name"
+    }
+
+    FranchiseEntry {
+        uuid franchise_entry_id PK "UUIDv7 Permanent Identity"
+        uuid franchise_id FK "Parent Franchise"
+        uuid title_id FK "Target Title"
+        string order_type "ReleaseOrder, ChronologicalOrder, StoryOrder"
+        decimal position "Sequence Position"
+    }
+
+    Platform {
+        uuid platform_id PK "UUIDv7 Permanent Identity"
+        string name "Platform Name (e.g. Netflix, Criterion)"
+    }
+
+    PlatformOffer {
+        uuid platform_offer_id PK "UUIDv7 Permanent Identity"
+        uuid platform_id FK "Platform"
+        uuid release_id FK "Parent Release"
+        uuid country_id FK "Availability Region"
+        string offer_type "Subscription, Rental, Purchase"
+        timestamp valid_from "Validity Start"
+        timestamp valid_until "Validity End (NULL = Unbounded)"
+        timestamp last_verified_at
+    }
+
+    %% ------------------------------------------
+    %% 2. PEOPLE & CREDITS DOMAIN (CAT-1)
+    %% ------------------------------------------
+
+    Person {
+        uuid person_id PK "UUIDv7 Permanent Identity"
+        string primary_name "Primary Name"
+        date birth_date
+    }
+
+    Character {
+        uuid character_id PK "UUIDv7 Permanent Identity"
+        string character_name "Character Name"
+    }
+
+    Credit {
+        uuid credit_id PK "UUIDv7 Permanent Identity"
+        uuid person_id FK "Person"
+        uuid title_id FK "Title (Optional Target)"
+        uuid edition_id FK "Edition (Optional Target)"
+        uuid episode_id FK "Episode (Optional Target)"
+        uuid character_id FK "Character (Optional Target)"
+        string credit_category "Cast, Director, Writer, Composer"
+        int billing_order "Billing Rank"
+    }
+
+    %% ------------------------------------------
+    %% 3. EXTERNAL IDENTITY MAPPING (CAT-1 / CAT-5)
+    %% ------------------------------------------
+
+    TitleExternalId {
+        uuid title_external_id PK "UUIDv7"
+        uuid title_id FK "Target Title"
+        string provider "IMDb, TMDb, AniList, MAL, TVDB, Wikidata"
+        string external_id "External String ID"
+        timestamp last_verified_at
+    }
+
+    EpisodeExternalId {
+        uuid episode_external_id PK "UUIDv7"
+        uuid episode_id FK "Target Episode"
+        string provider "External Provider"
+        string external_id "External String ID"
+        timestamp last_verified_at
+    }
+
+    PersonExternalId {
+        uuid person_external_id PK "UUIDv7"
+        uuid person_id FK "Target Person"
+        string provider "External Provider"
+        string external_id "External String ID"
+        timestamp last_verified_at
+    }
+
+    FranchiseExternalId {
+        uuid franchise_external_id PK "UUIDv7"
+        uuid franchise_id FK "Target Franchise"
+        string provider "External Provider"
+        string external_id "External String ID"
+        timestamp last_verified_at
+    }
+
+    %% ------------------------------------------
+    %% 4. TAXONOMY & ROLES (CAT-1)
+    %% ------------------------------------------
+
+    Country {
+        uuid country_id PK "UUIDv7"
+        string iso_code "ISO Country Code"
+        string name "Country Name"
+    }
+
+    Language {
+        uuid language_id PK "UUIDv7"
+        string iso_code "ISO Language Code"
+        string name "Language Name"
+    }
+
+    TitleCountry {
+        uuid title_country_id PK "UUIDv7"
+        uuid title_id FK "Title"
+        uuid country_id FK "Country"
+        string role "ProductionCountry, FilmingCountry, OriginCountry"
+    }
+
+    TitleLanguage {
+        uuid title_language_id PK "UUIDv7"
+        uuid title_id FK "Title"
+        uuid language_id FK "Language"
+        string role "OriginalLanguage"
+    }
+
+    EditionLanguage {
+        uuid edition_language_id PK "UUIDv7"
+        uuid edition_id FK "Edition"
+        uuid language_id FK "Language"
+        string role "AudioLanguage, SubtitleLanguage, DubbedLanguage"
+    }
+
+    %% ------------------------------------------
+    %% 5. USER DOMAIN (CAT-2 / CAT-3)
+    %% ------------------------------------------
+
+    User {
+        uuid user_id PK "UUIDv7 Permanent Identity"
+        string username "Unique Username"
+        string email "Unique Email"
+        timestamp created_at
+    }
+
+    LibraryEntry {
+        uuid library_entry_id PK "UUIDv7"
+        uuid user_id FK "User"
+        uuid title_id FK "Title (Scoped to Title)"
+        uuid preferred_edition_id FK "Optional Preferred Edition"
+        timestamp added_at
+    }
+
+    WatchEvent {
+        uuid watch_event_id PK "UUIDv7 Append-Only Event"
+        uuid user_id FK "User"
+        uuid title_id FK "Title (Required)"
+        uuid edition_id FK "Edition (NULL = Unknown Edition)"
+        uuid season_id FK "Optional Season"
+        uuid episode_id FK "Optional Episode"
+        timestamp watched_at "Activity Timestamp"
+        timestamp created_at
+    }
+
+    WatchEventCorrection {
+        uuid correction_id PK "UUIDv7"
+        uuid original_watch_event_id FK "Target Event"
+        uuid corrected_watch_event_id FK "Replacement Event"
+        string reason "UserEdit, Tombstone"
+    }
+
+    UserRating {
+        uuid rating_id PK "UUIDv7"
+        uuid user_id FK "User"
+        uuid title_id FK "Title (Title Scoped)"
+        decimal rating_value "User Personal Rating Value"
+        timestamp rated_at
+    }
+
+    UserReview {
+        uuid review_id PK "UUIDv7"
+        uuid user_id FK "User"
+        uuid title_id FK "Title"
+        text review_body "Publishable Review Content"
+        string privacy_level "Public, Friends, Private"
+    }
+
+    UserNote {
+        uuid note_id PK "UUIDv7"
+        uuid user_id FK "User"
+        uuid title_id FK "Title"
+        text note_body "Strictly Private User Note"
+    }
+
+    UserTitleState {
+        uuid user_title_state_id PK "UUIDv7"
+        uuid user_id FK "User"
+        uuid title_id FK "Title"
+        string derived_status "Derived Status Read Model"
+        string manual_status_override "Manual Status Override"
+        boolean is_favorite "Favorite Current State"
+    }
+
+    UserProgress {
+        uuid progress_id PK "Derived Cached Read Model"
+        uuid user_id FK "User"
+        uuid title_id FK "Title"
+        decimal percentage_complete "Recomputable Progress"
+        timestamp recalculated_at
+    }
+
+    %% ==========================================
+    %% RELATIONSHIP DEFINITIONS & CARDINALITIES
+    %% ==========================================
+
+    %% Canonical Content Relationships
+    Title ||--|{ Edition : "has primary and extra cuts"
+    Edition ||--o{ Release : "distributed via releases"
+    Title ||--o{ Season : "contains seasons"
+    Season ||--o{ Episode : "contains episodes"
+    Title ||--o{ Episode : "direct title link"
+
+    %% Franchise Relationships
+    Universe ||--o{ Franchise : "groups franchises"
+    Franchise ||--o{ FranchiseEntry : "contains entries"
+    Title ||--o{ FranchiseEntry : "participates in franchise"
+
+    %% Distribution & Availability
+    Release ||--o{ PlatformOffer : "available via offer"
+    Platform ||--o{ PlatformOffer : "hosts offer"
+    Country ||--o{ PlatformOffer : "valid in territory"
+
+    %% People & Credits
+    Person ||--o{ Credit : "credited in"
+    Title ||--o{ Credit : "title credit"
+    Edition ||--o{ Credit : "edition credit"
+    Episode ||--o{ Credit : "episode credit"
+    Character ||--o{ Credit : "portrayed credit"
+
+    %% External Identity Mappings
+    Title ||--o{ TitleExternalId : "mapped external IDs"
+    Episode ||--o{ EpisodeExternalId : "mapped external IDs"
+    Person ||--o{ PersonExternalId : "mapped external IDs"
+    Franchise ||--o{ FranchiseExternalId : "mapped external IDs"
+
+    %% Taxonomies & Roles
+    Title ||--o{ TitleCountry : "country roles"
+    Country ||--o{ TitleCountry : "country reference"
+    Title ||--o{ TitleLanguage : "original language role"
+    Language ||--o{ TitleLanguage : "language reference"
+    Edition ||--o{ EditionLanguage : "audio/sub/dub roles"
+    Language ||--o{ EditionLanguage : "language reference"
+
+    %% User Domain Relationships
+    User ||--o{ LibraryEntry : "maintains library"
+    Title ||--o{ LibraryEntry : "library title"
+    Edition ||--o| LibraryEntry : "preferred edition preference"
+
+    User ||--o{ WatchEvent : "logs viewing activity"
+    Title ||--o{ WatchEvent : "watched title"
+    Edition ||--o| WatchEvent : "watched edition (NULL = unknown)"
+    Episode ||--o| WatchEvent : "watched episode"
+    WatchEvent ||--o| WatchEventCorrection : "corrected via"
+
+    User ||--o{ UserRating : "rates title"
+    Title ||--o{ UserRating : "rated title"
+
+    User ||--o{ UserReview : "authors review"
+    Title ||--o{ UserReview : "reviewed title"
+
+    User ||--o{ UserNote : "authors note"
+    Title ||--o{ UserNote : "noted title"
+
+    User ||--o{ UserTitleState : "tracks state"
+    Title ||--o{ UserTitleState : "title state"
+
+    User ||--o{ UserProgress : "cached progress"
+    Title ||--o{ UserProgress : "progress title"
