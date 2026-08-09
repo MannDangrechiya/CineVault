@@ -149,16 +149,44 @@ class CatalogScreen extends ConsumerWidget {
                                           children: [
                                             Expanded(
                                               child: Container(
-                                                color: AppTheme.cardElevated,
-                                                child: Center(
-                                                  child: Icon(
-                                                    title.contentType == 'MOVIE'
-                                                        ? Icons.movie
-                                                        : Icons.tv,
-                                                    size: 48,
-                                                    color: AppTheme.primaryLightViolet,
-                                                  ),
+                                                clipBehavior: Clip.antiAlias,
+                                                decoration: const BoxDecoration(
+                                                  color: AppTheme.cardElevated,
                                                 ),
+                                                child: title.posterUrl != null && title.posterUrl!.isNotEmpty
+                                                    ? Image.network(
+                                                        title.posterUrl!,
+                                                        fit: BoxFit.cover,
+                                                        width: double.infinity,
+                                                        height: double.infinity,
+                                                        loadingBuilder: (context, child, loadingProgress) {
+                                                          if (loadingProgress == null) return child;
+                                                          return Container(
+                                                            color: AppTheme.cardElevated,
+                                                            child: const Center(
+                                                              child: SizedBox(
+                                                                width: 24,
+                                                                height: 24,
+                                                                child: CircularProgressIndicator(strokeWidth: 2),
+                                                              ),
+                                                            ),
+                                                          );
+                                                        },
+                                                        errorBuilder: (context, error, stackTrace) => Center(
+                                                          child: Icon(
+                                                            title.contentType == 'MOVIE' ? Icons.movie : Icons.tv,
+                                                            size: 48,
+                                                            color: AppTheme.primaryLightViolet,
+                                                          ),
+                                                        ),
+                                                      )
+                                                    : Center(
+                                                        child: Icon(
+                                                          title.contentType == 'MOVIE' ? Icons.movie : Icons.tv,
+                                                          size: 48,
+                                                          color: AppTheme.primaryLightViolet,
+                                                        ),
+                                                      ),
                                               ),
                                             ),
                                             Padding(

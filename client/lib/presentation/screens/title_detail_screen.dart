@@ -44,11 +44,38 @@ class TitleDetailScreen extends ConsumerWidget {
                         color: AppTheme.cardElevated,
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(
-                        title.contentType == 'MOVIE' ? Icons.movie : Icons.tv,
-                        size: 56,
-                        color: AppTheme.primaryLightViolet,
-                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: title.posterUrl != null && title.posterUrl!.isNotEmpty
+                          ? Image.network(
+                              title.posterUrl!,
+                              fit: BoxFit.cover,
+                              width: 110,
+                              height: 160,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return const Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                );
+                              },
+                              errorBuilder: (context, error, stackTrace) => Center(
+                                child: Icon(
+                                  title.contentType == 'MOVIE' ? Icons.movie : Icons.tv,
+                                  size: 56,
+                                  color: AppTheme.primaryLightViolet,
+                                ),
+                              ),
+                            )
+                          : Center(
+                              child: Icon(
+                                title.contentType == 'MOVIE' ? Icons.movie : Icons.tv,
+                                size: 56,
+                                color: AppTheme.primaryLightViolet,
+                              ),
+                            ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(

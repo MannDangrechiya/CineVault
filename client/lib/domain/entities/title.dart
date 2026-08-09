@@ -71,6 +71,7 @@ class CanonicalTitleEntity {
   final int? runtimeMinutes;
   final String? overview;
   final String? posterUrl;
+  final String? backdropUrl;
   final List<String> genres;
   final List<AvailabilityEntity> availabilities;
   final List<ReleaseEntity> releases;
@@ -85,6 +86,7 @@ class CanonicalTitleEntity {
     this.runtimeMinutes,
     this.overview,
     this.posterUrl,
+    this.backdropUrl,
     required this.genres,
     this.availabilities = const [],
     this.releases = const [],
@@ -110,6 +112,7 @@ class CanonicalTitleEntity {
       // Backend TitleDetail uses synopsis; fallback for other contexts
       overview: json['synopsis'] ?? json['overview'] ?? json['description'],
       posterUrl: json['poster_url'],
+      backdropUrl: json['backdrop_url'],
       genres: json['genres'] != null ? List<String>.from(json['genres']) : [],
       availabilities: json['availabilities'] != null
           ? (json['availabilities'] as List)
@@ -135,6 +138,7 @@ class CanonicalTitleEntity {
       'runtime_minutes': runtimeMinutes,
       'synopsis': overview,
       'poster_url': posterUrl,
+      'backdrop_url': backdropUrl,
       'genres': genres,
     };
   }

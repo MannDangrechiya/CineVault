@@ -94,9 +94,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             itemBuilder: (context, index) {
                               final item = _searchResults[index];
                               return ListTile(
-                                leading: Icon(
-                                  item.contentType == 'MOVIE' ? Icons.movie : Icons.tv,
-                                  color: AppTheme.primaryViolet,
+                                leading: Container(
+                                  width: 40,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.cardElevated,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: item.posterUrl != null && item.posterUrl!.isNotEmpty
+                                      ? Image.network(
+                                          item.posterUrl!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) => Icon(
+                                            item.contentType == 'MOVIE' ? Icons.movie : Icons.tv,
+                                            color: AppTheme.primaryViolet,
+                                            size: 24,
+                                          ),
+                                        )
+                                      : Icon(
+                                          item.contentType == 'MOVIE' ? Icons.movie : Icons.tv,
+                                          color: AppTheme.primaryViolet,
+                                          size: 24,
+                                        ),
                                 ),
                                 title: Text(item.primaryTitle, style: textTheme.titleMedium),
                                 subtitle: Text('${item.contentType} • ${item.releaseYear ?? "N/A"}'),
