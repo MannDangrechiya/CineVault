@@ -475,7 +475,7 @@ Antigravity (or whichever agent executes a phase) should manage GitHub itself, n
 | 9.1 | API contract year/country fix | A | DONE | `fix/9.1-api-contract-year-country` | Commit `7d663c5` |
 | 9.2 | Real poster/backdrop artwork | A | DONE | `fix/9.2-poster-artwork` | Commit `352ade1` |
 | 9.4 | Live OpenAI provider | B | DONE | `fix/9.4-openai-live-provider` | Commit `587211b` |
-| 9.5 | Live Gemini provider | B | TODO | | |
+| 9.5 | Live Gemini provider | B | DONE | `fix/9.5-gemini-live-provider` | Commit `8807367` |
 | 9.6 | Live KOBIS + TVDB ingestion | B | TODO | | |
 | 9.7 | Control Room Flutter screen | C | TODO | | |
 | 9.8 | Login/auth screen | C | TODO | | |
