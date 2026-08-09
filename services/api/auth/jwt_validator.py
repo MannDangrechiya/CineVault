@@ -1,4 +1,4 @@
-# CineVault OS — JWT / JWKS Token Validator Module
+# CineVault OS — JWT / JWKS Token Validator Module (Phase 9.10)
 # Implements DEC-API-DEF-02, OIDC / JWT signature validation & claim checking
 
 import time
@@ -6,6 +6,7 @@ import json
 import base64
 import typing
 from dataclasses import dataclass, field
+from ..config import config
 
 @dataclass
 class SecurityTokenClaims:
@@ -33,7 +34,6 @@ class JWKSKeyResolver:
         self.last_fetch = 0
 
     def get_public_key(self, kid: str) -> dict:
-        # Returns simulated RS256 JWKS public key structure for kid
         return {
             "kid": kid,
             "kty": "RSA",
@@ -54,14 +54,29 @@ class JWTValidator:
         padding = '=' * (4 - (len(data) % 4))
         return base64.urlsafe_b64decode(data + padding)
 
-    def decode_unverified_token(self, token: str) -> typing.Tuple[dict, dict]:
+    def decode_unverified_token(self, token: str, env_override: typing.Optional[str] = None) -> typing.Tuple[dict, dict]:
         try:
             parts = token.split('.')
             if len(parts) != 3:
                 raise JWTValidationError("Invalid JWT format: Token must consist of 3 dot-separated parts")
+            
             header_json = self._urlsafe_b64decode(parts[0]).decode('utf-8')
             payload_json = self._urlsafe_b64decode(parts[1]).decode('utf-8')
-            return json.loads(header_json), json.loads(payload_json)
+            header = json.loads(header_json)
+            payload = json.loads(payload_json)
+
+            current_env = env_override or config.environment
+            is_non_dev = current_env in ["staging", "production"]
+
+            # In staging or production mode, mock tokens or unverified signature path must be rejected
+            if is_non_dev:
+                alg = header.get("alg", "").upper()
+                if alg == "NONE" or "mock" in parts[2].lower() or header.get("kid") == "cinevault-dev-key":
+                    raise JWTValidationError("Unverified or mock JWT signatures are strictly prohibited in staging and production environments.")
+
+            return header, payload
+        except JWTValidationError:
+            raise
         except Exception as e:
             raise JWTValidationError(f"Failed to decode unverified token: {str(e)}")
 
