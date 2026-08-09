@@ -16,8 +16,8 @@ class FakeTitlesRemoteDatasource implements TitlesRemoteDatasource {
     int limit = 20,
     String? cursor,
     String? contentType,
-    int? year,
-    String? country,
+    int? productionYear,
+    String? originCountry,
   }) async {
     return [
       const CanonicalTitleEntity(
