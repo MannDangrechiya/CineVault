@@ -37,5 +37,24 @@ class TestAPIContracts(unittest.TestCase):
         self.assertEqual(data["error"]["code"], "VALIDATION_ERROR")
         self.assertIn("details", data["error"])
 
+    def test_list_titles_filter_contract(self):
+        """Asserts that production_year and origin_country query params actually narrow results."""
+        # 1. Fetch titles for production_year=2019 & origin_country=KR (Parasite is 2019 KR)
+        response = self.client.get("/v1/titles?production_year=2019&origin_country=KR")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("data", data)
+        items = data["data"]
+        self.assertTrue(len(items) > 0)
+        for item in items:
+            self.assertEqual(item["production_year"], 2019)
+            self.assertEqual(item["origin_country"], "KR")
+
+        # 2. Fetch titles for a non-matching production_year=1900
+        empty_response = self.client.get("/v1/titles?production_year=1900")
+        self.assertEqual(empty_response.status_code, 200)
+        empty_data = empty_response.json()
+        self.assertEqual(len(empty_data["data"]), 0)
+
 if __name__ == "__main__":
     unittest.main()

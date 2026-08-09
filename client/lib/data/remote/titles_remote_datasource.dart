@@ -14,16 +14,16 @@ class TitlesRemoteDatasource {
     int limit = 20,
     String? cursor,
     String? contentType,
-    int? year,
-    String? country,
+    int? productionYear,
+    String? originCountry,
   }) async {
     try {
       final queryParams = <String, dynamic>{
         'limit': limit,
         if (cursor != null) 'cursor': cursor,
         if (contentType != null) 'content_type': contentType,
-        if (year != null) 'year': year,
-        if (country != null) 'country': country,
+        if (productionYear != null) 'production_year': productionYear,
+        if (originCountry != null) 'origin_country': originCountry,
       };
 
       final response = await _apiClient.dio.get(

@@ -17,14 +17,16 @@ class CatalogState {
   final List<CanonicalTitleEntity> titles;
   final String? errorMessage;
   final String? selectedContentType;
-  final int? selectedYear;
+  final int? selectedProductionYear;
+  final String? selectedOriginCountry;
 
   const CatalogState({
     this.isLoading = false,
     this.titles = const [],
     this.errorMessage,
     this.selectedContentType,
-    this.selectedYear,
+    this.selectedProductionYear,
+    this.selectedOriginCountry,
   });
 
   CatalogState copyWith({
@@ -32,14 +34,16 @@ class CatalogState {
     List<CanonicalTitleEntity>? titles,
     String? errorMessage,
     String? selectedContentType,
-    int? selectedYear,
+    int? selectedProductionYear,
+    String? selectedOriginCountry,
   }) {
     return CatalogState(
       isLoading: isLoading ?? this.isLoading,
       titles: titles ?? this.titles,
       errorMessage: errorMessage,
       selectedContentType: selectedContentType ?? this.selectedContentType,
-      selectedYear: selectedYear ?? this.selectedYear,
+      selectedProductionYear: selectedProductionYear ?? this.selectedProductionYear,
+      selectedOriginCountry: selectedOriginCountry ?? this.selectedOriginCountry,
     );
   }
 }
@@ -51,18 +55,24 @@ class CatalogNotifier extends StateNotifier<CatalogState> {
     fetchTitles();
   }
 
-  Future<void> fetchTitles({String? contentType, int? year}) async {
+  Future<void> fetchTitles({
+    String? contentType,
+    int? productionYear,
+    String? originCountry,
+  }) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
       final items = await _datasource.listTitles(
         contentType: contentType ?? state.selectedContentType,
-        year: year ?? state.selectedYear,
+        productionYear: productionYear ?? state.selectedProductionYear,
+        originCountry: originCountry ?? state.selectedOriginCountry,
       );
       state = state.copyWith(
         isLoading: false,
         titles: items,
         selectedContentType: contentType ?? state.selectedContentType,
-        selectedYear: year ?? state.selectedYear,
+        selectedProductionYear: productionYear ?? state.selectedProductionYear,
+        selectedOriginCountry: originCountry ?? state.selectedOriginCountry,
       );
     } catch (e) {
       state = state.copyWith(
