@@ -477,7 +477,7 @@ Antigravity (or whichever agent executes a phase) should manage GitHub itself, n
 | 9.4 | Live OpenAI provider | B | DONE | `fix/9.4-openai-live-provider` | Commit `587211b` |
 | 9.5 | Live Gemini provider | B | DONE | `fix/9.5-gemini-live-provider` | Commit `8807367` |
 | 9.6 | Live KOBIS + TVDB ingestion | B | DONE | `fix/9.6-ingestion-live-adapters` | Commit `933ec0e` |
-| 9.7 | Control Room Flutter screen | C | TODO | | |
+| 9.7 | Control Room Flutter screen | C | DONE | `fix/9.7-control-room-screen` | Commit `cad90c1` |
 | 9.8 | Login/auth screen | C | TODO | | |
 | 9.9 | Auto-sync on reconnect | C | TODO | | |
 | 9.10 | Keycloak OIDC live | D | TODO | | |
