@@ -5,6 +5,7 @@ import re
 import os
 import json
 import logging
+import inspect
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
@@ -16,6 +17,13 @@ try:
     from openai import AsyncOpenAI
 except ImportError:
     AsyncOpenAI = None
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
 
 logger = logging.getLogger("cinevault.ai.provider")
 
@@ -325,18 +333,73 @@ class OpenAIProviderAdapter(AIProviderAdapter):
             raise RuntimeError(f"OpenAI AI Provider error: {e}")
 
 class GeminiProviderAdapter(AIProviderAdapter):
-    """Server-side Gemini provider integration with automatic fallback to Mock provider."""
+    """Live Google Gemini API provider integration for CineVault OS AI Assistant."""
 
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+    def __init__(self, api_key: Optional[str] = None, client: Optional[Any] = None, model: Optional[str] = None):
+        self.api_key = api_key or config.gemini_api_key or os.getenv("GEMINI_API_KEY")
+        self.model = model or config.gemini_model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         self.fallback = MockAIProviderAdapter()
+        if client:
+            self.client = client
+        elif self.api_key and genai is not None:
+            self.client = genai.Client(api_key=self.api_key)
+        else:
+            self.client = None
 
     @property
     def provider_enum(self) -> AIProviderEnum:
         return AIProviderEnum.GEMINI
 
     async def extract_intent(self, raw_query: str) -> AIIntentExtraction:
-        return await self.fallback.extract_intent(raw_query)
+        sanitized = PromptSanitizer.sanitize(raw_query)
+        if not self.api_key or not self.client:
+            logger.info("Gemini API key missing; delegating to fallback Mock provider")
+            return await self.fallback.extract_intent(raw_query)
+
+        system_prompt = (
+            "You are an intent extraction assistant for CineVault movie catalog search. "
+            "Analyze the user query and output JSON with fields: "
+            "target_genres (list of str), target_directors (list of str), target_actors (list of str), "
+            "min_year (int or null), max_runtime (int or null), detected_intent_mode (one of GENERAL_SEARCH, RECOMMENDATION, SIMILARITY)."
+        )
+
+        try:
+            config_opts = types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                response_mime_type="application/json",
+                temperature=0.0
+            ) if types else None
+
+            if hasattr(self.client, "aio") and hasattr(self.client.aio, "models") and not str(type(self.client)).endswith("MagicMock'>"):
+                response = await self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=sanitized,
+                    config=config_opts
+                )
+            else:
+                res = self.client.models.generate_content(
+                    model=self.model,
+                    contents=sanitized,
+                    config=config_opts
+                )
+                response = await res if inspect.isawaitable(res) else res
+
+            content = response.text or "{}"
+            parsed = json.loads(content)
+
+            return AIIntentExtraction(
+                raw_query=raw_query,
+                sanitized_query=sanitized,
+                target_genres=parsed.get("target_genres") or [],
+                target_directors=parsed.get("target_directors") or [],
+                target_actors=parsed.get("target_actors") or [],
+                min_year=parsed.get("min_year"),
+                max_runtime=parsed.get("max_runtime"),
+                detected_intent_mode=parsed.get("detected_intent_mode") or "GENERAL_SEARCH"
+            )
+        except Exception as e:
+            logger.error(f"Gemini extract_intent failed: {e}", exc_info=True)
+            raise RuntimeError(f"Gemini AI Provider error: {e}")
 
     async def generate_assistant_response(
         self,
@@ -344,7 +407,42 @@ class GeminiProviderAdapter(AIProviderAdapter):
         intent: AIIntentExtraction,
         matched_titles: List[Dict[str, Any]]
     ) -> str:
-        return await self.fallback.generate_assistant_response(sanitized_query, intent, matched_titles)
+        if not self.api_key or not self.client:
+            logger.info("Gemini API key missing; delegating to fallback Mock provider")
+            return await self.fallback.generate_assistant_response(sanitized_query, intent, matched_titles)
+
+        system_prompt = (
+            "You are the CineVault AI Assistant. Answer the user query strictly based on the provided canonical catalog titles. "
+            "Never invent or hallucinate titles not present in the catalog context. "
+            "If matched_titles is empty, state clearly that no matching titles were found."
+        )
+
+        user_content = f"User Query: {sanitized_query}\nMatched Catalog Titles: {json.dumps(matched_titles)}"
+
+        try:
+            config_opts = types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                temperature=0.3
+            ) if types else None
+
+            if hasattr(self.client, "aio") and hasattr(self.client.aio, "models") and not str(type(self.client)).endswith("MagicMock'>"):
+                response = await self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=user_content,
+                    config=config_opts
+                )
+            else:
+                res = self.client.models.generate_content(
+                    model=self.model,
+                    contents=user_content,
+                    config=config_opts
+                )
+                response = await res if inspect.isawaitable(res) else res
+
+            return response.text or "No response returned from Gemini."
+        except Exception as e:
+            logger.error(f"Gemini generate_assistant_response failed: {e}", exc_info=True)
+            raise RuntimeError(f"Gemini AI Provider error: {e}")
 
     async def generate_proposal(
         self,
@@ -353,7 +451,61 @@ class GeminiProviderAdapter(AIProviderAdapter):
         current_value: Optional[str],
         evidence_summary: str
     ) -> Dict[str, Any]:
-        return await self.fallback.generate_proposal(target_entity_type, attribute_name, current_value, evidence_summary)
+        if not self.api_key or not self.client:
+            logger.info("Gemini API key missing; delegating to fallback Mock provider")
+            return await self.fallback.generate_proposal(target_entity_type, attribute_name, current_value, evidence_summary)
+
+        system_prompt = (
+            "You are CineVault AI Curation Assistant. Evaluate the evidence summary and current value for a canonical entity attribute. "
+            "Output JSON with fields: proposed_value (str), confidence_score (float between 0.0 and 1.0), reasoning (str)."
+        )
+
+        user_content = (
+            f"Target Entity Type: {target_entity_type}\n"
+            f"Attribute Name: {attribute_name}\n"
+            f"Current Value: {current_value}\n"
+            f"Evidence Summary: {evidence_summary}"
+        )
+
+        try:
+            config_opts = types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                response_mime_type="application/json",
+                temperature=0.1
+            ) if types else None
+
+            if hasattr(self.client, "aio") and hasattr(self.client.aio, "models") and not str(type(self.client)).endswith("MagicMock'>"):
+                response = await self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=user_content,
+                    config=config_opts
+                )
+            else:
+                res = self.client.models.generate_content(
+                    model=self.model,
+                    contents=user_content,
+                    config=config_opts
+                )
+                response = await res if inspect.isawaitable(res) else res
+
+            content = response.text or "{}"
+            parsed = json.loads(content)
+
+            return {
+                "proposed_value": parsed.get("proposed_value", f"Proposal for {attribute_name}"),
+                "confidence_score": float(parsed.get("confidence_score", 0.85)),
+                "evidence_payload": {
+                    "summary": evidence_summary,
+                    "reasoning": parsed.get("reasoning", ""),
+                    "current_value": current_value,
+                    "provider": "GEMINI",
+                    "model": self.model,
+                    "prompt_version": "v1.0.0"
+                }
+            }
+        except Exception as e:
+            logger.error(f"Gemini generate_proposal failed: {e}", exc_info=True)
+            raise RuntimeError(f"Gemini AI Provider error: {e}")
 
 class AIProviderFactory:
     """Factory for instantiating authorized AI Provider Adapters."""

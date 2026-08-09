@@ -45,6 +45,8 @@ class APIConfig(BaseModel):
     ai_provider: str = os.getenv("AI_PROVIDER", "mock")
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    gemini_api_key: Optional[str] = os.getenv("GEMINI_API_KEY")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
     @property
     def database_url(self) -> str:
