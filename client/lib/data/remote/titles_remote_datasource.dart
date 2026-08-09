@@ -31,7 +31,7 @@ class TitlesRemoteDatasource {
         queryParameters: queryParams,
       );
 
-      final List data = response.data['items'] ?? response.data ?? [];
+      final List data = response.data['data'] ?? [];
       return data.map((json) => CanonicalTitleEntity.fromJson(json)).toList();
     } on DioException catch (e) {
       throw _apiClient.mapDioErrorToFailure(e);
@@ -50,7 +50,7 @@ class TitlesRemoteDatasource {
   Future<List<AvailabilityEntity>> getTitleAvailability(String titleId) async {
     try {
       final response = await _apiClient.dio.get('${ApiConfig.titlesEndpoint}/$titleId/availability');
-      final List data = response.data['availabilities'] ?? response.data ?? [];
+      final List data = response.data['offers'] ?? [];
       return data.map((json) => AvailabilityEntity.fromJson(json)).toList();
     } on DioException catch (e) {
       throw _apiClient.mapDioErrorToFailure(e);
@@ -60,7 +60,8 @@ class TitlesRemoteDatasource {
   Future<List<ReleaseEntity>> getTitleReleases(String titleId) async {
     try {
       final response = await _apiClient.dio.get('${ApiConfig.titlesEndpoint}/$titleId/releases');
-      final List data = response.data['releases'] ?? response.data ?? [];
+      // This endpoint returns a raw JSON array, not an object wrapper.
+      final List data = response.data ?? [];
       return data.map((json) => ReleaseEntity.fromJson(json)).toList();
     } on DioException catch (e) {
       throw _apiClient.mapDioErrorToFailure(e);

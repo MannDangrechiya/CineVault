@@ -1,6 +1,7 @@
 # CineVault OS — Search Domain Repository
 # Asynchronous PostgreSQL trigram (pg_trgm) and script-normalized search engine (ADR-001, ERD V1)
 
+from ..config import config
 import uuid
 import unicodedata
 import logging
@@ -91,7 +92,9 @@ class SearchRepository:
                             )
                         )
             except Exception as e:
-                logger.warning(f"Database query search_catalog failed: {e}")
+                logger.error(f"Database query search_catalog failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Fallback search matching for offline/unit test environments
         if not results and clean_q:

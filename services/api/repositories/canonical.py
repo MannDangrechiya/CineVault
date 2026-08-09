@@ -1,6 +1,7 @@
 # CineVault OS — Canonical Domain Repository
 # Asynchronous PostgreSQL database access layer for CAT-1 canonical catalog metadata (ADR-001, ADR-002)
 
+from ..config import config
 import uuid
 import logging
 from typing import List, Optional, Tuple
@@ -94,7 +95,9 @@ class CanonicalRepository:
                         ))
                     return summaries
             except Exception as e:
-                logger.warning(f"Database query failed, falling back to seed baseline: {e}")
+                logger.error(f"Database query failed, falling back to seed baseline: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Fallback to seed records
         items = []
@@ -155,7 +158,9 @@ class CanonicalRepository:
                         primary_edition=primary_ed
                     )
             except Exception as e:
-                logger.warning(f"Database query for title_id={title_id} failed: {e}")
+                logger.error(f"Database query for title_id={title_id} failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Fallback to seed records
         if title_id in SEED_FALLBACK_TITLES:
@@ -207,7 +212,9 @@ class CanonicalRepository:
                             matched_external_id=external_id
                         )
             except Exception as e:
-                logger.warning(f"Database lookup failed: {e}")
+                logger.error(f"Database lookup failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Fallback to seed lookup rules
         if display_id == "MOV-000001" or (provider == "TMDB" and external_id == "496243"):
@@ -272,7 +279,9 @@ class CanonicalRepository:
                         for r in releases_orm
                     ]
             except Exception as e:
-                logger.warning(f"Database query get_title_releases failed: {e}")
+                logger.error(f"Database query get_title_releases failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Fallback staged baseline releases for unit tests
         return [
@@ -336,7 +345,9 @@ class CanonicalRepository:
                             )
                         )
             except Exception as e:
-                logger.warning(f"Database query get_title_availability failed: {e}")
+                logger.error(f"Database query get_title_availability failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Fallback staged platform offers for unit tests
         if not offers:

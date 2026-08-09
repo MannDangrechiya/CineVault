@@ -1,6 +1,7 @@
 # CineVault OS — Data Quality & Reconciliation Repository
 # Asynchronous PostgreSQL operations for identity resolution candidates, human curation, and canonical promotion (ADR-001, ADR-004)
 
+from ..config import config
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -39,7 +40,9 @@ class QualityRepository:
                         for r in records
                     ]
             except Exception as e:
-                logger.warning(f"Database query list_reconciliation_candidates failed: {e}")
+                logger.error(f"Database query list_reconciliation_candidates failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Fallback staged candidates for unit tests
         return [
@@ -80,7 +83,9 @@ class QualityRepository:
                     cand.decision_status = "PROMOTED"
                     await db.flush()
             except Exception as e:
-                logger.warning(f"Database update promote_candidate failed: {e}")
+                logger.error(f"Database update promote_candidate failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return {
             "status": "PROMOTED",
@@ -118,7 +123,9 @@ class QualityRepository:
                     cand.decision_status = "REJECTED"
                     await db.flush()
             except Exception as e:
-                logger.warning(f"Database update reject_candidate failed: {e}")
+                logger.error(f"Database update reject_candidate failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return {
             "status": "REJECTED",
@@ -150,7 +157,9 @@ class QualityRepository:
                         for p in proposals
                     ]
             except Exception as e:
-                logger.warning(f"Database query list_ai_proposals failed: {e}")
+                logger.error(f"Database query list_ai_proposals failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return [
             AIProposalSummary(

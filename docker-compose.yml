@@ -47,6 +47,12 @@ services:
       POOL_MODE: transaction
       MAX_CLIENT_CONN: 1000
       DEFAULT_POOL_SIZE: 20
+      # Without this, the image defaults to listening on 5432 internally,
+      # which doesn't match the 6432:6432 port mapping below (nothing reachable on 6432).
+      LISTEN_PORT: 6432
+      # Postgres 16 defaults to scram-sha-256 password encryption; PgBouncer's
+      # own default auth_type (md5) then fails backend auth with "wrong password type".
+      AUTH_TYPE: scram-sha-256
     ports:
       - "6432:6432"
     depends_on:

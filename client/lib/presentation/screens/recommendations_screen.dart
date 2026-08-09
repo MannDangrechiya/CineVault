@@ -110,7 +110,7 @@ class RecommendationsScreen extends ConsumerWidget {
                                             const SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
-                                                item.groundedExplanation.textualExplanation,
+                                                item.groundedExplanation.explanationText,
                                                 style: textTheme.bodyMedium,
                                               ),
                                             ),

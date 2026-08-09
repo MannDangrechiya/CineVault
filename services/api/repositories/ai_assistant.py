@@ -1,6 +1,7 @@
 # CineVault OS — AI Assistant & Proposal Repository (Build Unit 8.8)
 # Asynchronous database operations for AI assistant queries, prompt injection protection, and CAT-6 proposal staging
 
+from ..config import config
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -139,7 +140,9 @@ class AIAssistantRepository:
                 await db.flush()
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database insertion stage_ai_proposal failed: {e}")
+                logger.error(f"Database insertion stage_ai_proposal failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Audit event log
         audit_logger.log_event(
@@ -189,7 +192,9 @@ class AIAssistantRepository:
                     ]
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database query list_pending_proposals failed: {e}")
+                logger.error(f"Database query list_pending_proposals failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Fallback staged proposals for unit tests
         return [
@@ -241,7 +246,9 @@ class AIAssistantRepository:
                     await db.flush()
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database update review_ai_proposal failed: {e}")
+                logger.error(f"Database update review_ai_proposal failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return {
             "status": review_status,

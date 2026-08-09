@@ -1,6 +1,7 @@
 # CineVault OS — Offline Sync Repository (Build Unit 8.9)
 # Implements ADR-004 durable outbox push mutation processing, server-side idempotency, and delta stream pull
 
+from ..config import config
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -73,7 +74,9 @@ class SyncRepository:
                         is_duplicate = True
                 except Exception as e:
                     await db.rollback()
-                    logger.warning(f"Database query check idempotency failed: {e}")
+                    logger.error(f"Database query check idempotency failed: {e}", exc_info=True)
+                    if not config.allow_seed_fallback:
+                        raise
 
             if is_duplicate:
                 logger.info(f"Duplicate mutation {mid} detected for user {user_id}; acknowledging without re-execution.")
@@ -143,7 +146,9 @@ class SyncRepository:
                         await db.flush()
                     except Exception as e:
                         await db.rollback()
-                        logger.warning(f"Database insertion sync_outbox_mutation failed: {e}")
+                        logger.error(f"Database insertion sync_outbox_mutation failed: {e}", exc_info=True)
+                        if not config.allow_seed_fallback:
+                            raise
 
                 acknowledged_ids.append(mid)
 

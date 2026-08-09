@@ -12,8 +12,9 @@ class PersonalRemoteDatasource {
 
   Future<List<WatchEventEntity>> getWatchHistory() async {
     try {
-      final response = await _apiClient.dio.get('${ApiConfig.meLibraryEndpoint}/watch-events');
-      final List data = response.data['watch_events'] ?? response.data ?? [];
+      final response = await _apiClient.dio.get(ApiConfig.watchEventsEndpoint);
+      // Backend returns PaginatedResponse[WatchEventResponse] with 'data' field
+      final List data = response.data['data'] ?? response.data['watch_events'] ?? [];
       return data.map((json) => WatchEventEntity.fromJson(json)).toList();
     } on DioException catch (e) {
       throw _apiClient.mapDioErrorToFailure(e);
@@ -22,16 +23,17 @@ class PersonalRemoteDatasource {
 
   Future<WatchEventEntity> createWatchEvent({
     required String titleId,
-    required String watchMode,
-    double? ratingValue,
-    String? notes,
+    required String watchedAt,
+    double progressPercentage = 100.0,
+    String? editionId,
   }) async {
     try {
+      // Match backend WatchEventCreate schema
       final payload = {
         'title_id': titleId,
-        'watch_mode': watchMode,
-        if (ratingValue != null) 'rating_value': ratingValue,
-        if (notes != null) 'notes': notes,
+        'watched_at': watchedAt,
+        'progress_percentage': progressPercentage,
+        if (editionId != null) 'edition_id': editionId,
       };
 
       final response = await _apiClient.dio.post(
@@ -47,14 +49,13 @@ class PersonalRemoteDatasource {
 
   Future<UserRatingEntity> setRating({
     required String titleId,
-    required double ratingValue,
-    String? reviewText,
+    required int ratingValue,
   }) async {
     try {
+      // Match backend RatingCreate schema (title_id + rating_value only)
       final payload = {
         'title_id': titleId,
         'rating_value': ratingValue,
-        if (reviewText != null) 'review_text': reviewText,
       };
 
       final response = await _apiClient.dio.post(
@@ -70,14 +71,13 @@ class PersonalRemoteDatasource {
 
   Future<UserNoteEntity> upsertNote({
     required String titleId,
-    required String noteContent,
-    bool isPrivate = true,
+    required String noteText,
   }) async {
     try {
+      // Match backend NoteCreate schema (title_id + note_text only)
       final payload = {
         'title_id': titleId,
-        'note_content': noteContent,
-        'is_private': isPrivate,
+        'note_text': noteText,
       };
 
       final response = await _apiClient.dio.post(

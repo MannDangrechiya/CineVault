@@ -2,74 +2,88 @@
 // Grounded explanations, transparent score breakdowns, candidate items
 
 class GroundedExplanationEntity {
-  final double overallScore;
-  final double contentSimilarityScore;
-  final double tasteFitScore;
-  final double popularityScore;
-  final String textualExplanation;
-  final List<String> citations;
+  final String explanationText;
+  final List<String> matchedGenres;
+  final List<String> matchedDirectors;
+  final List<String> matchedActors;
+  final String? seedTitleName;
+  final int? userRatingApplied;
 
   const GroundedExplanationEntity({
-    required this.overallScore,
-    required this.contentSimilarityScore,
-    required this.tasteFitScore,
-    required this.popularityScore,
-    required this.textualExplanation,
-    required this.citations,
+    required this.explanationText,
+    required this.matchedGenres,
+    required this.matchedDirectors,
+    required this.matchedActors,
+    this.seedTitleName,
+    this.userRatingApplied,
   });
 
   factory GroundedExplanationEntity.fromJson(Map<String, dynamic> json) {
     return GroundedExplanationEntity(
-      overallScore: (json['overall_score'] as num?)?.toDouble() ?? 0.0,
-      contentSimilarityScore: (json['content_similarity_score'] as num?)?.toDouble() ?? 0.0,
-      tasteFitScore: (json['taste_fit_score'] as num?)?.toDouble() ?? 0.0,
-      popularityScore: (json['popularity_score'] as num?)?.toDouble() ?? 0.0,
-      textualExplanation: json['textual_explanation'] ?? json['explanation'] ?? 'Recommended based on your taste profile.',
-      citations: json['citations'] != null ? List<String>.from(json['citations']) : [],
+      explanationText: json['explanation_text'] ?? json['textual_explanation'] ?? json['explanation'] ?? 'Recommended based on your taste profile.',
+      matchedGenres: json['matched_genres'] != null ? List<String>.from(json['matched_genres']) : [],
+      matchedDirectors: json['matched_directors'] != null ? List<String>.from(json['matched_directors']) : [],
+      matchedActors: json['matched_actors'] != null ? List<String>.from(json['matched_actors']) : [],
+      seedTitleName: json['seed_title_name'],
+      userRatingApplied: json['user_rating_applied'],
     );
   }
 }
 
 class RecommendationItemEntity {
   final String titleId;
+  final String displayId;
   final String titleName;
+  final String contentType;
   final int? releaseYear;
-  final String? posterUrl;
+  final int? runtimeMinutes;
+  final double voteAverage;
+  final List<String> genres;
+  final List<String> directors;
   final double recommendationScore;
+  final bool isAvailable;
   final GroundedExplanationEntity groundedExplanation;
-  final String? seedTitleId;
 
   const RecommendationItemEntity({
     required this.titleId,
+    required this.displayId,
     required this.titleName,
+    required this.contentType,
     this.releaseYear,
-    this.posterUrl,
+    this.runtimeMinutes,
+    this.voteAverage = 0.0,
+    required this.genres,
+    required this.directors,
     required this.recommendationScore,
+    this.isAvailable = true,
     required this.groundedExplanation,
-    this.seedTitleId,
   });
 
   factory RecommendationItemEntity.fromJson(Map<String, dynamic> json) {
-    final explanationData = json['grounded_explanation'] ?? json['explanation'];
+    final explanationData = json['explanation'] ?? json['grounded_explanation'];
     final explanation = explanationData is Map<String, dynamic>
         ? GroundedExplanationEntity.fromJson(explanationData)
         : GroundedExplanationEntity(
-            overallScore: (json['score'] as num?)?.toDouble() ?? 0.0,
-            contentSimilarityScore: 0.8,
-            tasteFitScore: 0.85,
-            popularityScore: 0.7,
-            textualExplanation: json['grounded_explanation']?.toString() ?? 'Recommended item.',
-            citations: const [],
+            explanationText: explanationData?.toString() ?? 'Recommended item.',
+            matchedGenres: const [],
+            matchedDirectors: const [],
+            matchedActors: const [],
           );
 
     return RecommendationItemEntity(
       titleId: json['title_id'] ?? json['id'] ?? '',
-      titleName: json['title_name'] ?? json['title'] ?? 'Untitled',
+      displayId: json['display_id'] ?? '',
+      // Backend uses canonical_title in RecommendationItemResponse
+      titleName: json['canonical_title'] ?? json['title_name'] ?? json['title'] ?? 'Untitled',
+      contentType: json['content_type'] ?? 'MOVIE',
       releaseYear: json['release_year'] ?? json['year'],
-      posterUrl: json['poster_url'],
+      runtimeMinutes: json['runtime_minutes'],
+      voteAverage: (json['vote_average'] as num?)?.toDouble() ?? 0.0,
+      genres: json['genres'] != null ? List<String>.from(json['genres']) : [],
+      directors: json['directors'] != null ? List<String>.from(json['directors']) : [],
       recommendationScore: (json['recommendation_score'] ?? json['score'] as num?)?.toDouble() ?? 0.0,
+      isAvailable: json['is_available'] ?? true,
       groundedExplanation: explanation,
-      seedTitleId: json['seed_title_id'],
     );
   }
 }

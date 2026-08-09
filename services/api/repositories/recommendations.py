@@ -2,6 +2,7 @@
 # Governed Layered Recommendation Engine Architecture:
 # Candidate Generation -> Hard Filters -> Content Similarity -> Personal Taste -> Context -> Ranking -> Explanation
 
+from ..config import config
 import math
 from typing import List, Optional, Dict, Any, Set
 from uuid import UUID

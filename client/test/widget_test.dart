@@ -64,8 +64,11 @@ class FakeRecommendationsRemoteDatasource implements RecommendationsRemoteDataso
 
   @override
   Future<List<RecommendationItemEntity>> getColdStartRecommendations({
-    required List<String> preferredGenres,
-    required List<String> seedTitleIds,
+    List<String>? preferredGenres,
+    List<String>? preferredCountries,
+    List<String>? preferredLanguages,
+    int? minReleaseYear,
+    int? maxReleaseYear,
     int limit = 10,
   }) async => [];
 
@@ -77,12 +80,10 @@ class FakeRecommendationsRemoteDatasource implements RecommendationsRemoteDataso
     required String titleId,
     String? seedTitleId,
   }) async => const GroundedExplanationEntity(
-        overallScore: 0.9,
-        contentSimilarityScore: 0.9,
-        tasteFitScore: 0.9,
-        popularityScore: 0.9,
-        textualExplanation: 'Test explanation',
-        citations: [],
+        explanationText: 'Test explanation',
+        matchedGenres: [],
+        matchedDirectors: [],
+        matchedActors: [],
       );
 }
 

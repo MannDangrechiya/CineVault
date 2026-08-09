@@ -1,6 +1,7 @@
 # CineVault OS — Personal Domain Repository (CAT-2)
 # Asynchronous PostgreSQL database access layer for user personal logs, watch events, ratings, notes & conflicts (ADR-003, ADR-004)
 
+from ..config import config
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -62,7 +63,9 @@ class PersonalRepository:
                     ]
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database query list_watch_events failed: {e}")
+                logger.error(f"Database query list_watch_events failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Fallback response for isolated unit test state
         user_events = SEED_WATCH_EVENTS.get(user_id, [])
@@ -135,7 +138,9 @@ class PersonalRepository:
                 )
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database insertion create_watch_event failed: {e}")
+                logger.error(f"Database insertion create_watch_event failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         resp = WatchEventResponse(
             id=new_id,
@@ -173,7 +178,9 @@ class PersonalRepository:
                     )
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database query get_user_title_state failed: {e}")
+                logger.error(f"Database query get_user_title_state failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return UserTitleStateResponse(
             title_id=title_id,
@@ -234,7 +241,9 @@ class PersonalRepository:
                 )
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database update update_user_title_state failed: {e}")
+                logger.error(f"Database update update_user_title_state failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return UserTitleStateResponse(
             title_id=title_id,
@@ -265,7 +274,9 @@ class PersonalRepository:
                     ]
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database query list_ratings failed: {e}")
+                logger.error(f"Database query list_ratings failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return SEED_RATINGS.get(user_id, [])
 
@@ -303,7 +314,9 @@ class PersonalRepository:
                 )
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database update set_rating failed: {e}")
+                logger.error(f"Database update set_rating failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         resp = RatingResponse(
             id=str(uuid.uuid4()),
@@ -336,7 +349,9 @@ class PersonalRepository:
                     ]
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database query list_notes failed: {e}")
+                logger.error(f"Database query list_notes failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return []
 
@@ -364,7 +379,9 @@ class PersonalRepository:
                 )
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database insertion create_note failed: {e}")
+                logger.error(f"Database insertion create_note failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return NoteResponse(
             id=str(uuid.uuid4()),
@@ -395,7 +412,9 @@ class PersonalRepository:
                     ]
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database query list_reviews failed: {e}")
+                logger.error(f"Database query list_reviews failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return []
 
@@ -427,7 +446,9 @@ class PersonalRepository:
                 )
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database insertion create_review failed: {e}")
+                logger.error(f"Database insertion create_review failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return ReviewResponse(
             id=str(uuid.uuid4()),
@@ -464,7 +485,9 @@ class PersonalRepository:
                     ]
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database query list_conflicts failed: {e}")
+                logger.error(f"Database query list_conflicts failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return []
 

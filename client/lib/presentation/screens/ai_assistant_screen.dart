@@ -92,7 +92,7 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
                                   color: AppTheme.primaryViolet,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Text(item.rawQuery, style: const TextStyle(color: Colors.white)),
+                                child: Text(item.intent.rawQuery ?? item.intent.sanitizedQuery ?? '', style: const TextStyle(color: Colors.white)),
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -114,30 +114,37 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
                                       children: [
                                         const Icon(Icons.auto_awesome, color: AppTheme.secondaryCyan, size: 18),
                                         const SizedBox(width: 6),
-                                        Text('Intent: ${item.detectedIntent.intentType}', style: textTheme.bodySmall),
+                                        Text('Intent: ${item.intent.detectedIntentMode}', style: textTheme.bodySmall),
                                         const Spacer(),
-                                        Text('${(item.confidenceScore * 100).toInt()}% confidence', style: textTheme.bodySmall),
+                                        Text(
+                                          item.isGrounded ? 'Grounded' : 'Ungrounded',
+                                          style: textTheme.bodySmall?.copyWith(
+                                            color: item.isGrounded ? AppTheme.secondaryCyan : AppTheme.stateError,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                     const Divider(height: 16, color: AppTheme.borderSubtle),
                                     Text(item.responseText, style: textTheme.bodyLarge),
-                                    if (item.titleCitations.isNotEmpty) ...[
+                                    if (item.matchedTitles.isNotEmpty) ...[
                                       const SizedBox(height: 12),
-                                      Text('Citations:', style: textTheme.titleMedium),
+                                      Text('Matched Titles:', style: textTheme.titleMedium),
                                       Wrap(
                                         spacing: 6,
-                                        children: item.titleCitations.map((titleId) {
+                                        children: item.matchedTitles.map((titleData) {
+                                          final titleId = titleData['title_id'] ?? titleData['id'] ?? '';
+                                          final titleName = titleData['canonical_title'] ?? titleData['title'] ?? 'Title';
                                           return ActionChip(
                                             avatar: const Icon(Icons.movie, size: 14),
-                                            label: Text('Title $titleId'),
-                                            onPressed: () {
+                                            label: Text(titleName),
+                                            onPressed: titleId.isNotEmpty ? () {
                                               Navigator.push(
                                                 context,
                                                 MaterialPageRoute(
                                                   builder: (_) => TitleDetailScreen(titleId: titleId),
                                                 ),
                                               );
-                                            },
+                                            } : null,
                                           );
                                         }).toList(),
                                       ),

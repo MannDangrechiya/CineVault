@@ -8,6 +8,7 @@ class APIConfig(BaseModel):
     app_name: str = "CineVault OS API Gateway & Service Foundation"
     environment: str = os.getenv("ENVIRONMENT", "local_development")
     debug: bool = os.getenv("DEBUG", "true").lower() == "true"
+    allow_seed_fallback: bool = os.getenv("ALLOW_SEED_FALLBACK", "true").lower() == "true"
     
     # Database Integration (PgBouncer -> PostgreSQL)
     pgbouncer_host: str = os.getenv("PGBOUNCER_HOST", "localhost")

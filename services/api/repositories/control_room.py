@@ -1,6 +1,7 @@
 # CineVault OS — Control Room Repository (Build Unit 8.10)
 # Asynchronous database operations for human curation, quarantine inspection, evidence breakdown, and audit tracking
 
+from ..config import config
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -55,7 +56,9 @@ class ControlRoomRepository:
                 promoted_records = t_res.scalar() or 0
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database query get_summary_stats failed: {e}")
+                logger.error(f"Database query get_summary_stats failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return ControlRoomSummaryStats(
             pending_reconciliation_candidates=pending_candidates,
@@ -95,7 +98,9 @@ class ControlRoomRepository:
                     ]
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database query list_quarantine_records failed: {e}")
+                logger.error(f"Database query list_quarantine_records failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return [
             QuarantineRecordResponse(
@@ -139,7 +144,9 @@ class ControlRoomRepository:
                         await db.flush()
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database update resolve_quarantine_record failed: {e}")
+                logger.error(f"Database update resolve_quarantine_record failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return {
             "status": new_status,
@@ -182,7 +189,9 @@ class ControlRoomRepository:
                         )
             except Exception as e:
                 await db.rollback()
-                logger.warning(f"Database query get_candidate_detail failed: {e}")
+                logger.error(f"Database query get_candidate_detail failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return CandidateDetailResponse(
             candidate_id=candidate_id,

@@ -117,7 +117,7 @@ class TitleDetailScreen extends ConsumerWidget {
                       children: availabilities.map((avail) {
                         return Chip(
                           avatar: const Icon(Icons.play_circle_fill, color: AppTheme.secondaryCyan, size: 18),
-                          label: Text('${avail.platformName} (${avail.availabilityType})'),
+                          label: Text('${avail.platformName} (${avail.offerType})'),
                           backgroundColor: AppTheme.cardElevated,
                         );
                       }).toList(),
@@ -143,7 +143,7 @@ class TitleDetailScreen extends ConsumerWidget {
                           child: ListTile(
                             leading: const Icon(Icons.movie_outlined, color: AppTheme.primaryLightViolet),
                             title: Text(sim.titleName, style: textTheme.titleMedium),
-                            subtitle: Text('Score: ${(sim.recommendationScore * 100).toStringAsFixed(1)}% | ${sim.groundedExplanation.textualExplanation}'),
+                            subtitle: Text('Score: ${(sim.recommendationScore * 100).toStringAsFixed(1)}% | ${sim.groundedExplanation.explanationText}'),
                             onTap: () {
                               Navigator.push(
                                 context,
@@ -167,8 +167,7 @@ class TitleDetailScreen extends ConsumerWidget {
   }
 
   void _showWatchLogDialog(BuildContext context, WidgetRef ref, String titleId, String titleName) {
-    String watchMode = 'STREAMING';
-    final notesController = TextEditingController();
+    double progressPercentage = 100.0;
 
     showDialog(
       context: context,
@@ -178,20 +177,16 @@ class TitleDetailScreen extends ConsumerWidget {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              DropdownButtonFormField<String>(
-                initialValue: watchMode,
-                decoration: const InputDecoration(labelText: 'Watch Environment'),
+              DropdownButtonFormField<double>(
+                initialValue: progressPercentage,
+                decoration: const InputDecoration(labelText: 'Watch Progress'),
                 items: const [
-                  DropdownMenuItem(value: 'STREAMING', child: Text('Streaming')),
-                  DropdownMenuItem(value: 'THEATER', child: Text('Theater')),
-                  DropdownMenuItem(value: 'HOME_MEDIA', child: Text('Physical Media')),
+                  DropdownMenuItem(value: 100.0, child: Text('Completed (100%)')),
+                  DropdownMenuItem(value: 75.0, child: Text('75%')),
+                  DropdownMenuItem(value: 50.0, child: Text('50%')),
+                  DropdownMenuItem(value: 25.0, child: Text('25%')),
                 ],
-                onChanged: (val) => watchMode = val ?? 'STREAMING',
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: notesController,
-                decoration: const InputDecoration(labelText: 'Personal Notes (Optional)'),
+                onChanged: (val) => progressPercentage = val ?? 100.0,
               ),
             ],
           ),
@@ -206,8 +201,8 @@ class TitleDetailScreen extends ConsumerWidget {
                   mutationType: 'CREATE_WATCH_EVENT',
                   payload: {
                     'title_id': titleId,
-                    'watch_mode': watchMode,
-                    'notes': notesController.text.isNotEmpty ? notesController.text : null,
+                    'watched_at': DateTime.now().toUtc().toIso8601String(),
+                    'progress_percentage': progressPercentage,
                   },
                 );
                 Navigator.pop(ctx);

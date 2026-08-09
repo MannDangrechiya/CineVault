@@ -17,7 +17,17 @@ engine = create_async_engine(
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
-    echo=config.debug
+    echo=config.debug,
+    connect_args={
+        # PgBouncer runs in `transaction` pool mode (docker-compose.yml), which can
+        # hand a query to a different backend Postgres connection between statements.
+        # asyncpg's default server-side prepared-statement cache assumes a stable
+        # connection, so disable it to issue plain (unprepared) queries instead.
+        "statement_cache_size": 0,
+        # PgBouncer has no TLS configured; asyncpg's default SSL-first negotiation
+        # against a plaintext listener breaks the socket mid-handshake.
+        "ssl": False,
+    }
 )
 
 AsyncSessionLocal = async_sessionmaker(

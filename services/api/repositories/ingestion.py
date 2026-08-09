@@ -1,6 +1,7 @@
 # CineVault OS — Ingestion Domain Repository
 # Asynchronous PostgreSQL operations for immutable raw payload capture (CAT-5), SHA-256 hashing, normalization staging, and quarantine (ADR-001, ADR-004)
 
+from ..config import config
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -57,7 +58,9 @@ class IngestionRepository:
                 db.add(orm_record)
                 await db.flush()
             except Exception as e:
-                logger.warning(f"Database insertion capture_raw_payload failed: {e}")
+                logger.error(f"Database insertion capture_raw_payload failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return {
             "raw_payload_id": raw_id,
@@ -88,7 +91,9 @@ class IngestionRepository:
                         captured_at=payload_orm.acquired_at.isoformat() if payload_orm.acquired_at else datetime.now(timezone.utc).isoformat()
                     )
             except Exception as e:
-                logger.warning(f"Database query get_raw_payload_by_id failed: {e}")
+                logger.error(f"Database query get_raw_payload_by_id failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         # Fallback staged baseline for unit tests
         return RawPayloadDetail(
@@ -122,7 +127,9 @@ class IngestionRepository:
                         )
                     return runs
             except Exception as e:
-                logger.warning(f"Database query list_ingestion_runs failed: {e}")
+                logger.error(f"Database query list_ingestion_runs failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return [
             IngestionRunSummary(
@@ -163,7 +170,9 @@ class IngestionRepository:
                 db.add(q_orm)
                 await db.flush()
             except Exception as e:
-                logger.warning(f"Database insertion stage_quarantine_record failed: {e}")
+                logger.error(f"Database insertion stage_quarantine_record failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         return {
             "quarantine_id": q_id,

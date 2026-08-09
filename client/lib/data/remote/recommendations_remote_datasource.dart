@@ -35,7 +35,8 @@ class RecommendationsRemoteDatasource {
         queryParameters: queryParams,
       );
 
-      final List data = response.data['items'] ?? response.data['recommendations'] ?? [];
+      // Backend RecommendationListResponse wraps items in 'data' field
+      final List data = response.data['data'] ?? response.data['items'] ?? [];
       return data.map((json) => RecommendationItemEntity.fromJson(json)).toList();
     } on DioException catch (e) {
       throw _apiClient.mapDioErrorToFailure(e);
@@ -43,14 +44,21 @@ class RecommendationsRemoteDatasource {
   }
 
   Future<List<RecommendationItemEntity>> getColdStartRecommendations({
-    required List<String> preferredGenres,
-    required List<String> seedTitleIds,
+    List<String>? preferredGenres,
+    List<String>? preferredCountries,
+    List<String>? preferredLanguages,
+    int? minReleaseYear,
+    int? maxReleaseYear,
     int limit = 10,
   }) async {
     try {
-      final payload = {
-        'preferred_genres': preferredGenres,
-        'seed_title_ids': seedTitleIds,
+      // Match backend ColdStartPreferenceInput schema
+      final payload = <String, dynamic>{
+        if (preferredGenres != null) 'preferred_genres': preferredGenres,
+        if (preferredCountries != null) 'preferred_countries': preferredCountries,
+        if (preferredLanguages != null) 'preferred_languages': preferredLanguages,
+        if (minReleaseYear != null) 'min_release_year': minReleaseYear,
+        if (maxReleaseYear != null) 'max_release_year': maxReleaseYear,
       };
 
       final response = await _apiClient.dio.post(
@@ -59,7 +67,8 @@ class RecommendationsRemoteDatasource {
         queryParameters: {'limit': limit},
       );
 
-      final List data = response.data['items'] ?? response.data['recommendations'] ?? [];
+      // Backend RecommendationListResponse wraps items in 'data' field
+      final List data = response.data['data'] ?? response.data['items'] ?? [];
       return data.map((json) => RecommendationItemEntity.fromJson(json)).toList();
     } on DioException catch (e) {
       throw _apiClient.mapDioErrorToFailure(e);
@@ -73,7 +82,8 @@ class RecommendationsRemoteDatasource {
         queryParameters: {'limit': limit},
       );
 
-      final List data = response.data['items'] ?? response.data['recommendations'] ?? [];
+      // Backend RecommendationListResponse wraps items in 'data' field
+      final List data = response.data['data'] ?? response.data['items'] ?? [];
       return data.map((json) => RecommendationItemEntity.fromJson(json)).toList();
     } on DioException catch (e) {
       throw _apiClient.mapDioErrorToFailure(e);
@@ -95,7 +105,11 @@ class RecommendationsRemoteDatasource {
         data: payload,
       );
 
-      return GroundedExplanationEntity.fromJson(response.data);
+      // Backend RecommendationExplainResponse has nested 'explanation' field
+      final explanationData = response.data['explanation'] ?? response.data;
+      return GroundedExplanationEntity.fromJson(
+        explanationData is Map<String, dynamic> ? explanationData : response.data,
+      );
     } on DioException catch (e) {
       throw _apiClient.mapDioErrorToFailure(e);
     }
