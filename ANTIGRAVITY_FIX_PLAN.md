@@ -480,7 +480,7 @@ Antigravity (or whichever agent executes a phase) should manage GitHub itself, n
 | 9.7 | Control Room Flutter screen | C | DONE | `fix/9.7-control-room-screen` | Commit `cad90c1` |
 | 9.8 | Login/auth screen | C | DONE | `fix/9.8-auth-login-screen` | Commit `22fa854` |
 | 9.9 | Auto-sync on reconnect | C | DONE | `fix/9.9-auto-sync-reconnect` | Commit `99dc84e` |
-| 9.10 | Keycloak OIDC live | D | TODO | | |
+| 9.10 | Keycloak OIDC live | D | DONE | `fix/9.10-keycloak-oidc` | Commit `af1813b` |
 | 9.11 | Kong gateway wiring | D | TODO | | |
 | 9.12 | CDN/object storage for artwork | D | TODO | | |
 
