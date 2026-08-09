@@ -1,5 +1,5 @@
-// CineVault OS — Offline Sync Status Screen (8.9 / ADR-004)
-// Outbox queue inspector, mutation state tracking, and manual push sync triggers
+// CineVault OS — Offline Sync Status Screen (Phase 9.9 / ADR-004)
+// Outbox queue inspector, connection state monitoring, and auto-sync / manual push triggers
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,6 +27,34 @@ class SyncStatusScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
+          // Connection Status Banner
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: syncState.isOnline
+                ? Colors.green.shade900.withValues(alpha: 0.3)
+                : Colors.amber.shade900.withValues(alpha: 0.3),
+            child: Row(
+              children: [
+                Icon(
+                  syncState.isOnline ? Icons.wifi : Icons.wifi_off,
+                  color: syncState.isOnline ? Colors.greenAccent : Colors.amberAccent,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  syncState.isOnline
+                      ? 'Online Mode — Auto-sync on reconnect active'
+                      : 'Offline Mode — Outbox changes queued locally',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: syncState.isOnline ? Colors.greenAccent : Colors.amberAccent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           // Header Card
           Container(
             width: double.infinity,

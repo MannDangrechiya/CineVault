@@ -1,6 +1,8 @@
-// CineVault OS — Sync Outbox Riverpod Provider (8.9 / ADR-004)
+// CineVault OS — Sync Outbox Riverpod Provider & Auto-Sync Listener (Phase 9.9 / ADR-004)
 
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/network/connectivity_service.dart';
 import '../../data/local/app_database.dart';
 import '../../data/remote/sync_remote_datasource.dart';
 import '../../data/repositories/sync_repository_impl.dart';
@@ -22,12 +24,14 @@ final syncRepositoryProvider = Provider<SyncRepositoryImpl>((ref) {
 
 class SyncState {
   final bool isSyncing;
+  final bool isOnline;
   final List<SyncMutationEntity> pendingMutations;
   final String? lastSyncTimestamp;
   final String? errorMessage;
 
   const SyncState({
     this.isSyncing = false,
+    this.isOnline = true,
     this.pendingMutations = const [],
     this.lastSyncTimestamp,
     this.errorMessage,
@@ -35,12 +39,14 @@ class SyncState {
 
   SyncState copyWith({
     bool? isSyncing,
+    bool? isOnline,
     List<SyncMutationEntity>? pendingMutations,
     String? lastSyncTimestamp,
     String? errorMessage,
   }) {
     return SyncState(
       isSyncing: isSyncing ?? this.isSyncing,
+      isOnline: isOnline ?? this.isOnline,
       pendingMutations: pendingMutations ?? this.pendingMutations,
       lastSyncTimestamp: lastSyncTimestamp ?? this.lastSyncTimestamp,
       errorMessage: errorMessage,
@@ -50,9 +56,28 @@ class SyncState {
 
 class SyncNotifier extends StateNotifier<SyncState> {
   final SyncRepositoryImpl _repository;
+  final ConnectivityService? _connectivityService;
+  StreamSubscription<void>? _reconnectSub;
+  StreamSubscription<bool>? _statusSub;
 
-  SyncNotifier(this._repository) : super(const SyncState()) {
+  SyncNotifier(this._repository, [this._connectivityService]) : super(const SyncState()) {
     loadPendingMutations();
+    if (_connectivityService != null) {
+      state = state.copyWith(isOnline: _connectivityService.isOnline);
+      _statusSub = _connectivityService.statusStream.listen((online) {
+        state = state.copyWith(isOnline: online);
+      });
+      _reconnectSub = _connectivityService.reconnectStream.listen((_) {
+        triggerSyncPush();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _statusSub?.cancel();
+    _reconnectSub?.cancel();
+    super.dispose();
   }
 
   Future<void> loadPendingMutations() async {
@@ -68,7 +93,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
   }) async {
     await _repository.queueMutation(mutationType: mutationType, payload: payload);
     await loadPendingMutations();
-    await triggerSyncPush();
+    if (state.isOnline) {
+      await triggerSyncPush();
+    }
   }
 
   Future<void> triggerSyncPush() async {
@@ -92,5 +119,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
 final syncProvider = StateNotifierProvider<SyncNotifier, SyncState>((ref) {
   final repository = ref.watch(syncRepositoryProvider);
-  return SyncNotifier(repository);
+  final connectivity = ref.watch(connectivityServiceProvider);
+  return SyncNotifier(repository, connectivity);
 });
