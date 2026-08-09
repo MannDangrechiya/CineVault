@@ -48,6 +48,11 @@ class APIConfig(BaseModel):
     gemini_api_key: Optional[str] = os.getenv("GEMINI_API_KEY")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
+    # Ingestion Provider Configuration
+    ingestion_mode: str = os.getenv("INGESTION_MODE", "mock")
+    kobis_api_key: Optional[str] = os.getenv("KOBIS_API_KEY")
+    tvdb_api_key: Optional[str] = os.getenv("TVDB_API_KEY")
+
     @property
     def database_url(self) -> str:
         return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.pgbouncer_host}:{self.pgbouncer_port}/{self.postgres_db}"
