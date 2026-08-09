@@ -1,27 +1,16 @@
-// CineVault OS — Client API Configuration Baseline
-// Defines server endpoint routes, default timeouts, and client headers
+// CineVault OS — Client API Configuration Baseline (Phase 9.11)
+// Defines server endpoint routes, default timeouts, and Kong API Gateway routing
 
 import 'package:flutter/foundation.dart';
 
 class ApiConfig {
-  /// Base API URL resolved by environment.
+  /// Base API URL resolved by environment and Kong API Gateway settings.
   ///
   /// Selection priority:
   ///   1. Compile-time override via `--dart-define=API_BASE_URL=<url>`
-  ///   2. Production release mode → HTTPS production gateway
-  ///   3. Android debug default → `10.0.2.2` (standard emulator→host mapping)
-  ///   4. Everything else (iOS simulator, desktop, web) → `localhost`
-  ///
-  /// **Physical Android device testing:**
-  /// The Android emulator default `10.0.2.2` does NOT work on a real phone.
-  /// Find your PC's Wi-Fi IPv4 address (`ipconfig` on Windows) and run:
-  /// ```
-  /// flutter run --dart-define=API_BASE_URL=http://<YOUR-PC-LAN-IP>:8000
-  /// ```
-  /// Example: `flutter run --dart-define=API_BASE_URL=http://192.168.29.87:8000`
-  ///
-  /// Ensure the FastAPI backend is started with `host=0.0.0.0` (the default
-  /// in `services/api/main.py`) so it accepts connections from the LAN.
+  ///   2. Production release mode → Kong Gateway fronted URL (`https://api.cinevault.org` / `http://localhost:8000`)
+  ///   3. Android debug default → `http://10.0.2.2:8000` (standard emulator→host Kong mapping)
+  ///   4. Everything else (iOS simulator, desktop, web) → `http://localhost:8000`
   static String get baseUrl {
     const overrideUrl = String.fromEnvironment('API_BASE_URL');
     if (overrideUrl.isNotEmpty) {
@@ -29,22 +18,24 @@ class ApiConfig {
     }
 
     if (kReleaseMode) {
-      return 'https://api.cinevault.internal';
+      return 'https://api.cinevault.org';
     }
 
-    // Android emulator maps 10.0.2.2 → host machine's localhost.
-    // Physical devices MUST use --dart-define override above.
+    // Android emulator maps 10.0.2.2 → host machine's localhost (Kong Port 8000).
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       return 'http://10.0.2.2:8000';
     }
 
-    // iOS simulator shares host network; desktop and web use localhost directly.
+    // iOS simulator shares host network; desktop and web use localhost directly via Kong gateway port 8000.
     return 'http://localhost:8000';
   }
 
   // Timeout settings
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 15);
+
+  // Endpoints — Auth (9.8)
+  static const String loginEndpoint = '/v1/auth/login';
 
   // Endpoints — Canonical & Discovery (8.1, 8.6)
   static const String titlesEndpoint = '/v1/titles';
