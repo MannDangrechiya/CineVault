@@ -20,14 +20,12 @@ try:
 except ImportError:  # pragma: no cover
     _JOSE_AVAILABLE = False
 
-# Lazy-import passlib for bcrypt password verification
+# Import bcrypt directly for password verification
 try:
-    from passlib.context import CryptContext
-    _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    _PASSLIB_AVAILABLE = True
+    import bcrypt
+    _BCRYPT_AVAILABLE = True
 except ImportError:  # pragma: no cover
-    _PASSLIB_AVAILABLE = False
-    _pwd_context = None
+    _BCRYPT_AVAILABLE = False
 
 router = APIRouter(prefix="/v1/auth", tags=["Authentication & Identity"])
 
@@ -55,8 +53,8 @@ def _load_local_user_store() -> dict:
         os.getenv("DEV_USER_EMAIL", "dev@cinevault.local"): {
             "hash": os.getenv(
                 "DEV_USER_PASSWORD_HASH",
-                # Default hash for password "devpass" — CHANGE IN YOUR .env
-                "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TiGrmKGVkU2U4q3FJR8rMJWOF8Bu",
+                # Hash for password "devpass"
+                "$2b$12$PVfblhI8qmxxO1ZbUoqIr.U.zkYngh4J9jLz5MxXcyCZPUB69DstG",
             ),
             "user_id": os.getenv(
                 "DEV_USER_UUID",
@@ -67,8 +65,8 @@ def _load_local_user_store() -> dict:
         os.getenv("DEV_CURATOR_EMAIL", "curator@cinevault.local"): {
             "hash": os.getenv(
                 "DEV_CURATOR_PASSWORD_HASH",
-                # Default hash for password "curatorpass" — CHANGE IN YOUR .env
-                "$2b$12$vXJQ2lM3XCo1mOaFZTrJQOFKLKJ6cLbhKV3ViVJC6Fk6GiOrjLqT6",
+                # Hash for password "curatorpass"
+                "$2b$12$Yw5cy4oqZ80UoPxN/22V3uxLLYR73Dhy2dFGGBHJafogPcCUXVhXS",
             ),
             "user_id": os.getenv(
                 "DEV_CURATOR_UUID",
@@ -169,12 +167,12 @@ async def login(body: LoginRequest):
             detail="Both email and password are required.",
         )
 
-    if not _PASSLIB_AVAILABLE or _pwd_context is None:
+    if not _BCRYPT_AVAILABLE:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=(
-                "passlib is not installed. Cannot verify passwords. "
-                "Run: pip install 'passlib[bcrypt]'"
+                "bcrypt is not installed. Cannot verify passwords. "
+                "Run: pip install bcrypt"
             ),
         )
 
@@ -193,7 +191,14 @@ async def login(body: LoginRequest):
         )
 
     # --- Password verification (bcrypt constant-time compare) ---
-    password_valid = _pwd_context.verify(body.password, user_record["hash"])
+    try:
+        password_bytes = body.password.encode("utf-8")[:72]
+        hash_bytes = user_record["hash"].encode("utf-8")
+        password_valid = bcrypt.checkpw(password_bytes, hash_bytes)
+    except Exception as exc:
+        logger.error("Bcrypt checkpw failed: %s", exc)
+        password_valid = False
+
     if not password_valid:
         logger.warning("Failed password verification for email: %s", body.email)
         raise HTTPException(
