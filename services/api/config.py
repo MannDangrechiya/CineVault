@@ -53,6 +53,11 @@ class APIConfig(BaseModel):
     kobis_api_key: Optional[str] = os.getenv("KOBIS_API_KEY")
     tvdb_api_key: Optional[str] = os.getenv("TVDB_API_KEY")
 
+    # S3 & CDN Storage Configuration (Phase 9.12)
+    s3_endpoint_url: str = os.getenv("S3_ENDPOINT_URL", "http://localhost:9000")
+    s3_artwork_bucket: str = os.getenv("S3_ARTWORK_BUCKET", "cinevault-dev-artwork")
+    cdn_base_url: str = os.getenv("CDN_BASE_URL", "https://cdn.cinevault.org/artwork")
+
     @property
     def database_url(self) -> str:
         return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.pgbouncer_host}:{self.pgbouncer_port}/{self.postgres_db}"

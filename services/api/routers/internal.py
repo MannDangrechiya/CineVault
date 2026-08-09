@@ -78,6 +78,20 @@ async def reject_candidate(
         rationale=body.rationale
     )
 
+from pydantic import BaseModel
+from ..storage import storage_adapter
+
+class ArtworkUploadRequest(BaseModel):
+    filename: str
+    content_type: str = "image/jpeg"
+    folder: str = "posters"
+    file_base64: str
+
+class ArtworkUploadResponse(BaseModel):
+    cdn_url: str
+    filename: str
+    object_key: str
+
 @router.get("/ai/proposals", response_model=List[AIProposalSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def list_ai_proposals(
     claims: SecurityTokenClaims = Depends(require_curator),
@@ -85,3 +99,29 @@ async def list_ai_proposals(
 ):
     """Inspects CAT-6 AI proposal candidates. AI endpoints cannot directly write to CAT-1."""
     return await quality_repository.list_ai_proposals(db=db)
+
+@router.post("/artwork/upload", response_model=ArtworkUploadResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
+async def upload_artwork(
+    body: ArtworkUploadRequest,
+    claims: SecurityTokenClaims = Depends(require_curator),
+):
+    """Uploads artwork image to S3/MinIO object storage bucket and returns canonical CDN URL."""
+    import base64
+    try:
+        file_bytes = base64.b64decode(body.file_base64)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid base64 artwork content.")
+
+    cdn_url = storage_adapter.upload_artwork(
+        file_bytes=file_bytes,
+        filename=body.filename,
+        content_type=body.content_type,
+        folder=body.folder,
+    )
+    object_key = storage_adapter.generate_object_key(body.filename, folder=body.folder)
+
+    return ArtworkUploadResponse(
+        cdn_url=cdn_url,
+        filename=body.filename,
+        object_key=object_key,
+    )

@@ -50,15 +50,18 @@ class RBACPolicyEngine:
 
     @staticmethod
     def is_authenticated_user(claims: SecurityTokenClaims) -> bool:
-        return "AuthenticatedUser" in claims.roles or "Curator" in claims.roles or "SystemAdmin" in claims.roles
+        roles = {r.lower() for r in claims.roles}
+        return bool(roles.intersection({"authenticateduser", "authenticated_user", "curator", "systemadmin", "system_admin"}))
 
     @staticmethod
     def is_curator(claims: SecurityTokenClaims) -> bool:
-        return "Curator" in claims.roles or "SystemAdmin" in claims.roles
+        roles = {r.lower() for r in claims.roles}
+        return bool(roles.intersection({"curator", "systemadmin", "system_admin"}))
 
     @staticmethod
     def is_system_admin(claims: SecurityTokenClaims) -> bool:
-        return "SystemAdmin" in claims.roles
+        roles = {r.lower() for r in claims.roles}
+        return bool(roles.intersection({"systemadmin", "system_admin"}))
 
     @classmethod
     def enforce_read_access(cls, claims: typing.Optional[SecurityTokenClaims]) -> None:
