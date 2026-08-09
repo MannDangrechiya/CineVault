@@ -1,4 +1,5 @@
-// CineVault OS — Auth Riverpod Provider & State Management (Phase 9.8)
+// CineVault OS — Auth Riverpod Provider & State Management (Phase 9.8 — P3 Fix)
+// Strict client-side RBAC guards and session state management.
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/repositories/auth_repository_impl.dart';
@@ -21,6 +22,18 @@ class AuthState {
     this.errorMessage,
     this.session,
   });
+
+  bool get isCurator {
+    if (!isAuthenticated || session == null) return false;
+    final roles = session!.roles.map((r) => r.toLowerCase()).toSet();
+    return roles.contains('curator') || roles.contains('systemadmin') || roles.contains('system_admin');
+  }
+
+  bool get isSystemAdmin {
+    if (!isAuthenticated || session == null) return false;
+    final roles = session!.roles.map((r) => r.toLowerCase()).toSet();
+    return roles.contains('systemadmin') || roles.contains('system_admin');
+  }
 
   AuthState copyWith({
     bool? isAuthenticated,
@@ -62,9 +75,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         );
       }
     } catch (e) {
+      // Strict security: Any session read error strictly invalidates authentication.
       state = state.copyWith(
         isAuthenticated: false,
         isLoading: false,
+        session: null,
         errorMessage: e.toString(),
       );
     }
@@ -84,10 +99,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
       state = state.copyWith(
         isAuthenticated: false,
         isLoading: false,
+        session: null,
         errorMessage: 'Invalid credentials or login failed.',
       );
       return false;
     }
+  }
+
+  bool canAccessControlRoom() {
+    return state.isCurator;
   }
 
   Future<void> logout() async {
@@ -100,6 +120,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     state = const AuthState(
       isAuthenticated: false,
       errorMessage: 'Authentication session expired. Please log in again.',
+    );
+  }
+
+  void handle403Forbidden() {
+    state = state.copyWith(
+      errorMessage: 'Access denied: Curator or SystemAdmin role required.',
     );
   }
 }

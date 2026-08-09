@@ -40,7 +40,7 @@ class FakeSyncRepository implements SyncRepositoryImpl {
 
 void main() {
   test('ConnectivityService fires reconnect event on offline to online transition', () async {
-    final service = ConnectivityService(initialOnline: false);
+    final service = ConnectivityService(initialOnline: false, enableOsListener: false);
     int reconnectEventCount = 0;
 
     service.reconnectStream.listen((_) {
@@ -55,7 +55,7 @@ void main() {
   });
 
   test('ConnectivityService debounces flapping connection state changes', () async {
-    final service = ConnectivityService(initialOnline: false);
+    final service = ConnectivityService(initialOnline: false, enableOsListener: false);
     int reconnectEventCount = 0;
 
     service.reconnectStream.listen((_) {
@@ -78,7 +78,7 @@ void main() {
 
   test('SyncNotifier automatically triggers sync push on debounced reconnect', () async {
     final fakeRepo = FakeSyncRepository();
-    final connectivity = ConnectivityService(initialOnline: false);
+    final connectivity = ConnectivityService(initialOnline: false, enableOsListener: false);
     final notifier = SyncNotifier(fakeRepo, connectivity);
 
     expect(fakeRepo.syncPushCallCount, equals(0));
