@@ -482,6 +482,6 @@ Antigravity (or whichever agent executes a phase) should manage GitHub itself, n
 | 9.9 | Auto-sync on reconnect | C | DONE | `fix/9.9-auto-sync-reconnect` | Commit `99dc84e` |
 | 9.10 | Keycloak OIDC live | D | DONE | `fix/9.10-keycloak-oidc` | Commit `af1813b` |
 | 9.11 | Kong gateway wiring | D | DONE | `fix/9.11-kong-gateway` | Commit `9c0b765` |
-| 9.12 | CDN/object storage for artwork | D | TODO | | |
+| 9.12 | CDN/object storage for artwork | D | DONE | `fix/9.12-cdn-object-storage` | Commit `f0292e6` |
 
 Update this table as phases complete — that's the single source of truth for "what's actually fixed" going forward, so the next audit isn't starting from scratch.
