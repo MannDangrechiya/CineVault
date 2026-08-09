@@ -1,10 +1,12 @@
-// CineVault OS — Main Client Shell (Build Unit 8.11)
-// Clean navigation shell connecting Catalog, Search, Recommendations, AI Assistant, Offline Outbox & Control Room
+// CineVault OS — Main Client Shell & Authentication Root (Build Unit 8.11)
+// Clean navigation shell connecting Catalog, Search, Recommendations, AI Assistant, Offline Outbox, Control Room & Login Gate
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
+import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/control_room_provider.dart';
+import 'presentation/screens/login_screen.dart';
 import 'presentation/screens/catalog_screen.dart';
 import 'presentation/screens/search_screen.dart';
 import 'presentation/screens/recommendations_screen.dart';
@@ -21,8 +23,29 @@ class CineVaultApp extends StatelessWidget {
       title: 'CineVault OS',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: const MainShellScreen(),
+      home: const RootAuthGate(),
     );
+  }
+}
+
+class RootAuthGate extends ConsumerWidget {
+  const RootAuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+
+    if (authState.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (!authState.isAuthenticated) {
+      return const LoginScreen();
+    }
+
+    return const MainShellScreen();
   }
 }
 
@@ -87,6 +110,18 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     final safeIndex = _currentIndex < screens.length ? _currentIndex : 0;
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('CineVault OS'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Logout',
+            onPressed: () {
+              ref.read(authProvider.notifier).logout();
+            },
+          ),
+        ],
+      ),
       body: IndexedStack(
         index: safeIndex,
         children: screens,

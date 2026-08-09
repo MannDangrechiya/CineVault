@@ -14,6 +14,7 @@ from .errors import APIError, api_error_handler, http_exception_handler, validat
 from .telemetry import CorrelationAndMetricsMiddleware, logger
 from .routers import (
     health,
+    auth,
     titles,
     search,
     personal,
@@ -78,6 +79,7 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 
 # 4. Mount Routers
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(titles.router)
 app.include_router(search.router)
 app.include_router(personal.router)

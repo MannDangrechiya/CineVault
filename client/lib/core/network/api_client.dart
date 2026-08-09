@@ -10,9 +10,13 @@ import '../utils/uuid_util.dart';
 class ApiClient {
   final Dio _dio;
   final SecureStorageService _secureStorage;
+  final void Function()? onUnauthorized;
 
-  ApiClient({Dio? dio, SecureStorageService? secureStorage})
-      : _dio = dio ??
+  ApiClient({
+    Dio? dio,
+    SecureStorageService? secureStorage,
+    this.onUnauthorized,
+  })  : _dio = dio ??
             Dio(
               BaseOptions(
                 baseUrl: ApiConfig.baseUrl,
@@ -39,7 +43,11 @@ class ApiClient {
 
           return handler.next(options);
         },
-        onError: (DioException error, handler) {
+        onError: (DioException error, handler) async {
+          if (error.response?.statusCode == 401) {
+            await _secureStorage.clearSession();
+            onUnauthorized?.call();
+          }
           return handler.next(error);
         },
       ),
