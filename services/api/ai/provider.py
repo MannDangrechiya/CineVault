@@ -9,7 +9,13 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 
+from ..config import config
 from ..schemas.ai_assistant import AIProviderEnum, AIIntentExtraction
+
+try:
+    from openai import AsyncOpenAI
+except ImportError:
+    AsyncOpenAI = None
 
 logger = logging.getLogger("cinevault.ai.provider")
 
@@ -177,21 +183,62 @@ class MockAIProviderAdapter(AIProviderAdapter):
         }
 
 class OpenAIProviderAdapter(AIProviderAdapter):
-    """Server-side OpenAI provider integration with automatic fallback to Mock provider."""
+    """Live OpenAI API provider integration for CineVault OS AI Assistant."""
 
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+    def __init__(self, api_key: Optional[str] = None, client: Optional[Any] = None, model: Optional[str] = None):
+        self.api_key = api_key or config.openai_api_key or os.getenv("OPENAI_API_KEY")
+        self.model = model or config.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
         self.fallback = MockAIProviderAdapter()
+        if client:
+            self.client = client
+        elif self.api_key and AsyncOpenAI is not None:
+            self.client = AsyncOpenAI(api_key=self.api_key)
+        else:
+            self.client = None
 
     @property
     def provider_enum(self) -> AIProviderEnum:
         return AIProviderEnum.OPENAI
 
     async def extract_intent(self, raw_query: str) -> AIIntentExtraction:
-        if not self.api_key:
-            logger.info("OpenAI API key missing; falling back to Mock AI Provider")
+        sanitized = PromptSanitizer.sanitize(raw_query)
+        if not self.api_key or not self.client:
+            logger.info("OpenAI API key missing; delegating to fallback Mock provider")
             return await self.fallback.extract_intent(raw_query)
-        return await self.fallback.extract_intent(raw_query)
+
+        system_prompt = (
+            "You are an intent extraction assistant for CineVault movie catalog search. "
+            "Analyze the user query and output JSON with fields: "
+            "target_genres (list of str), target_directors (list of str), target_actors (list of str), "
+            "min_year (int or null), max_runtime (int or null), detected_intent_mode (one of GENERAL_SEARCH, RECOMMENDATION, SIMILARITY)."
+        )
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": sanitized}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0
+            )
+            content = response.choices[0].message.content or "{}"
+            parsed = json.loads(content)
+
+            return AIIntentExtraction(
+                raw_query=raw_query,
+                sanitized_query=sanitized,
+                target_genres=parsed.get("target_genres") or [],
+                target_directors=parsed.get("target_directors") or [],
+                target_actors=parsed.get("target_actors") or [],
+                min_year=parsed.get("min_year"),
+                max_runtime=parsed.get("max_runtime"),
+                detected_intent_mode=parsed.get("detected_intent_mode") or "GENERAL_SEARCH"
+            )
+        except Exception as e:
+            logger.error(f"OpenAI extract_intent failed: {e}", exc_info=True)
+            raise RuntimeError(f"OpenAI AI Provider error: {e}")
 
     async def generate_assistant_response(
         self,
@@ -199,9 +246,31 @@ class OpenAIProviderAdapter(AIProviderAdapter):
         intent: AIIntentExtraction,
         matched_titles: List[Dict[str, Any]]
     ) -> str:
-        if not self.api_key:
+        if not self.api_key or not self.client:
+            logger.info("OpenAI API key missing; delegating to fallback Mock provider")
             return await self.fallback.generate_assistant_response(sanitized_query, intent, matched_titles)
-        return await self.fallback.generate_assistant_response(sanitized_query, intent, matched_titles)
+
+        system_prompt = (
+            "You are the CineVault AI Assistant. Answer the user query strictly based on the provided canonical catalog titles. "
+            "Never invent or hallucinate titles not present in the catalog context. "
+            "If matched_titles is empty, state clearly that no matching titles were found."
+        )
+
+        user_content = f"User Query: {sanitized_query}\nMatched Catalog Titles: {json.dumps(matched_titles)}"
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                temperature=0.3
+            )
+            return response.choices[0].message.content or "No response returned from OpenAI."
+        except Exception as e:
+            logger.error(f"OpenAI generate_assistant_response failed: {e}", exc_info=True)
+            raise RuntimeError(f"OpenAI AI Provider error: {e}")
 
     async def generate_proposal(
         self,
@@ -210,9 +279,50 @@ class OpenAIProviderAdapter(AIProviderAdapter):
         current_value: Optional[str],
         evidence_summary: str
     ) -> Dict[str, Any]:
-        if not self.api_key:
+        if not self.api_key or not self.client:
+            logger.info("OpenAI API key missing; delegating to fallback Mock provider")
             return await self.fallback.generate_proposal(target_entity_type, attribute_name, current_value, evidence_summary)
-        return await self.fallback.generate_proposal(target_entity_type, attribute_name, current_value, evidence_summary)
+
+        system_prompt = (
+            "You are CineVault AI Curation Assistant. Evaluate the evidence summary and current value for a canonical entity attribute. "
+            "Output JSON with fields: proposed_value (str), confidence_score (float between 0.0 and 1.0), reasoning (str)."
+        )
+
+        user_content = (
+            f"Target Entity Type: {target_entity_type}\n"
+            f"Attribute Name: {attribute_name}\n"
+            f"Current Value: {current_value}\n"
+            f"Evidence Summary: {evidence_summary}"
+        )
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1
+            )
+            content = response.choices[0].message.content or "{}"
+            parsed = json.loads(content)
+
+            return {
+                "proposed_value": parsed.get("proposed_value", f"Proposal for {attribute_name}"),
+                "confidence_score": float(parsed.get("confidence_score", 0.85)),
+                "evidence_payload": {
+                    "summary": evidence_summary,
+                    "reasoning": parsed.get("reasoning", ""),
+                    "current_value": current_value,
+                    "provider": "OPENAI",
+                    "model": self.model,
+                    "prompt_version": "v1.0.0"
+                }
+            }
+        except Exception as e:
+            logger.error(f"OpenAI generate_proposal failed: {e}", exc_info=True)
+            raise RuntimeError(f"OpenAI AI Provider error: {e}")
 
 class GeminiProviderAdapter(AIProviderAdapter):
     """Server-side Gemini provider integration with automatic fallback to Mock provider."""

@@ -2,6 +2,7 @@
 # Phase 3 Local Development Configuration Baseline
 
 import os
+from typing import Optional
 from pydantic import BaseModel
 
 class APIConfig(BaseModel):
@@ -39,6 +40,11 @@ class APIConfig(BaseModel):
     rate_limit_sync: int = 60
     rate_limit_personal_write: int = 120
     rate_limit_internal_admin: int = 1200
+
+    # AI Provider Configuration
+    ai_provider: str = os.getenv("AI_PROVIDER", "mock")
+    openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
+    openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     @property
     def database_url(self) -> str:
