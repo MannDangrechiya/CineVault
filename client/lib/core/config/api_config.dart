@@ -10,6 +10,8 @@ class ApiConfig {
   ///   1. Compile-time override via `--dart-define=API_BASE_URL=<url>`
   ///   2. Production release mode → Kong Gateway fronted URL (`https://api.cinevault.org` / `http://localhost:8000`)
   ///   3. Android debug default → `http://10.0.2.2:8000` (standard emulator→host Kong mapping)
+  ///      For **physical devices**, pass your PC's LAN IP at build time:
+  ///        flutter run --dart-define=API_BASE_URL=http://<YOUR_PC_LAN_IP>:8000
   ///   4. Everything else (iOS simulator, desktop, web) → `http://localhost:8000`
   static String get baseUrl {
     const overrideUrl = String.fromEnvironment('API_BASE_URL');
@@ -21,13 +23,13 @@ class ApiConfig {
       return 'https://api.cinevault.org';
     }
 
-    // Android emulator maps 10.0.2.2 → host machine's localhost (Kong Port 8000).
+    // For Android devices: with `adb reverse tcp:8000 tcp:8000` or local testing, 127.0.0.1 connects to PC server.
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      return 'http://10.0.2.2:8000';
+      return 'http://127.0.0.1:8000';
     }
 
-    // iOS simulator shares host network; desktop and web use localhost directly via Kong gateway port 8000.
-    return 'http://localhost:8000';
+    // iOS simulator shares host network; desktop and web use 127.0.0.1 directly.
+    return 'http://127.0.0.1:8000';
   }
 
   // Timeout settings

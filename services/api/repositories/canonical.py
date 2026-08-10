@@ -22,7 +22,7 @@ from ..schemas.titles import (
 
 logger = logging.getLogger("cinevault.repositories.canonical")
 
-# Static seed fallback for unit test environments when PostgreSQL is unpopulated
+# Static seed fallback for local development and unit test environments when PostgreSQL is unpopulated
 SEED_FALLBACK_TITLES = {
     "018f2e4a-7b31-7000-8000-123456789abc": {
         "id": "018f2e4a-7b31-7000-8000-123456789abc",
@@ -35,13 +35,202 @@ SEED_FALLBACK_TITLES = {
         "synopsis": "Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.",
         "genres": ["Drama", "Thriller", "Comedy"],
         "has_licensed_artwork": True,
-        "poster_url": "https://cdn.cinevault.org/artwork/posters/mov-000001.jpg",
-        "backdrop_url": "https://cdn.cinevault.org/artwork/backdrops/mov-000001.jpg",
+        "poster_url": "https://image.tmdb.org/t/p/w500/7IiTTgloJzvGI1TAYGlC2z2zOZB.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/hiKmpZMGZOSXAAtWwhZIz6wXxpy.jpg",
         "primary_edition": {
             "id": "018f2e4a-7b31-7000-8000-edition-001",
             "title_id": "018f2e4a-7b31-7000-8000-123456789abc",
             "edition_name": "Theatrical Cut",
             "runtime_minutes": 132,
+            "format": "FEATURE"
+        }
+    },
+    "018f2e4a-7b31-7000-8000-123456789abd": {
+        "id": "018f2e4a-7b31-7000-8000-123456789abd",
+        "display_id": "MOV-000002",
+        "canonical_title": "Sholay",
+        "original_title": "शोले",
+        "content_type": "MOVIE",
+        "production_year": 1975,
+        "origin_country": "IN",
+        "synopsis": "After his family is murdered by a notorious bandit, a former police officer hires two ex-convicts to capture the ruthless outlaw.",
+        "genres": ["Action", "Adventure", "Drama"],
+        "has_licensed_artwork": True,
+        "poster_url": "https://image.tmdb.org/t/p/w500/A5wWkW942Lnd0zIexvTqX64kU6a.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/A5wWkW942Lnd0zIexvTqX64kU6a.jpg",
+        "primary_edition": {
+            "id": "018f2e4a-7b31-7000-8000-edition-002",
+            "title_id": "018f2e4a-7b31-7000-8000-123456789abd",
+            "edition_name": "Standard Cut",
+            "runtime_minutes": 204,
+            "format": "FEATURE"
+        }
+    },
+    "018f2e4a-7b31-7000-8000-123456789abe": {
+        "id": "018f2e4a-7b31-7000-8000-123456789abe",
+        "display_id": "MOV-000003",
+        "canonical_title": "3 Idiots",
+        "original_title": "3 इडिएट",
+        "content_type": "MOVIE",
+        "production_year": 2009,
+        "origin_country": "IN",
+        "synopsis": "Two friends search for their long lost companion while reflecting on their college days and the eccentric free-thinker who changed their lives.",
+        "genres": ["Comedy", "Drama"],
+        "has_licensed_artwork": True,
+        "poster_url": "https://image.tmdb.org/t/p/w500/u7i1b1zT0Z9m2B1sZ41n6kY.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/u7i1b1zT0Z9m2B1sZ41n6kY.jpg",
+        "primary_edition": {
+            "id": "018f2e4a-7b31-7000-8000-edition-003",
+            "title_id": "018f2e4a-7b31-7000-8000-123456789abe",
+            "edition_name": "Theatrical Cut",
+            "runtime_minutes": 170,
+            "format": "FEATURE"
+        }
+    },
+    "018f2e4a-7b31-7000-8000-123456789abf": {
+        "id": "018f2e4a-7b31-7000-8000-123456789abf",
+        "display_id": "MOV-000004",
+        "canonical_title": "The Dark Knight",
+        "original_title": "The Dark Knight",
+        "content_type": "MOVIE",
+        "production_year": 2008,
+        "origin_country": "US",
+        "synopsis": "When the menace known as the Joker wreaks havoc and chaos on the people of Gotham, Batman must accept one of the greatest psychological tests of his ability to fight injustice.",
+        "genres": ["Action", "Crime", "Drama"],
+        "has_licensed_artwork": True,
+        "poster_url": "https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/nMK28FiMGfEWDyIOwcLLCePOvYr.jpg",
+        "primary_edition": {
+            "id": "018f2e4a-7b31-7000-8000-edition-004",
+            "title_id": "018f2e4a-7b31-7000-8000-123456789abf",
+            "edition_name": "Theatrical Cut",
+            "runtime_minutes": 152,
+            "format": "FEATURE"
+        }
+    },
+    "018f2e4a-7b31-7000-8000-123456789ac0": {
+        "id": "018f2e4a-7b31-7000-8000-123456789ac0",
+        "display_id": "MOV-000005",
+        "canonical_title": "Inception",
+        "original_title": "Inception",
+        "content_type": "MOVIE",
+        "production_year": 2010,
+        "origin_country": "US",
+        "synopsis": "A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.",
+        "genres": ["Action", "Sci-Fi", "Adventure"],
+        "has_licensed_artwork": True,
+        "poster_url": "https://image.tmdb.org/t/p/w500/oYuLEW92A1s3pX76M9T20Xx.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/s3TBrRGB1iav7ySaNx3z7k2P.jpg",
+        "primary_edition": {
+            "id": "018f2e4a-7b31-7000-8000-edition-005",
+            "title_id": "018f2e4a-7b31-7000-8000-123456789ac0",
+            "edition_name": "Theatrical Cut",
+            "runtime_minutes": 148,
+            "format": "FEATURE"
+        }
+    },
+    "018f2e4a-7b31-7000-8000-123456789ac1": {
+        "id": "018f2e4a-7b31-7000-8000-123456789ac1",
+        "display_id": "MOV-000006",
+        "canonical_title": "Dangal",
+        "original_title": "दंगल",
+        "content_type": "MOVIE",
+        "production_year": 2016,
+        "origin_country": "IN",
+        "synopsis": "Former wrestler Mahavir Singh Phogat trains his daughters Geeta and Babita to become world-class wrestlers against all societal odds.",
+        "genres": ["Biography", "Drama", "Sport"],
+        "has_licensed_artwork": True,
+        "poster_url": "https://image.tmdb.org/t/p/w500/mw884g3tJ3S1e7N6W5e8B92n.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/mw884g3tJ3S1e7N6W5e8B92n.jpg",
+        "primary_edition": {
+            "id": "018f2e4a-7b31-7000-8000-edition-006",
+            "title_id": "018f2e4a-7b31-7000-8000-123456789ac1",
+            "edition_name": "Theatrical Cut",
+            "runtime_minutes": 161,
+            "format": "FEATURE"
+        }
+    },
+    "018f2e4a-7b31-7000-8000-123456789ac2": {
+        "id": "018f2e4a-7b31-7000-8000-123456789ac2",
+        "display_id": "MOV-000007",
+        "canonical_title": "RRR",
+        "original_title": "RRR (Hindi Dubbed)",
+        "content_type": "MOVIE",
+        "production_year": 2022,
+        "origin_country": "IN",
+        "synopsis": "A fearless revolutionary and an officer in the British force bond before discovering each other's true secret missions in 1920s India.",
+        "genres": ["Action", "Drama", "History"],
+        "has_licensed_artwork": True,
+        "poster_url": "https://image.tmdb.org/t/p/w500/nEuF2GGqAaowhanHbdvW3h86W31.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/nEuF2GGqAaowhanHbdvW3h86W31.jpg",
+        "primary_edition": {
+            "id": "018f2e4a-7b31-7000-8000-edition-007",
+            "title_id": "018f2e4a-7b31-7000-8000-123456789ac2",
+            "edition_name": "Hindi Edition",
+            "runtime_minutes": 187,
+            "format": "FEATURE"
+        }
+    },
+    "018f2e4a-7b31-7000-8000-123456789ac3": {
+        "id": "018f2e4a-7b31-7000-8000-123456789ac3",
+        "display_id": "MOV-000008",
+        "canonical_title": "The Godfather",
+        "original_title": "The Godfather",
+        "content_type": "MOVIE",
+        "production_year": 1972,
+        "origin_country": "US",
+        "synopsis": "Don Vito Corleone, head of a mafia family, decides to hand over his empire to his youngest son Michael. However, his decision unintentionally puts the lives of his loved ones in grave danger.",
+        "genres": ["Crime", "Drama"],
+        "has_licensed_artwork": True,
+        "poster_url": "https://image.tmdb.org/t/p/w500/3bhkrj58Vtu7enYsRolD1fZdja1.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/rSPw7tgCH9c6NqICZefy2aZvdR.jpg",
+        "primary_edition": {
+            "id": "018f2e4a-7b31-7000-8000-edition-008",
+            "title_id": "018f2e4a-7b31-7000-8000-123456789ac3",
+            "edition_name": "Theatrical Cut",
+            "runtime_minutes": 175,
+            "format": "FEATURE"
+        }
+    },
+    "018f2e4a-7b31-7000-8000-123456789ac4": {
+        "id": "018f2e4a-7b31-7000-8000-123456789ac4",
+        "display_id": "TV-000001",
+        "canonical_title": "Sacred Games",
+        "original_title": "सेक्रेड गेम्स",
+        "content_type": "TV_SERIES",
+        "production_year": 2018,
+        "origin_country": "IN",
+        "synopsis": "A linkage in their pasts leads an honest police officer to a fugitive gang boss, whose cryptic warning spurs the officer to save Mumbai from a cataclysm.",
+        "genres": ["Crime", "Drama", "Thriller"],
+        "has_licensed_artwork": True,
+        "poster_url": "https://image.tmdb.org/t/p/w500/zX95tFj2nB2s4N8mN1L.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/zX95tFj2nB2s4N8mN1L.jpg",
+        "primary_edition": {
+            "id": "018f2e4a-7b31-7000-8000-edition-009",
+            "title_id": "018f2e4a-7b31-7000-8000-123456789ac4",
+            "edition_name": "Season 1 & 2",
+            "runtime_minutes": 50,
+            "format": "SERIES"
+        }
+    },
+    "018f2e4a-7b31-7000-8000-123456789ac5": {
+        "id": "018f2e4a-7b31-7000-8000-123456789ac5",
+        "display_id": "MOV-000009",
+        "canonical_title": "Interstellar",
+        "original_title": "Interstellar",
+        "content_type": "MOVIE",
+        "production_year": 2014,
+        "origin_country": "US",
+        "synopsis": "When Earth becomes uninhabitable in the future, a farmer and ex-NASA pilot, Joseph Cooper, is tasked to pilot a spacecraft, along with a team of researchers, to find a new planet for humans.",
+        "genres": ["Adventure", "Drama", "Sci-Fi"],
+        "has_licensed_artwork": True,
+        "poster_url": "https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
+        "backdrop_url": "https://image.tmdb.org/t/p/w1280/xJHokMbljvjADYdit5fK5VQsX2k.jpg",
+        "primary_edition": {
+            "id": "018f2e4a-7b31-7000-8000-edition-010",
+            "title_id": "018f2e4a-7b31-7000-8000-123456789ac5",
+            "edition_name": "Theatrical Cut",
+            "runtime_minutes": 169,
             "format": "FEATURE"
         }
     }
