@@ -14,8 +14,8 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController(text: 'curator@cinevault.org');
-  final _passwordController = TextEditingController(text: 'dev_password_123');
+  final _emailController = TextEditingController(text: 'curator@cinevault.local');
+  final _passwordController = TextEditingController(text: 'curatorpass');
 
   @override
   void dispose() {
@@ -145,15 +145,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       children: [
                         TextButton(
                           onPressed: () {
-                            _emailController.text = 'user@cinevault.org';
-                            _passwordController.text = 'password123';
+                            _emailController.text = 'dev@cinevault.local';
+                            _passwordController.text = 'devpass';
                           },
                           child: const Text('Fill User Demo'),
                         ),
                         TextButton(
                           onPressed: () {
-                            _emailController.text = 'curator@cinevault.org';
-                            _passwordController.text = 'password123';
+                            _emailController.text = 'curator@cinevault.local';
+                            _passwordController.text = 'curatorpass';
                           },
                           child: const Text('Fill Curator Demo'),
                         ),

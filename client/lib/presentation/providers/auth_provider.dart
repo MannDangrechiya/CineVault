@@ -96,11 +96,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
       return true;
     } catch (e) {
+      String msg = e.toString();
+      if (msg.contains('DioException') || msg.contains('SocketException') || msg.contains('connection')) {
+        msg = 'Unable to connect to CineVault server (port 8000). Please check if backend service is running.';
+      } else if (msg.contains('401')) {
+        msg = 'Invalid email or password. Please verify demo credentials.';
+      } else if (msg.contains('501')) {
+        msg = 'Direct login disabled in current environment mode.';
+      }
       state = state.copyWith(
         isAuthenticated: false,
         isLoading: false,
         session: null,
-        errorMessage: 'Invalid credentials or login failed.',
+        errorMessage: msg,
       );
       return false;
     }
