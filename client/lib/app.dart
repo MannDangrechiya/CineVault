@@ -11,6 +11,7 @@ import 'presentation/screens/catalog_screen.dart';
 import 'presentation/screens/search_screen.dart';
 import 'presentation/screens/recommendations_screen.dart';
 import 'presentation/screens/ai_assistant_screen.dart';
+import 'presentation/screens/swipe_discovery_screen.dart';
 import 'presentation/screens/sync_status_screen.dart';
 import 'presentation/screens/control_room_screen.dart';
 
@@ -66,6 +67,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
 
     final screens = <Widget>[
       const CatalogScreen(),
+      const SwipeDiscoveryScreen(),
       const SearchScreen(),
       const RecommendationsScreen(),
       const AiAssistantScreen(),
@@ -78,6 +80,11 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
         icon: Icon(Icons.movie_creation_outlined),
         activeIcon: Icon(Icons.movie_creation),
         label: 'Catalog',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.style_outlined),
+        activeIcon: Icon(Icons.style),
+        label: 'Swipe',
       ),
       const BottomNavigationBarItem(
         icon: Icon(Icons.search_outlined),
