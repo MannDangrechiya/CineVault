@@ -171,3 +171,95 @@ class TitleExternalIdModel(Base):
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
 
     title: Mapped[TitleModel] = relationship("TitleModel", back_populates="external_ids")
+
+class PersonExternalIdModel(Base):
+    __tablename__ = "person_external_id"
+    __table_args__ = {"schema": "canonical"}
+
+    mapping_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    person_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.person.person_id", ondelete="CASCADE"), nullable=False)
+    provider_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+class SeasonModel(Base):
+    __tablename__ = "season"
+    __table_args__ = {"schema": "canonical"}
+
+    season_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.title.title_id", ondelete="RESTRICT"), nullable=False)
+    season_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    season_name: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    overview: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+    episodes: Mapped[List["EpisodeModel"]] = relationship("EpisodeModel", back_populates="season", cascade="all, delete-orphan")
+
+class EpisodeModel(Base):
+    __tablename__ = "episode"
+    __table_args__ = {"schema": "canonical"}
+
+    episode_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    season_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.season.season_id", ondelete="RESTRICT"), nullable=False)
+    episode_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    episode_name: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    air_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    runtime_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    overview: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+    season: Mapped[SeasonModel] = relationship("SeasonModel", back_populates="episodes")
+
+class UniverseModel(Base):
+    __tablename__ = "universe"
+    __table_args__ = {"schema": "canonical"}
+
+    universe_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    overview: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+class FranchiseModel(Base):
+    __tablename__ = "franchise"
+    __table_args__ = {"schema": "canonical"}
+
+    franchise_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    universe_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.universe.universe_id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+
+class FranchiseEntryModel(Base):
+    __tablename__ = "franchise_entry"
+    __table_args__ = {"schema": "canonical"}
+
+    franchise_entry_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    franchise_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.franchise.franchise_id", ondelete="CASCADE"), nullable=False)
+    title_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.title.title_id", ondelete="RESTRICT"), nullable=False)
+    entry_type: Mapped[str] = mapped_column(String(64), default="CANONICAL", nullable=False)
+
+class ViewingOrderModel(Base):
+    __tablename__ = "viewing_order"
+    __table_args__ = {"schema": "canonical"}
+
+    viewing_order_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    franchise_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.franchise.franchise_id", ondelete="CASCADE"), nullable=False)
+    order_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    order_type: Mapped[str] = mapped_column(String(64), default="CHRONOLOGICAL", nullable=False)
+
+class ViewingOrderItemModel(Base):
+    __tablename__ = "viewing_order_item"
+    __table_args__ = {"schema": "canonical"}
+
+    item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    viewing_order_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.viewing_order.viewing_order_id", ondelete="CASCADE"), nullable=False)
+    title_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.title.title_id", ondelete="RESTRICT"), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+
+class TitleLanguageModel(Base):
+    __tablename__ = "title_lang"
+    __table_args__ = (
+        PrimaryKeyConstraint("title_id", "language_code"),
+        {"schema": "canonical"}
+    )
+
+    title_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.title.title_id", ondelete="CASCADE"))
+    language_code: Mapped[str] = mapped_column(String(3), nullable=False)
+
