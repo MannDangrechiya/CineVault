@@ -6,10 +6,12 @@ import os
 import time
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ..config import config
+from ..auth.dependencies import require_authenticated_user
+from ..auth.jwt_validator import SecurityTokenClaims
 
 logger = logging.getLogger("cinevault.routers.auth")
 
@@ -234,3 +236,27 @@ async def login(body: LoginRequest):
         email=body.email,
         roles=roles,
     )
+
+
+class UserIdentityResponse(BaseModel):
+    sub: str
+    email: Optional[str] = None
+    username: Optional[str] = None
+    roles: List[str] = []
+
+
+@router.get("/me", response_model=UserIdentityResponse)
+async def get_current_user_identity(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+):
+    """
+    Returns safe identity information for the current authenticated user.
+    Never exposes tokens, client secrets, or credentials.
+    """
+    return UserIdentityResponse(
+        sub=claims.sub,
+        email=claims.email,
+        username=claims.preferred_username,
+        roles=claims.roles,
+    )
+

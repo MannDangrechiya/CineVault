@@ -92,5 +92,7 @@ app.include_router(ai_assistant.internal_router)
 app.include_router(control_room.router)
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run("services.api.main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.getenv("PORT", "8002"))
+    uvicorn.run("services.api.main:app", host="0.0.0.0", port=port, reload=True)
