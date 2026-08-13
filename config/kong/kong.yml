@@ -3,7 +3,7 @@ _transform: true
 
 services:
   - name: cinevault-public-api
-    url: http://host.docker.internal:8002/v1
+    url: http://host.docker.internal:8002
     routes:
       - name: public-api-route
         paths:
@@ -41,7 +41,7 @@ services:
           max_age: 3600
 
   - name: cinevault-internal-api
-    url: http://host.docker.internal:8002/internal/v1
+    url: http://host.docker.internal:8002
     routes:
       - name: internal-api-route
         paths:
@@ -57,7 +57,7 @@ services:
           redis_timeout: 2000
 
   - name: cinevault-health-api
-    url: http://host.docker.internal:8002/health
+    url: http://host.docker.internal:8002
     routes:
       - name: health-api-route
         paths:
