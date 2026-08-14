@@ -311,6 +311,10 @@ class IngestionPipelineEngine:
             "records_conflicted": records_conflicted,
             "needs_review_count": needs_review_count,
             "duplicate_count": duplicate_count,
+            "new_candidates": records_valid - duplicate_count,
+            "existing_matches": duplicate_count,
+            "conflicts": records_conflicted,
+            "needs_review": needs_review_count,
             "error_count": error_count,
             "dry_run": dry_run,
             "candidate_results": candidate_results

@@ -71,6 +71,7 @@ class APIConfig(BaseModel):
 
     # Ingestion Provider Configuration
     ingestion_mode: str = os.getenv("INGESTION_MODE", "mock")
+    provider_api_key: Optional[str] = os.getenv("PROVIDER_API_KEY")
     kobis_api_key: Optional[str] = os.getenv("KOBIS_API_KEY")
     tvdb_api_key: Optional[str] = os.getenv("TVDB_API_KEY")
     tmdb_api_key: Optional[str] = os.getenv("TMDB_API_KEY")
@@ -117,7 +118,7 @@ class APIConfig(BaseModel):
         """
         if self.ingestion_mode != "mock":
             return self.ingestion_mode
-        if self.kobis_api_key or self.tvdb_api_key:
+        if self.kobis_api_key or self.tvdb_api_key or self.tmdb_api_key or self.provider_api_key:
             return "live"
         return "mock"
 

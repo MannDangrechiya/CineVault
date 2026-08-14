@@ -16,16 +16,31 @@
 
 ---
 
-## 1. Provider Status Taxonomy Legend
+## 1. Provider Activation & Licensing Taxonomy Legend
 
-Every provider record in this registry is classified using exactly one of the following statuses:
-
-* `CANDIDATE`: Potentially usable, pending detailed validation and project owner approval.
-* `CONDITIONAL`: Usable only if a specific licensing, contract, or permission condition is satisfied.
-* `RESTRICTED`: Potentially useful, but current public terms materially restrict intended CineVault persistent use.
-* `EXCLUDED`: Known public or legal terms make it unsuitable for CineVault's intended production use.
-* `DEFERRED`: Insufficient verified evidence or not currently required for initial phases.
-* `VERIFICATION-ONLY`: Useful as an authoritative verification source, but not intended for bulk catalog ingestion.
+Every provider record in the canonical registry is defined using **16 mandatory fields**:
+1. `provider`: Provider identifier key (e.g. `KOBIS`, `TMDB`, `WIKIDATA`)
+2. `dataset_api`: Dataset specification or API protocol (e.g. `KOBIS OpenAPI REST`, `TMDb API v3`)
+3. `source_type`: High-level source category (e.g. `OFFICIAL_BOX_OFFICE`, `GLOBAL_COMMUNITY_METADATA`)
+4. `official_url`: Primary documentation or portal URL
+5. `license`: Stated data license terms
+6. `attribution_requirement`: Mandatory attribution text or logo display requirements
+7. `commercial_use`: Commercial usage permission status (`PERMITTED`, `SERVER_SIDE_ONLY`, `LICENSED`, `PROHIBITED`, `RESTRICTED`)
+8. `redistribution`: Metadata redistribution rights & restrictions
+9. `rate_limit`: Operational rate limit boundary (e.g. `300 req/min`)
+10. `update_frequency`: Source refresh schedule (`REALTIME`, `HOURLY`, `DAILY`, `ANNUAL`)
+11. `authentication_requirements`: Required credentials (`API_KEY`, `BEARER_TOKEN`, `NONE`)
+12. `regions`: Covered geographical regions (e.g. `["KR"]`, `["GLOBAL"]`)
+13. `available_fields`: List of supplied metadata attributes
+14. `reliability`: Empirical score from `0.0` to `1.0`
+15. `last_reviewed`: Date of last legal & technical review
+16. `activation_status`: Operational status classification:
+    * `ACTIVE`: Approved, activated, and tested for production ingestion runs.
+    * `APPROVED`: Legal and technical evaluation complete; ready for activation.
+    * `REVIEW_REQUIRED`: Unverified licensing terms or pending legal evaluation.
+    * `RESEARCH`: Under preliminary evaluation.
+    * `SUSPENDED`: Temporarily or permanently disabled due to licensing or access restrictions.
+    * `RETIRED`: Excluded from production use due to license incompatibility.
 
 ---
 

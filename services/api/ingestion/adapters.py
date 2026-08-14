@@ -86,6 +86,13 @@ class KobisProviderAdapter(BaseProviderAdapter):
                         async with httpx.AsyncClient(timeout=10.0) as client:
                             response = await client.get(url, params=params)
 
+                    if response.status_code == 429:
+                        retry_after = response.headers.get("Retry-After")
+                        delay = float(retry_after) if retry_after and retry_after.replace(".", "", 1).isdigit() else (0.05 * (2 ** attempt))
+                        logger.warning(f"KOBIS API 429 Rate Limited. Waiting {delay}s...")
+                        await asyncio.sleep(delay)
+                        continue
+
                     response.raise_for_status()
                     data = response.json()
                     movie_info = data.get("movieInfoResult", {}).get("movieInfo", {})
@@ -98,17 +105,132 @@ class KobisProviderAdapter(BaseProviderAdapter):
                         raise RuntimeError(f"KOBIS API request failed after 3 attempts: {e}")
                     await asyncio.sleep(0.05 * (2 ** attempt))
 
+        # Mock fallback catalog with real varied metadata
+        KOBIS_MOCK_CATALOG = {
+            "20192194": {
+                "movieCd": "20192194",
+                "movieNm": "기생충",
+                "movieNmEn": "Parasite",
+                "prdtYear": "2019",
+                "showTm": "132",
+                "nationAlt": "한국",
+                "genres": [{"genreNm": "드라마"}, {"genreNm": "스릴러"}],
+                "directors": [{"peopleNm": "봉준호"}],
+                "actors": [{"peopleNm": "송강호"}, {"peopleNm": "이선균"}, {"peopleNm": "조여정"}]
+            },
+            "20030371": {
+                "movieCd": "20030371",
+                "movieNm": "올드보이",
+                "movieNmEn": "Oldboy",
+                "prdtYear": "2003",
+                "showTm": "120",
+                "nationAlt": "한국",
+                "genres": [{"genreNm": "미스터리"}, {"genreNm": "스릴러"}],
+                "directors": [{"peopleNm": "박찬욱"}],
+                "actors": [{"peopleNm": "최민식"}, {"peopleNm": "유지태"}]
+            },
+            "20202781": {
+                "movieCd": "20202781",
+                "movieNm": "미나리",
+                "movieNmEn": "Minari",
+                "prdtYear": "2020",
+                "showTm": "115",
+                "nationAlt": "미국",
+                "genres": [{"genreNm": "드라마"}],
+                "directors": [{"peopleNm": "정이삭"}],
+                "actors": [{"peopleNm": "스티븐 연"}, {"peopleNm": "한예리"}]
+            },
+            "20224982": {
+                "movieCd": "20224982",
+                "movieNm": "헤어질 결심",
+                "movieNmEn": "Decision to Leave",
+                "prdtYear": "2022",
+                "showTm": "138",
+                "nationAlt": "한국",
+                "genres": [{"genreNm": "로맨스"}, {"genreNm": "미스터리"}],
+                "directors": [{"peopleNm": "박찬욱"}],
+                "actors": [{"peopleNm": "탕웨이"}, {"peopleNm": "박해일"}]
+            },
+            "20163074": {
+                "movieCd": "20163074",
+                "movieNm": "부산행",
+                "movieNmEn": "Train to Busan",
+                "prdtYear": "2016",
+                "showTm": "118",
+                "nationAlt": "한국",
+                "genres": [{"genreNm": "액션"}, {"genreNm": "스릴러"}],
+                "directors": [{"peopleNm": "연상호"}],
+                "actors": [{"peopleNm": "공유"}, {"peopleNm": "마동석"}]
+            },
+            "20060280": {
+                "movieCd": "20060280",
+                "movieNm": "괴물",
+                "movieNmEn": "The Host",
+                "prdtYear": "2006",
+                "showTm": "119",
+                "nationAlt": "한국",
+                "genres": [{"genreNm": "SF"}, {"genreNm": "드라마"}],
+                "directors": [{"peopleNm": "봉준호"}],
+                "actors": [{"peopleNm": "송강호"}, {"peopleNm": "변희봉"}]
+            },
+            "20211111": {
+                "movieCd": "20211111",
+                "movieNm": "드라이브 마이 카",
+                "movieNmEn": "Drive My Car",
+                "prdtYear": "2021",
+                "showTm": "179",
+                "nationAlt": "일본",
+                "genres": [{"genreNm": "드라마"}],
+                "directors": [{"peopleNm": "하마구치 류스케"}],
+                "actors": [{"peopleNm": "니시지마 히데토시"}]
+            },
+            "20239999": {
+                "movieCd": "20239999",
+                "movieNm": "고질라 마이너스 원",
+                "movieNmEn": "Godzilla Minus One",
+                "prdtYear": "2023",
+                "showTm": "125",
+                "nationAlt": "일본",
+                "genres": [{"genreNm": "SF"}, {"genreNm": "액션"}],
+                "directors": [{"peopleNm": "야마자키 타카시"}],
+                "actors": [{"peopleNm": "카미키 류노스케"}]
+            },
+            "20238888": {
+                "movieCd": "20238888",
+                "movieNm": "추락의 해부",
+                "movieNmEn": "Anatomy of a Fall",
+                "prdtYear": "2023",
+                "showTm": "151",
+                "nationAlt": "프랑스",
+                "genres": [{"genreNm": "드라마"}, {"genreNm": "범죄"}],
+                "directors": [{"peopleNm": "쥐스틴 트리에"}],
+                "actors": [{"peopleNm": "산드라 휠러"}]
+            },
+            "20237777": {
+                "movieCd": "20237777",
+                "movieNm": "존 오브 인터레스트",
+                "movieNmEn": "The Zone of Interest",
+                "prdtYear": "2023",
+                "showTm": "105",
+                "nationAlt": "영국",
+                "genres": [{"genreNm": "드라마"}, {"genreNm": "전쟁"}],
+                "directors": [{"peopleNm": "조나단 글레이저"}],
+                "actors": [{"peopleNm": "크리스티안 프리델"}]
+            }
+        }
+        if movie_cd in KOBIS_MOCK_CATALOG:
+            return KOBIS_MOCK_CATALOG[movie_cd]
+
         return {
             "movieCd": movie_cd,
-            "movieNm": "기생충",
-            "movieNmEn": "Parasite",
-            "prdtYear": "2019",
-            "showTm": "132",
+            "movieNm": f"영화 {movie_cd}",
+            "movieNmEn": f"KOBIS Film {movie_cd}",
+            "prdtYear": "2024",
+            "showTm": "120",
             "nationAlt": "한국",
-            "genres": [{"genreNm": "드라마"}, {"genreNm": "스릴러"}],
-            "directors": [{"peopleNm": "봉준호"}],
-            "actors": [{"peopleNm": "송강호"}, {"peopleNm": "이선균"}, {"peopleNm": "조여정"}],
-            "showTypes": [{"showTypeGroupNm": "2D"}, {"showTypeNm": "디지털"}]
+            "genres": [{"genreNm": "드라마"}],
+            "directors": [{"peopleNm": "감독"}],
+            "actors": [{"peopleNm": "배우"}]
         }
 
     def normalize_payload(self, raw_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -247,6 +369,13 @@ class TmdbProviderAdapter(BaseProviderAdapter):
                         async with httpx.AsyncClient(timeout=10.0) as client:
                             response = await client.get(url, params=params)
 
+                    if response.status_code == 429:
+                        retry_after = response.headers.get("Retry-After")
+                        delay = float(retry_after) if retry_after and retry_after.replace(".", "", 1).isdigit() else (0.05 * (2 ** attempt))
+                        logger.warning(f"TMDb API 429 Rate Limited. Waiting {delay}s...")
+                        await asyncio.sleep(delay)
+                        continue
+
                     response.raise_for_status()
                     return response.json()
                 except Exception as e:
@@ -255,18 +384,132 @@ class TmdbProviderAdapter(BaseProviderAdapter):
                         raise RuntimeError(f"TMDb API request failed after 3 attempts: {e}")
                     await asyncio.sleep(0.05 * (2 ** attempt))
 
-        # Mock fallback
-        if tmdb_id == "496243":
-            return {
+        # Mock fallback catalog with real varied metadata
+        TMDB_MOCK_CATALOG = {
+            "496243": {
                 "id": 496243,
                 "title": "Parasite",
                 "original_title": "기생충",
                 "original_language": "ko",
                 "release_date": "2019-05-30",
                 "runtime": 132,
+                "origin_country": ["KR"],
                 "overview": "Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.",
                 "genres": [{"id": 35, "name": "Comedy"}, {"id": 18, "name": "Drama"}, {"id": 53, "name": "Thriller"}]
+            },
+            "670": {
+                "id": 670,
+                "title": "Oldboy",
+                "original_title": "올드보이",
+                "original_language": "ko",
+                "release_date": "2003-11-21",
+                "runtime": 120,
+                "origin_country": ["KR"],
+                "overview": "After being kidnapped and imprisoned for fifteen years, Oh Dae-su is released, only to find that he must find his captor in five days.",
+                "genres": [{"id": 9648, "name": "Mystery"}, {"id": 53, "name": "Thriller"}]
+            },
+            "556584": {
+                "id": 556584,
+                "title": "Minari",
+                "original_title": "Minari",
+                "original_language": "en",
+                "release_date": "2020-01-26",
+                "runtime": 115,
+                "origin_country": ["US"],
+                "overview": "A Korean-American family moves to an Arkansas farm in search of their own American Dream.",
+                "genres": [{"id": 18, "name": "Drama"}]
+            },
+            "666277": {
+                "id": 666277,
+                "title": "Decision to Leave",
+                "original_title": "헤어질 결심",
+                "original_language": "ko",
+                "release_date": "2022-06-29",
+                "runtime": 138,
+                "origin_country": ["KR"],
+                "overview": "A detective investigating a man's death in the mountains meets the dead man's mysterious wife in the course of his dogged sleuthing.",
+                "genres": [{"id": 10749, "name": "Romance"}, {"id": 9648, "name": "Mystery"}]
+            },
+            "299536": {
+                "id": 299536,
+                "title": "Train to Busan",
+                "original_title": "부산행",
+                "original_language": "ko",
+                "release_date": "2016-07-20",
+                "runtime": 118,
+                "origin_country": ["KR"],
+                "overview": "While a zombie virus breaks out in South Korea, passengers struggle to survive on the train from Seoul to Busan.",
+                "genres": [{"id": 28, "name": "Action"}, {"id": 18, "name": "Drama"}, {"id": 53, "name": "Thriller"}]
+            },
+            "545611": {
+                "id": 545611,
+                "title": "Everything Everywhere All at Once",
+                "original_title": "Everything Everywhere All at Once",
+                "original_language": "en",
+                "release_date": "2022-03-24",
+                "runtime": 139,
+                "origin_country": ["US"],
+                "overview": "A middle-aged Chinese immigrant is swept up into an insane adventure in which she alone can save existence by exploring other universes.",
+                "genres": [{"id": 878, "name": "Science Fiction"}, {"id": 28, "name": "Action"}, {"id": 35, "name": "Comedy"}]
+            },
+            "730154": {
+                "id": 730154,
+                "title": "Drive My Car",
+                "original_title": "ドライブ・マイ・カー",
+                "original_language": "ja",
+                "release_date": "2021-08-20",
+                "runtime": 179,
+                "origin_country": ["JP"],
+                "overview": "An aging, widowed actor seeks a chauffeur. He is turned to a 20-year-old woman, with whom he forms a special bond.",
+                "genres": [{"id": 18, "name": "Drama"}]
+            },
+            "940721": {
+                "id": 940721,
+                "title": "Godzilla Minus One",
+                "original_title": "ゴジラ-1.0",
+                "original_language": "ja",
+                "release_date": "2023-11-03",
+                "runtime": 125,
+                "origin_country": ["JP"],
+                "overview": "Post-war Japan is at its lowest point when a new crisis emerges in the form of a giant monster, mutated by nuclear radiation.",
+                "genres": [{"id": 878, "name": "Science Fiction"}, {"id": 28, "name": "Action"}]
+            },
+            "915935": {
+                "id": 915935,
+                "title": "Anatomy of a Fall",
+                "original_title": "Anatomie d'une chute",
+                "original_language": "fr",
+                "release_date": "2023-08-23",
+                "runtime": 151,
+                "origin_country": ["FR"],
+                "overview": "A woman is suspected of her husband's murder, and their blind son faces a moral dilemma as the sole witness.",
+                "genres": [{"id": 18, "name": "Drama"}, {"id": 80, "name": "Crime"}]
+            },
+            "467244": {
+                "id": 467244,
+                "title": "The Zone of Interest",
+                "original_title": "The Zone of Interest",
+                "original_language": "de",
+                "release_date": "2023-12-15",
+                "runtime": 105,
+                "origin_country": ["GB"],
+                "overview": "Auschwitz commandant Rudolf Höss and his wife Hedwig strive to build a dream life for their family in a house next to the camp.",
+                "genres": [{"id": 18, "name": "Drama"}, {"id": 36, "name": "History"}]
+            },
+            "93405": {
+                "id": 93405,
+                "name": "Squid Game",
+                "original_name": "오징어 게임",
+                "original_language": "ko",
+                "first_air_date": "2021-09-17",
+                "origin_country": ["KR"],
+                "overview": "Hundreds of cash-strapped players accept a strange invitation to compete in children's games.",
+                "genres": [{"id": 10759, "name": "Action & Adventure"}, {"id": 18, "name": "Drama"}]
             }
+        }
+        if str(tmdb_id) in TMDB_MOCK_CATALOG:
+            return TMDB_MOCK_CATALOG[str(tmdb_id)]
+
         return {
             "id": int(tmdb_id) if tmdb_id.isdigit() else 999999,
             "title": f"TMDb Title {tmdb_id}",
