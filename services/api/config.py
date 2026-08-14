@@ -73,6 +73,7 @@ class APIConfig(BaseModel):
     ingestion_mode: str = os.getenv("INGESTION_MODE", "mock")
     kobis_api_key: Optional[str] = os.getenv("KOBIS_API_KEY")
     tvdb_api_key: Optional[str] = os.getenv("TVDB_API_KEY")
+    tmdb_api_key: Optional[str] = os.getenv("TMDB_API_KEY")
 
     # S3 & CDN Storage Configuration
     s3_endpoint_url: str = os.getenv("S3_ENDPOINT_URL", "http://localhost:9000")

@@ -53,3 +53,67 @@ class NormalizedTitleStagingModel(Base):
     normalized_payload: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
     normalization_status: Mapped[str] = mapped_column(String(32), default="NORMALIZED", nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+class IngestionRunModel(Base):
+    __tablename__ = "ingestion_runs"
+    __table_args__ = {"schema": "ingestion"}
+
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
+    records_seen: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_valid: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_rejected: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_updated: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    records_conflicted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    summary_notes: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+
+class IngestionItemModel(Base):
+    __tablename__ = "ingestion_items"
+    __table_args__ = {"schema": "ingestion"}
+
+    item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ingestion_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ingestion.ingestion_runs.run_id", ondelete="CASCADE"), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    raw_record_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("ingestion.raw_payload_capture.raw_payload_id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="RECEIVED", nullable=False)
+    candidate_title_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    error_details: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
+    processed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+class CandidateTitleModel(Base):
+    __tablename__ = "candidate_title"
+    __table_args__ = {"schema": "quality"}
+
+    candidate_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ingestion_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("ingestion.ingestion_runs.run_id", ondelete="SET NULL"), nullable=True)
+    provider_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    candidate_payload: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    match_status: Mapped[str] = mapped_column(String(32), default="NO_MATCH", nullable=False)
+    matched_canonical_title_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.title.title_id", ondelete="SET NULL"), nullable=True)
+    match_score: Mapped[float] = mapped_column(Numeric(4, 3), default=0.0, nullable=False)
+    match_rule_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    review_status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+class FieldProvenanceModel(Base):
+    __tablename__ = "field_provenance"
+    __table_args__ = {"schema": "quality"}
+
+    provenance_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entity_type: Mapped[str] = mapped_column(String(64), default="TITLE", nullable=False)
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    field_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    field_value: Mapped[str] = mapped_column(Text, nullable=False)
+    source_provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    confidence: Mapped[str] = mapped_column(String(32), default="UNKNOWN", nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(32), default="UNVERIFIED", nullable=False)
+    retrieved_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+

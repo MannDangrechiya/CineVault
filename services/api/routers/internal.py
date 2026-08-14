@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas.internal import (
     IngestionRunSummary, RawPayloadDetail,
     ReconciliationCandidateSummary, PromotionDecisionRequest,
-    AIProposalSummary
+    AIProposalSummary, IngestionTriggerRequest
 )
 from ..auth.dependencies import require_curator, require_system_admin, verify_service_identity
 from ..auth.jwt_validator import SecurityTokenClaims
@@ -21,6 +21,42 @@ from ..repositories.ingestion import ingestion_repository
 from ..repositories.quality import quality_repository
 
 router = APIRouter(prefix="/internal/v1", tags=["Internal Operational & Curation"])
+
+@router.get("/ingestion/sources", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
+async def list_data_sources(
+    claims: SecurityTokenClaims = Depends(require_curator)
+):
+    """Returns Data Source Registry metadata, licensing statuses, and rate limits."""
+    from ..ingestion.licensing import licensing_gate
+    return licensing_gate.get_source_registry()
+
+@router.post("/ingestion/trigger", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
+async def trigger_ingestion_pipeline(
+    body: IngestionTriggerRequest,
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Triggers Day 4 ingestion pipeline execution for specified provider and payloads."""
+    from ..ingestion.pipeline import pipeline_engine
+    return await pipeline_engine.execute_run(db=db, trigger_req=body)
+
+@router.get("/ingestion/candidates", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
+async def list_candidate_titles(
+    provider_name: Optional[str] = None,
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Lists staged candidate titles awaiting curation review or controlled apply."""
+    return await ingestion_repository.list_candidate_titles(db=db, provider_name=provider_name)
+
+@router.get("/ingestion/provenance/{entity_id}", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
+async def list_field_provenance(
+    entity_id: str,
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Inspects field provenance records for target entity."""
+    return await ingestion_repository.list_field_provenance(db=db, entity_id=entity_id)
 
 @router.get("/ingestion/runs", response_model=List[IngestionRunSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def list_ingestion_runs(
@@ -38,6 +74,7 @@ async def get_raw_payload(
 ):
     """Retrieves immutable raw provider payload (CAT-5)."""
     return await ingestion_repository.get_raw_payload_by_id(db=db, raw_payload_id=raw_payload_id)
+
 
 @router.get("/reconciliation/candidates", response_model=List[ReconciliationCandidateSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def list_reconciliation_candidates(

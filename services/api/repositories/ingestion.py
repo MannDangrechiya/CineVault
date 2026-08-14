@@ -183,4 +183,97 @@ class IngestionRepository:
             "detected_at": detected_iso
         }
 
+    async def list_candidate_titles(self, db: Optional[AsyncSession], provider_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Lists candidate title records staged for review or apply."""
+        if db is not None:
+            try:
+                from ..models.ingestion import CandidateTitleModel
+                stmt = select(CandidateTitleModel).order_by(CandidateTitleModel.created_at.desc()).limit(50)
+                if provider_name:
+                    stmt = stmt.where(CandidateTitleModel.provider_name == provider_name.upper())
+                res = await db.execute(stmt)
+                records = res.scalars().all()
+                if records:
+                    return [
+                        {
+                            "candidate_id": str(r.candidate_id),
+                            "provider_name": r.provider_name,
+                            "external_id": r.external_id,
+                            "candidate_payload": r.candidate_payload,
+                            "match_status": r.match_status,
+                            "matched_canonical_title_id": str(r.matched_canonical_title_id) if r.matched_canonical_title_id else None,
+                            "match_score": float(r.match_score),
+                            "match_rule_id": r.match_rule_id,
+                            "review_status": r.review_status,
+                            "created_at": r.created_at.isoformat()
+                        }
+                        for r in records
+                    ]
+            except Exception as e:
+                logger.error(f"Database query list_candidate_titles failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return [
+            {
+                "candidate_id": "cand-001",
+                "provider_name": "KOBIS",
+                "external_id": "20192194",
+                "candidate_payload": {"title": "Parasite", "year": 2019},
+                "match_status": "AUTO_MATCH",
+                "matched_canonical_title_id": "018f6f60-7a00-7000-8000-000000000001",
+                "match_score": 1.0,
+                "match_rule_id": "RULE_EXACT_EXTERNAL_ID",
+                "review_status": "APPROVED",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+        ]
+
+    async def list_field_provenance(self, db: Optional[AsyncSession], entity_id: str) -> List[Dict[str, Any]]:
+        """Lists field provenance entries for a target entity."""
+        if db is not None:
+            try:
+                from ..models.ingestion import FieldProvenanceModel
+                entity_uuid = uuid.UUID(entity_id) if len(entity_id) == 36 else None
+                if entity_uuid:
+                    stmt = select(FieldProvenanceModel).where(FieldProvenanceModel.entity_id == entity_uuid)
+                    res = await db.execute(stmt)
+                    records = res.scalars().all()
+                    if records:
+                        return [
+                            {
+                                "provenance_id": str(r.provenance_id),
+                                "entity_type": r.entity_type,
+                                "entity_id": str(r.entity_id),
+                                "field_name": r.field_name,
+                                "field_value": r.field_value,
+                                "source_provider": r.source_provider,
+                                "external_id": r.external_id,
+                                "confidence": r.confidence,
+                                "verification_status": r.verification_status,
+                                "retrieved_at": r.retrieved_at.isoformat()
+                            }
+                            for r in records
+                        ]
+            except Exception as e:
+                logger.error(f"Database query list_field_provenance failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return [
+            {
+                "provenance_id": "prov-001",
+                "entity_type": "TITLE",
+                "entity_id": entity_id,
+                "field_name": "canonical_title",
+                "field_value": "Parasite",
+                "source_provider": "KOBIS",
+                "external_id": "20192194",
+                "confidence": "HIGH",
+                "verification_status": "VERIFIED",
+                "retrieved_at": datetime.now(timezone.utc).isoformat()
+            }
+        ]
+
 ingestion_repository = IngestionRepository()
+
