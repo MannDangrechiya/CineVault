@@ -46,7 +46,20 @@ The **CineVault OS Authentication & Authorization Foundation** implements the ap
 | `dev_curator` | `dev_curator@cinevault.local` | `AuthenticatedUser`, `Curator` | Evidence reconciliation & moderation queue |
 | `dev_admin` | `dev_admin@cinevault.local` | `AuthenticatedUser`, `Curator`, `SystemAdmin` | System administration & break-glass framework |
 
+### Local Development Credentials & Storage
+
+* **Keycloak Admin Console:**
+  - Realm: `master`
+  - Client ID: `security-admin-console`
+  - Username: Configured via `KEYCLOAK_ADMIN_USER` in local `.env` (Default: `admin`)
+* **CineVault Application Test User:**
+  - Realm: `cinevault-dev`
+  - Client ID: `cinevault-public-client`
+  - Username: `dev_user` (Email: `dev_user@cinevault.local`)
+* **Password Storage Policy:** Plaintext passwords MUST NOT be committed to Git or hardcoded in source files. Local developers configure passwords via the un-tracked `.env` file (copied from `.env.example`).
+
 ---
+
 
 ## 4. OIDC Token Validator & Security Policy Engine
 
