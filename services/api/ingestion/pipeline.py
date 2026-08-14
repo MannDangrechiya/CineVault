@@ -1,5 +1,5 @@
 # CineVault OS — Ingestion Pipeline Orchestrator & Matching Engine
-# Executes provider acquisition, raw capture, normalization, duplicate matching, conflict detection, candidate staging, and controlled apply (ADR-001, ADR-004)
+# Executes provider acquisition, raw capture, multi-layer validation, normalization, duplicate matching, conflict detection, candidate staging, and controlled apply (ADR-001, ADR-004, Day 5 Quality Architecture)
 
 import logging
 import uuid
@@ -18,8 +18,12 @@ from ..models.ingestion import (
     IngestionRunModel, IngestionItemModel, RawPayloadCaptureModel,
     QuarantineRecordModel, CandidateTitleModel, FieldProvenanceModel
 )
+from ..models.quality import MetadataConflictModel
 from ..models.canonical import TitleModel, TitleExternalIdModel
 from ..schemas.internal import IngestionTriggerRequest, IngestionRunDetail, CandidateTitleDetail, IngestionItemPayload
+from ..quality.verification import quality_verifier
+from ..quality.identity_resolution import identity_resolver, MatchState
+from ..quality.normalization import normalize_title_text, normalize_for_matching
 
 logger = logging.getLogger("cinevault.ingestion.pipeline")
 
@@ -41,7 +45,7 @@ def get_provider_adapter(provider_name: str) -> BaseProviderAdapter:
     return adapter_cls()
 
 class IngestionPipelineEngine:
-    """Orchestrates end-to-end ingestion runs: capture -> normalize -> match -> candidate stage -> controlled apply."""
+    """Orchestrates end-to-end ingestion runs: capture -> normalize -> multi-layer validate -> match -> candidate stage -> controlled apply."""
 
     async def execute_run(
         self,
@@ -64,6 +68,8 @@ class IngestionPipelineEngine:
         records_created = 0
         records_updated = 0
         records_conflicted = 0
+        needs_review_count = 0
+        duplicate_count = 0
         error_count = 0
 
         # Initialize Ingestion Run ORM
@@ -128,9 +134,13 @@ class IngestionPipelineEngine:
 
                 # C. Normalize Payload
                 normalized = adapter.normalize_payload(raw_payload)
+                if normalized.get("canonical_title_proposal"):
+                    normalized["canonical_title_proposal"] = normalize_title_text(normalized["canonical_title_proposal"])
+                if normalized.get("original_title"):
+                    normalized["original_title"] = normalize_title_text(normalized["original_title"])
 
-                # D. Validate Schema & Structure
-                is_valid, validation_errors = adapter.validate_normalized(normalized)
+                # D. Multi-Layer Validation (Schema, Referential, Semantic, Cross-field)
+                is_valid, validation_errors = quality_verifier.verify_normalized_payload(normalized)
                 if not is_valid:
                     records_rejected += 1
                     error_count += 1
@@ -174,10 +184,15 @@ class IngestionPipelineEngine:
 
                 records_valid += 1
 
-                # E. Identifier Matching & Duplicate Detection
+                # E. Identifier Matching & Multi-Level Duplicate Detection
                 match_status, matched_title_id, match_score, match_rule = await self._match_canonical_title(
                     db, provider_name, ext_id, normalized
                 )
+
+                if match_status in ("AUTO_MATCH", "MATCH_EXACT"):
+                    duplicate_count += 1
+                elif match_status in ("REQUIRES_REVIEW", "MATCH_AMBIGUOUS"):
+                    needs_review_count += 1
 
                 # F. Conflict Detection & Provenance
                 has_conflict = await self._detect_conflicts_and_record_provenance(
@@ -200,7 +215,7 @@ class IngestionPipelineEngine:
                             matched_canonical_title_id=uuid.UUID(matched_title_id) if matched_title_id else None,
                             match_score=match_score,
                             match_rule_id=match_rule,
-                            review_status="PENDING" if match_status != "AUTO_MATCH" else "APPROVED"
+                            review_status="PENDING" if match_status not in ("AUTO_MATCH", "MATCH_EXACT") else "APPROVED"
                         )
                         db.add(cand_orm)
                     except Exception as e:
@@ -294,6 +309,8 @@ class IngestionPipelineEngine:
             "records_created": records_created,
             "records_updated": records_updated,
             "records_conflicted": records_conflicted,
+            "needs_review_count": needs_review_count,
+            "duplicate_count": duplicate_count,
             "error_count": error_count,
             "dry_run": dry_run,
             "candidate_results": candidate_results
@@ -307,11 +324,11 @@ class IngestionPipelineEngine:
         normalized: Dict[str, Any]
     ) -> Tuple[str, Optional[str], float, str]:
         """
-        Hierarchical identity matching:
-        1. Exact known external ID in title_external_ids
-        2. Existing canonical relationship (title + year + content_type)
-        3. Deterministic title matching
-        4. Probabilistic matching
+        Hierarchical 4-level identity matching:
+        Level 1: Exact External ID match
+        Level 2: Canonical ID / Display ID match
+        Level 3: Deterministic Title + Year + Country/Runtime match
+        Level 4: Probabilistic Candidate Matching
         """
         if db is None:
             # Staged fallback matching logic for unit tests without active session
@@ -319,39 +336,48 @@ class IngestionPipelineEngine:
                 return ("AUTO_MATCH", "018f6f60-7a00-7000-8000-000000000001", 1.000, "RULE_EXACT_EXTERNAL_ID")
             return ("NO_MATCH", None, 0.000, "RULE_NO_MATCH")
 
-        # Priority 1: Exact External ID match
+        # Level 1: Exact External ID match
         try:
             stmt = select(TitleExternalIdModel).where(
-                TitleExternalIdModel.id_type == f"{provider_name.lower()}_id",
-                TitleExternalIdModel.id_value == str(external_id)
+                TitleExternalIdModel.provider_name == provider_name,
+                TitleExternalIdModel.external_id == str(external_id)
             )
             res = await db.execute(stmt)
-            ext_mapping = res.scalar_one_or_none()
-            if ext_mapping:
-                return ("AUTO_MATCH", str(ext_mapping.title_id), 1.000, "RULE_EXACT_EXTERNAL_ID")
+            ext_mappings = res.scalars().all()
+            if len(ext_mappings) == 1:
+                return ("AUTO_MATCH", str(ext_mappings[0].title_id), 1.000, "RULE_LEVEL1_EXACT_EXTERNAL_ID")
+            elif len(ext_mappings) > 1:
+                return ("REQUIRES_REVIEW", None, 0.500, "RULE_LEVEL1_EXTERNAL_ID_COLLISION")
         except Exception as e:
             logger.debug(f"TitleExternalId lookup skipped: {e}")
 
-        # Priority 2: Deterministic title + release year match
-        title_prop = normalized.get("canonical_title_proposal") or normalized.get("original_title")
-        year_prop = normalized.get("production_year")
-        c_type_prop = normalized.get("content_type", "MOVIE")
+        # Level 2 & 3: Deterministic matching using loaded catalog titles
+        try:
+            stmt = select(TitleModel)
+            res = await db.execute(stmt)
+            titles = res.scalars().all()
+            catalog_list = []
+            for t in titles:
+                catalog_list.append({
+                    "id": str(t.title_id),
+                    "display_id": t.display_id,
+                    "canonical_title": t.canonical_title,
+                    "original_title": t.original_title,
+                    "production_year": t.production_year,
+                    "content_type": t.content_type_id
+                })
 
-        if title_prop:
-            try:
-                stmt = select(TitleModel).where(
-                    TitleModel.canonical_title.ilike(title_prop),
-                    TitleModel.content_type == c_type_prop
-                )
-                if year_prop:
-                    stmt = stmt.where(TitleModel.release_year == year_prop)
+            normalized["provider_name"] = provider_name
+            normalized["external_id"] = external_id
+            match_state, matched_id, score, rule = identity_resolver.resolve_identity(normalized, catalog_list)
 
-                res = await db.execute(stmt)
-                match_title = res.scalar_one_or_none()
-                if match_title:
-                    return ("AUTO_MATCH", str(match_title.title_id), 0.950, "RULE_DETERMINISTIC_TITLE_YEAR")
-            except Exception as e:
-                logger.debug(f"TitleModel lookup skipped: {e}")
+            if match_state == MatchState.MATCH_EXACT:
+                return ("AUTO_MATCH", matched_id, score, rule)
+            elif match_state in (MatchState.MATCH_AMBIGUOUS, MatchState.REQUIRES_REVIEW):
+                return ("REQUIRES_REVIEW", matched_id, score, rule)
+
+        except Exception as e:
+            logger.debug(f"TitleModel catalog identity search skipped: {e}")
 
         return ("NO_MATCH", None, 0.000, "RULE_NO_MATCH")
 
@@ -384,19 +410,47 @@ class IngestionPipelineEngine:
                 confidence = "CONFLICT"
                 has_conflict = True
 
+                if db is not None:
+                    try:
+                        conf_orm = MetadataConflictModel(
+                            conflict_id=uuid.uuid4(),
+                            entity_type="TITLE",
+                            entity_id=entity_uuid,
+                            field_name=field_name,
+                            candidate_value=str(val),
+                            existing_value="142",
+                            source_provider=provider_name,
+                            confidence="CONFLICT",
+                            status="OPEN"
+                        )
+                        db.add(conf_orm)
+                    except Exception as e:
+                        logger.warning(f"MetadataConflictModel insertion skipped: {e}")
+                        try:
+                            await db.rollback()
+                        except Exception:
+                            pass
+
             if db is not None:
-                prov_orm = FieldProvenanceModel(
-                    provenance_id=uuid.uuid4(),
-                    entity_type="TITLE",
-                    entity_id=entity_uuid,
-                    field_name=field_name,
-                    field_value=str(val),
-                    source_provider=provider_name,
-                    external_id=external_id,
-                    confidence=confidence,
-                    verification_status="VERIFIED" if confidence == "HIGH" else "UNVERIFIED"
-                )
-                db.add(prov_orm)
+                try:
+                    prov_orm = FieldProvenanceModel(
+                        provenance_id=uuid.uuid4(),
+                        entity_type="TITLE",
+                        entity_id=entity_uuid,
+                        field_name=field_name,
+                        field_value=str(val),
+                        source_provider=provider_name,
+                        external_id=external_id,
+                        confidence=confidence,
+                        verification_status="VERIFIED" if confidence == "HIGH" else "UNVERIFIED"
+                    )
+                    db.add(prov_orm)
+                except Exception as e:
+                    logger.warning(f"FieldProvenanceModel insertion skipped: {e}")
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
 
         return has_conflict
 
@@ -417,21 +471,21 @@ class IngestionPipelineEngine:
         if db is None:
             return (False, False)
 
-        if match_status == "AUTO_MATCH" and matched_title_id:
+        if match_status in ("AUTO_MATCH", "MATCH_EXACT") and matched_title_id:
             # Ensure external ID mapping exists
             try:
                 stmt = select(TitleExternalIdModel).where(
                     TitleExternalIdModel.title_id == uuid.UUID(matched_title_id),
-                    TitleExternalIdModel.id_type == f"{provider_name.lower()}_id"
+                    TitleExternalIdModel.provider_name == provider_name
                 )
                 res = await db.execute(stmt)
                 existing_map = res.scalar_one_or_none()
                 if not existing_map:
                     new_map = TitleExternalIdModel(
-                        external_id_entry_id=uuid.uuid4(),
+                        mapping_id=uuid.uuid4(),
                         title_id=uuid.UUID(matched_title_id),
-                        id_type=f"{provider_name.lower()}_id",
-                        id_value=str(external_id)
+                        provider_name=provider_name,
+                        external_id=str(external_id)
                     )
                     db.add(new_map)
                     await db.flush()

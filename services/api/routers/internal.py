@@ -1,8 +1,9 @@
 # CineVault OS — Internal Operational & Curation Router
-# Control Room administrative endpoints for ingestion monitoring, reconciliation curation, and AI proposals
+# Control Room administrative endpoints for ingestion monitoring, reconciliation curation, metadata conflicts, and AI proposals
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +23,10 @@ from ..repositories.quality import quality_repository
 
 router = APIRouter(prefix="/internal/v1", tags=["Internal Operational & Curation"])
 
+class ConflictResolutionRequest(BaseModel):
+    winning_value: str
+    resolution_notes: str
+
 @router.get("/ingestion/sources", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def list_data_sources(
     claims: SecurityTokenClaims = Depends(require_curator)
@@ -36,7 +41,7 @@ async def trigger_ingestion_pipeline(
     claims: SecurityTokenClaims = Depends(require_curator),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
-    """Triggers Day 4 ingestion pipeline execution for specified provider and payloads."""
+    """Triggers Day 4/5 ingestion pipeline execution for specified provider and payloads."""
     from ..ingestion.pipeline import pipeline_engine
     return await pipeline_engine.execute_run(db=db, trigger_req=body)
 
@@ -75,7 +80,6 @@ async def get_raw_payload(
     """Retrieves immutable raw provider payload (CAT-5)."""
     return await ingestion_repository.get_raw_payload_by_id(db=db, raw_payload_id=raw_payload_id)
 
-
 @router.get("/reconciliation/candidates", response_model=List[ReconciliationCandidateSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def list_reconciliation_candidates(
     claims: SecurityTokenClaims = Depends(require_curator),
@@ -83,6 +87,30 @@ async def list_reconciliation_candidates(
 ):
     """Fetches reconciliation candidates flagged for human review or merge/split curation."""
     return await quality_repository.list_reconciliation_candidates(db=db)
+
+@router.get("/reconciliation/conflicts", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
+async def list_metadata_conflicts(
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Fetches active metadata conflicts requiring review or resolution."""
+    return await quality_repository.list_metadata_conflicts(db=db)
+
+@router.post("/reconciliation/conflicts/{conflict_id}/resolve", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
+async def resolve_metadata_conflict(
+    conflict_id: str,
+    body: ConflictResolutionRequest,
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Resolves active metadata conflict, logging winning choice and resolution audit provenance."""
+    return await quality_repository.resolve_metadata_conflict(
+        db=db,
+        conflict_id=conflict_id,
+        actor_id=claims.sub,
+        winning_value=body.winning_value,
+        resolution_notes=body.resolution_notes
+    )
 
 @router.post("/reconciliation/candidates/{candidate_id}/promote", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def promote_candidate(
@@ -115,7 +143,6 @@ async def reject_candidate(
         rationale=body.rationale
     )
 
-from pydantic import BaseModel
 from ..storage import storage_adapter
 
 class ArtworkUploadRequest(BaseModel):

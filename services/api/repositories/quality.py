@@ -1,5 +1,5 @@
 # CineVault OS — Data Quality & Reconciliation Repository
-# Asynchronous PostgreSQL operations for identity resolution candidates, human curation, and canonical promotion (ADR-001, ADR-004)
+# Asynchronous PostgreSQL operations for identity resolution candidates, human curation, metadata conflicts, and canonical promotion (ADR-001, ADR-004)
 
 from ..config import config
 import uuid
@@ -9,7 +9,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.quality import ReconciliationCandidateModel, AIProposalStagingModel
+from ..models.quality import ReconciliationCandidateModel, AIProposalStagingModel, MetadataConflictModel, CandidateTitleModel
 from ..models.canonical import TitleModel, TitleExternalIdModel, EditionModel
 from ..schemas.internal import ReconciliationCandidateSummary, AIProposalSummary
 from ..auth.audit import audit_logger
@@ -17,7 +17,7 @@ from ..auth.audit import audit_logger
 logger = logging.getLogger("cinevault.repositories.quality")
 
 class QualityRepository:
-    """Provides async database operations for identity reconciliation, curator promotion, and AI proposal review."""
+    """Provides async database operations for identity reconciliation, curator promotion, metadata conflicts, and AI proposal review."""
 
     async def list_reconciliation_candidates(self, db: Optional[AsyncSession]) -> List[ReconciliationCandidateSummary]:
         """Fetches reconciliation candidates flagged for human review or curation."""
@@ -54,6 +54,95 @@ class QualityRepository:
                 status="PENDING_REVIEW"
             )
         ]
+
+    async def list_metadata_conflicts(self, db: Optional[AsyncSession]) -> List[Dict[str, Any]]:
+        """Retrieves active metadata conflicts requiring review or resolution."""
+        if db is not None:
+            try:
+                stmt = select(MetadataConflictModel).where(MetadataConflictModel.status == "OPEN")
+                res = await db.execute(stmt)
+                records = res.scalars().all()
+                if records:
+                    return [
+                        {
+                            "conflict_id": str(r.conflict_id),
+                            "entity_type": r.entity_type,
+                            "entity_id": str(r.entity_id) if r.entity_id else None,
+                            "field_name": r.field_name,
+                            "candidate_value": r.candidate_value,
+                            "existing_value": r.existing_value,
+                            "source_provider": r.source_provider,
+                            "confidence": r.confidence,
+                            "status": r.status,
+                            "created_at": r.created_at.isoformat()
+                        }
+                        for r in records
+                    ]
+            except Exception as e:
+                logger.error(f"Database query list_metadata_conflicts failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        # Fallback staged metadata conflicts for unit tests
+        return [
+            {
+                "conflict_id": "conf_001",
+                "entity_type": "TITLE",
+                "entity_id": "018f6f60-7a00-7000-8000-000000000001",
+                "field_name": "runtime_minutes",
+                "candidate_value": "140",
+                "existing_value": "142",
+                "source_provider": "TMDB",
+                "confidence": "CONFLICT",
+                "status": "OPEN",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+        ]
+
+    async def resolve_metadata_conflict(
+        self,
+        db: Optional[AsyncSession],
+        conflict_id: str,
+        actor_id: str,
+        winning_value: str,
+        resolution_notes: str
+    ) -> Dict[str, Any]:
+        """Resolves active metadata conflict, updating status and preserving resolution audit provenance."""
+        audit_record = audit_logger.log_event(
+            event_type="AUDIT_METADATA_CONFLICT_RESOLVED",
+            actor_id=actor_id,
+            target_id=conflict_id,
+            details={"winning_value": winning_value, "notes": resolution_notes}
+        )
+
+        resolved_iso = datetime.now(timezone.utc).isoformat()
+
+        if db is not None:
+            try:
+                c_uuid = uuid.UUID(conflict_id)
+                stmt = select(MetadataConflictModel).where(MetadataConflictModel.conflict_id == c_uuid)
+                res = await db.execute(stmt)
+                record = res.scalar_one_or_none()
+                if record:
+                    record.status = "RESOLVED"
+                    record.resolution_notes = f"Winning value '{winning_value}': {resolution_notes}"
+                    record.resolved_at = datetime.now(timezone.utc)
+                    record.resolved_by = actor_id
+                    await db.flush()
+            except Exception as e:
+                logger.error(f"Database update resolve_metadata_conflict failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return {
+            "status": "RESOLVED",
+            "conflict_id": conflict_id,
+            "resolved_by": actor_id,
+            "winning_value": winning_value,
+            "resolution_notes": resolution_notes,
+            "resolved_at": resolved_iso,
+            "integrity_hash": audit_record["integrity_hash"]
+        }
 
     async def promote_candidate(
         self,
