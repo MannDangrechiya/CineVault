@@ -23,20 +23,23 @@ processors:
 exporters:
   prometheus:
     endpoint: 0.0.0.0:8889
-  logging:
-    loglevel: info
+  # P1 fix (Day 1-7 remediation): the 'logging' exporter was removed from
+  # otel-collector-contrib and replaced by 'debug'. The old name caused the
+  # collector to fail config validation and exit(1) on every start.
+  debug:
+    verbosity: normal
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [logging]
+      exporters: [debug]
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [prometheus, logging]
+      exporters: [prometheus, debug]
     logs:
       receivers: [otlp]
       processors: [memory_limiter, transform, batch]
-      exporters: [logging]
+      exporters: [debug]
