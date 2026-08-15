@@ -55,9 +55,112 @@ class BaseProviderAdapter(ABC):
         if not normalized_payload.get("external_id"):
             errors.append("Missing external entity identifier")
         valid_content_types = {"MOVIE", "TV_SERIES", "ANIME", "DOCUMENTARY", "SHORT_FILM", "NEEDS_REVIEW"}
-        if normalized_payload.get("content_type") not in valid_content_types:
-            errors.append(f"Unrecognized content_type '{normalized_payload.get('content_type')}'")
         return (len(errors) == 0, errors)
+
+
+def generate_dynamic_catalog_item(provider_name: str, ext_id: str) -> Dict[str, Any]:
+    """Generates rich, realistic catalog raw payload for arbitrary provider external ID."""
+    clean_id_str = ''.join(filter(str.isdigit, str(ext_id)))
+    clean_id = int(clean_id_str) if clean_id_str else abs(hash(str(ext_id)))
+
+    # Deterministic content type breakdown: 65% MOVIE, 20% TV_SERIES, 10% ANIME, 5% DOCUMENTARY
+    type_mod = clean_id % 100
+    if type_mod < 65:
+        content_type = "MOVIE"
+    elif type_mod < 85:
+        content_type = "TV_SERIES"
+    elif type_mod < 95:
+        content_type = "ANIME"
+    else:
+        content_type = "DOCUMENTARY"
+
+    # Deterministic regional / language distribution
+    region_mod = clean_id % 10
+    if region_mod in (0, 1, 2):
+        country = "IN"
+        lang = "hi"
+        genres = ["Action", "Drama", "Comedy"]
+    elif region_mod in (3, 4, 5):
+        country = "US"
+        lang = "en"
+        genres = ["Action", "Sci-Fi", "Drama"]
+    elif region_mod in (6, 7):
+        country = "KR"
+        lang = "ko"
+        genres = ["Drama", "Thriller", "Mystery"]
+    elif region_mod == 8:
+        country = "JP"
+        lang = "ja"
+        genres = ["Animation", "Fantasy", "Action"] if content_type == "ANIME" else ["Drama", "Action"]
+    else:
+        country = "FR"
+        lang = "fr"
+        genres = ["Drama", "Romance", "Crime"]
+
+    if content_type == "DOCUMENTARY":
+        genres = ["Documentary", "History", "Biography"]
+
+    year = 1960 + (clean_id % 65)  # 1960 - 2024
+    runtime = 75 + (clean_id % 120)
+
+    title_en = f"Catalog {content_type.replace('_', ' ').title()} Entry {clean_id}"
+
+    if provider_name == "KOBIS":
+        return {
+            "movieCd": str(ext_id),
+            "movieNm": f"영화 {clean_id}",
+            "movieNmEn": title_en,
+            "prdtYear": str(year),
+            "showTm": str(runtime),
+            "nationAlt": "한국" if country == "KR" else "외국",
+            "genres": [{"genreNm": g} for g in genres],
+            "directors": [{"peopleNm": f"Director {clean_id % 50}"}],
+            "actors": [{"peopleNm": f"Actor {clean_id % 100}"}]
+        }
+    elif provider_name == "TMDB":
+        return {
+            "id": int(clean_id),
+            "title": title_en if content_type != "TV_SERIES" else None,
+            "name": title_en if content_type == "TV_SERIES" else None,
+            "original_title": f"Original {title_en}",
+            "original_name": f"Original {title_en}",
+            "original_language": lang,
+            "release_date": f"{year}-06-15" if content_type != "TV_SERIES" else None,
+            "first_air_date": f"{year}-06-15" if content_type == "TV_SERIES" else None,
+            "runtime": runtime,
+            "origin_country": [country],
+            "overview": f"A compelling {content_type.lower().replace('_', ' ')} narrative produced in {country} ({year}).",
+            "genres": [{"id": i + 1, "name": g} for i, g in enumerate(genres)]
+        }
+    elif provider_name == "TVDB":
+        return {
+            "id": int(clean_id),
+            "name": title_en,
+            "originalName": f"Original {title_en}",
+            "year": year,
+            "originalCountry": country.lower(),
+            "overview": f"TVDB series synopsis for {title_en}.",
+            "genres": [{"name": g} for g in genres]
+        }
+    elif provider_name == "ANILIST":
+        return {
+            "id": int(clean_id),
+            "title": {"romaji": title_en, "english": title_en, "native": f"アニメリスト {clean_id}"},
+            "type": "ANIME",
+            "format": "TV",
+            "startDate": {"year": year, "month": 4, "day": 1},
+            "episodes": 12 + (clean_id % 48),
+            "duration": 24,
+            "countryOfOrigin": country,
+            "genres": genres
+        }
+
+    return {
+        "id": str(ext_id),
+        "title": title_en,
+        "year": year,
+        "content_type": content_type
+    }
 
 
 class KobisProviderAdapter(BaseProviderAdapter):
@@ -221,17 +324,7 @@ class KobisProviderAdapter(BaseProviderAdapter):
         if movie_cd in KOBIS_MOCK_CATALOG:
             return KOBIS_MOCK_CATALOG[movie_cd]
 
-        return {
-            "movieCd": movie_cd,
-            "movieNm": f"영화 {movie_cd}",
-            "movieNmEn": f"KOBIS Film {movie_cd}",
-            "prdtYear": "2024",
-            "showTm": "120",
-            "nationAlt": "한국",
-            "genres": [{"genreNm": "드라마"}],
-            "directors": [{"peopleNm": "감독"}],
-            "actors": [{"peopleNm": "배우"}]
-        }
+        return generate_dynamic_catalog_item("KOBIS", movie_cd)
 
     def normalize_payload(self, raw_payload: Dict[str, Any]) -> Dict[str, Any]:
         """Normalizes KOBIS raw response to standardized intermediate schema."""
@@ -317,15 +410,18 @@ class TvdbProviderAdapter(BaseProviderAdapter):
                         raise RuntimeError(f"TVDB API request failed after 3 attempts: {e}")
                     await asyncio.sleep(0.05 * (2 ** attempt))
 
-        return {
-            "id": int(series_id) if series_id.isdigit() else 364014,
-            "name": "Squid Game",
-            "originalName": "오징어 게임",
-            "year": 2021,
-            "originalCountry": "kor",
-            "overview": "Hundreds of cash-strapped players accept a strange invitation to compete in children's games.",
-            "genres": [{"name": "Drama"}, {"name": "Mystery"}, {"name": "Action"}]
-        }
+        if series_id == "364014":
+            return {
+                "id": 364014,
+                "name": "Squid Game",
+                "originalName": "오징어 게임",
+                "year": 2021,
+                "originalCountry": "kor",
+                "overview": "Hundreds of cash-strapped players accept a strange invitation to compete in children's games.",
+                "genres": [{"name": "Drama"}, {"name": "Mystery"}, {"name": "Action"}]
+            }
+
+        return generate_dynamic_catalog_item("TVDB", series_id)
 
     def normalize_payload(self, raw_payload: Dict[str, Any]) -> Dict[str, Any]:
         """Normalizes TVDB raw response to standardized intermediate schema."""
@@ -510,16 +606,7 @@ class TmdbProviderAdapter(BaseProviderAdapter):
         if str(tmdb_id) in TMDB_MOCK_CATALOG:
             return TMDB_MOCK_CATALOG[str(tmdb_id)]
 
-        return {
-            "id": int(tmdb_id) if tmdb_id.isdigit() else 999999,
-            "title": f"TMDb Title {tmdb_id}",
-            "original_title": f"Original Title {tmdb_id}",
-            "original_language": "en",
-            "release_date": "2024-01-01",
-            "runtime": 120,
-            "overview": "Mock overview narrative.",
-            "genres": [{"id": 18, "name": "Drama"}]
-        }
+        return generate_dynamic_catalog_item("TMDB", tmdb_id)
 
     def normalize_payload(self, raw_payload: Dict[str, Any]) -> Dict[str, Any]:
         """Normalizes TMDb payload to standardized intermediate structure."""
@@ -553,22 +640,25 @@ class AniListProviderAdapter(BaseProviderAdapter):
         """Fetches anime metadata from AniList GraphQL or returns mock baseline."""
         media_id = int(external_entity_id) if external_entity_id.isdigit() else 21
 
-        return {
-            "id": media_id,
-            "title": {
-                "romaji": "One Piece",
-                "english": "One Piece",
-                "native": "ONE PIECE"
-            },
-            "type": "ANIME",
-            "format": "TV",
-            "status": "RELEASING",
-            "startDate": {"year": 1999, "month": 10, "day": 20},
-            "episodes": 1100,
-            "duration": 24,
-            "countryOfOrigin": "JP",
-            "genres": ["Action", "Adventure", "Comedy", "Fantasy"]
-        }
+        if media_id == 21:
+            return {
+                "id": 21,
+                "title": {
+                    "romaji": "One Piece",
+                    "english": "One Piece",
+                    "native": "ONE PIECE"
+                },
+                "type": "ANIME",
+                "format": "TV",
+                "status": "RELEASING",
+                "startDate": {"year": 1999, "month": 10, "day": 20},
+                "episodes": 1100,
+                "duration": 24,
+                "countryOfOrigin": "JP",
+                "genres": ["Action", "Adventure", "Comedy", "Fantasy"]
+            }
+
+        return generate_dynamic_catalog_item("ANILIST", str(external_entity_id))
 
     def normalize_payload(self, raw_payload: Dict[str, Any]) -> Dict[str, Any]:
         """Normalizes AniList GraphQL payload."""

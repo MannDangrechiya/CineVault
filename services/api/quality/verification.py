@@ -59,7 +59,7 @@ class QualityVerificationEngine:
             c_type = normalized_data.get("content_type")
             if not c_type:
                 errors.append("SCHEMA_ERROR: Missing content_type")
-            elif c_type not in ("MOVIE", "TV_SERIES", "ANIME", "SHORT", "SPECIAL"):
+            elif c_type not in ("MOVIE", "TV_SERIES", "ANIME", "DOCUMENTARY", "SHORT_FILM", "SHORT", "SPECIAL"):
                 errors.append(f"SCHEMA_ERROR: Invalid content_type classification '{c_type}'")
 
         # Type validation (e.g. production_year = "abc")

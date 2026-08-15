@@ -76,6 +76,18 @@ def _load_local_user_store() -> dict:
             ),
             "roles": ["authenticated_user", "curator"],
         },
+        "mann_068@cinevault.local": {
+            "hash": "$2b$12$LQej.wSHTrUQH6KMXA9ONeSq8Z5JgvuH.APTdUkm7cGKnUXbmcHc2",
+            "user_id": "018f0000-0000-7000-8000-000000000068",
+            "username": "Mann_068",
+            "roles": ["authenticated_user", "curator", "system_admin"],
+        },
+        "mann_068": {
+            "hash": "$2b$12$LQej.wSHTrUQH6KMXA9ONeSq8Z5JgvuH.APTdUkm7cGKnUXbmcHc2",
+            "user_id": "018f0000-0000-7000-8000-000000000068",
+            "username": "Mann_068",
+            "roles": ["authenticated_user", "curator", "system_admin"],
+        },
     }
 
 

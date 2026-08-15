@@ -5,6 +5,7 @@ import socket
 import logging
 from typing import Dict, Any, AsyncGenerator, Optional
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import NullPool
 from .config import config
 
 logger = logging.getLogger("cinevault.database")
@@ -14,9 +15,7 @@ async_db_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_pa
 
 engine = create_async_engine(
     async_db_url,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    poolclass=NullPool,
     echo=config.debug,
     connect_args={
         # PgBouncer runs in `transaction` pool mode (docker-compose.yml), which can

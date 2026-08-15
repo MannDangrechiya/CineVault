@@ -74,6 +74,16 @@ class TestPersonalRepository(unittest.TestCase):
         self.assertEqual(res.status_code, 401)
 
     def test_router_authenticated_user_access_granted(self):
+        titles_res = self.client.get("/v1/titles")
+        real_title_id = titles_res.json()["data"][0]["id"]
+        body = {
+            "title_id": real_title_id,
+            "watched_at": "2026-08-08T19:00:00Z",
+            "progress_percentage": 100.0
+        }
+        post_res = self.client.post("/v1/me/watch-events", json=body, headers=self.auth_headers)
+        self.assertEqual(post_res.status_code, 201)
+
         res = self.client.get("/v1/me/watch-events", headers=self.auth_headers)
         self.assertEqual(res.status_code, 200)
         data = res.json()

@@ -56,7 +56,7 @@ function LoginContent() {
             <KeyRound className="w-3.5 h-3.5 text-violet-400" />
             <span>Local Development Keycloak Realm Credentials</span>
           </div>
-          <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
+          <div className="grid grid-cols-3 gap-1.5 text-[10.5px]">
             <div className="bg-slate-900/60 p-1.5 rounded border border-slate-800">
               <span className="text-slate-400 block">User:</span>
               <code className="text-violet-300">dev_user</code> / <code className="text-slate-300">dev_user_pass</code>
@@ -64,6 +64,10 @@ function LoginContent() {
             <div className="bg-slate-900/60 p-1.5 rounded border border-slate-800">
               <span className="text-slate-400 block">Curator:</span>
               <code className="text-violet-300">dev_curator</code> / <code className="text-slate-300">dev_curator_pass</code>
+            </div>
+            <div className="bg-slate-900/60 p-1.5 rounded border border-slate-800">
+              <span className="text-violet-400 font-semibold block">Admin:</span>
+              <code className="text-emerald-300">Mann_068</code> / <code className="text-slate-300">Mann_068</code>
             </div>
           </div>
         </div>
