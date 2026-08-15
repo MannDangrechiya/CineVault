@@ -108,6 +108,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      mailhog:
+        condition: service_started
+
+  # 5b. Local SMTP Sink: MailHog (P0 fix — Day 1-7 remediation)
+  # Keycloak's "Forgot password" flow needs an SMTP relay to send reset
+  # emails. MailHog accepts all mail on :1025 with no auth and exposes a
+  # web UI on :8025 to read what was "sent" — no real mail delivery, no
+  # external SMTP account needed for local development.
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: cinevault-local-mailhog
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
 
   # 6. API Gateway: Kong Gateway (DB-Less)
   kong:
