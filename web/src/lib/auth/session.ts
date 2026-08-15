@@ -20,7 +20,20 @@ export interface SessionData {
 }
 
 export const SESSION_COOKIE_NAME = "cinevault_session";
-const SESSION_SECRET = process.env.SESSION_SECRET || "cinevault-local-dev-session-secret-change-in-prod-32bytes!";
+
+// P0 Fix (Day 1-7 remediation): this placeholder must never be the active
+// key outside local development — anyone with the repo can derive it and
+// forge encrypted session cookies (including arbitrary roles).
+const INSECURE_DEFAULT_SESSION_SECRET = "cinevault-local-dev-session-secret-change-in-prod-32bytes!";
+const SESSION_SECRET = process.env.SESSION_SECRET || INSECURE_DEFAULT_SESSION_SECRET;
+
+if (process.env.NODE_ENV === "production" && SESSION_SECRET === INSECURE_DEFAULT_SESSION_SECRET) {
+  throw new Error(
+    "Refusing to start: NODE_ENV=production but SESSION_SECRET is unset (or still the " +
+    "insecure local-development default). Set a real, random SESSION_SECRET environment " +
+    "variable before deploying outside local development."
+  );
+}
 
 // Helper for AES-256-GCM encryption
 function getSecretKey(): Buffer {
@@ -41,7 +54,13 @@ export function encryptSession(data: SessionData): string {
   return `${iv.toString("base64")}.${authTag.toString("base64")}.${encrypted}`;
 }
 
-export function decryptSession(cookieValue: string): SessionData | null {
+/**
+ * Decrypts the session cookie WITHOUT checking expiration. Only intended
+ * for the refresh flow, which needs to read a just-expired session's
+ * refresh_token in order to attempt renewing it. Every other caller must
+ * use `decryptSession`, which enforces expiry.
+ */
+export function decryptSessionUnchecked(cookieValue: string): SessionData | null {
   try {
     const parts = cookieValue.split(".");
     if (parts.length !== 3) return null;
@@ -57,17 +76,22 @@ export function decryptSession(cookieValue: string): SessionData | null {
     let decrypted = decipher.update(encryptedText, "base64", "utf8");
     decrypted += decipher.final("utf8");
 
-    const session: SessionData = JSON.parse(decrypted);
-
-    // Check expiration
-    if (Date.now() >= session.expires_at) {
-      return null;
-    }
-
-    return session;
+    return JSON.parse(decrypted) as SessionData;
   } catch {
     return null;
   }
+}
+
+export function decryptSession(cookieValue: string): SessionData | null {
+  const session = decryptSessionUnchecked(cookieValue);
+  if (!session) return null;
+
+  // Check expiration
+  if (Date.now() >= session.expires_at) {
+    return null;
+  }
+
+  return session;
 }
 
 export async function getSession(): Promise<SessionData | null> {

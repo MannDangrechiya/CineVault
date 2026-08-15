@@ -4,7 +4,20 @@
 
 import os
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+
+
+# P0 Fix (Day 1-7 remediation): known-insecure placeholder values that must
+# never be active outside local_development. If any of these are still set
+# when ENVIRONMENT is staging/production, the process refuses to boot rather
+# than silently running with a forgeable/guessable secret.
+_INSECURE_DEFAULTS = {
+    "jwt_secret_key": "cinevault-local-dev-jwt-secret-CHANGE-IN-PROD-00000000",
+    "postgres_password": "dev_postgres_password_change_me",
+    "rabbitmq_password": "dev_rabbitmq_password_change_me",
+    "s3_access_key_id": "dev_s3_access_key",
+    "s3_secret_access_key": "dev_s3_secret_key",
+}
 
 
 class APIConfig(BaseModel):
@@ -84,6 +97,32 @@ class APIConfig(BaseModel):
     s3_access_key_id: str = os.getenv("S3_ACCESS_KEY_ID", "dev_s3_access_key")
     s3_secret_access_key: str = os.getenv("S3_SECRET_ACCESS_KEY", "dev_s3_secret_key")
     s3_region: str = os.getenv("S3_REGION", "us-east-1")
+
+    @model_validator(mode="after")
+    def _refuse_unsafe_defaults_outside_local_dev(self) -> "APIConfig":
+        """
+        P0 Fix (Day 1-7 remediation): a staging/production deployment must
+        never boot with a placeholder secret still active. local_development
+        is exempt — those defaults exist specifically to make first-run dev
+        setup work without a .env file.
+        """
+        if self.environment == "local_development":
+            return self
+
+        unsafe = [
+            field
+            for field, placeholder in _INSECURE_DEFAULTS.items()
+            if getattr(self, field) == placeholder
+        ]
+        if unsafe:
+            raise RuntimeError(
+                "Refusing to start: ENVIRONMENT="
+                f"'{self.environment}' but the following secrets are still "
+                f"set to their insecure local_development default: {', '.join(unsafe)}. "
+                "Set real values via environment variables before deploying "
+                "outside local_development."
+            )
+        return self
 
     @property
     def database_url(self) -> str:
