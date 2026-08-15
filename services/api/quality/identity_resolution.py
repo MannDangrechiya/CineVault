@@ -88,18 +88,23 @@ class IdentityResolutionEngine:
             c_runtime = ct.get("runtime_minutes")
             c_director = ct.get("director")
 
-            c_key_title = normalize_for_matching(c_title)
-            c_key_orig = normalize_for_matching(c_orig)
+            c_key_title = ct.get("_norm_canonical_title") or normalize_for_matching(c_title)
+            c_key_orig = ct.get("_norm_original_title") or (normalize_for_matching(c_orig) if c_orig else "")
 
             # False-match protection check (ADR-002)
             if quality_verifier.check_false_match_risk(title_prop, year, c_title, c_year):
                 continue
 
             # Exact title key match
-            name_exact_match = (key_prop and key_prop == c_key_title) or (key_orig and key_orig == c_key_orig)
+            name_exact_match = (key_prop and key_prop == c_key_title) or (key_orig and c_key_orig and key_orig == c_key_orig)
 
             # Multilingual title comparison candidate check (e.g. "Your Name" / "Kimi no Na wa" / "君の名は。")
-            multilingual_match = is_transliteration_candidate(orig_title, c_orig) or is_transliteration_candidate(title_prop, c_orig)
+            multilingual_match = False
+            if not name_exact_match and c_orig:
+                if orig_title:
+                    multilingual_match = is_transliteration_candidate(orig_title, c_orig)
+                if not multilingual_match and title_prop:
+                    multilingual_match = is_transliteration_candidate(title_prop, c_orig)
 
             if name_exact_match or multilingual_match:
                 # Deterministic check: Title + Year exact match
@@ -126,34 +131,40 @@ class IdentityResolutionEngine:
         # LEVEL 4: PROBABILISTIC CANDIDATE MATCHING
         # ----------------------------------------------------------------------
         probabilistic_candidates = []
-        for ct in existing_canonical_titles:
-            c_title = ct.get("canonical_title", "")
-            c_year = ct.get("production_year")
-            c_key_title = normalize_for_matching(c_title)
+        words_p = set(key_prop.split()) if key_prop else set()
+        if words_p:
+            len_p = len(words_p)
+            for ct in existing_canonical_titles:
+                c_title = ct.get("canonical_title", "")
+                c_year = ct.get("production_year")
+                c_key_title = ct.get("_norm_canonical_title") or normalize_for_matching(c_title)
 
-            if not key_prop or not c_key_title:
-                continue
+                if not c_key_title:
+                    continue
 
-            words_p = set(key_prop.split())
-            words_c = set(c_key_title.split())
+                words_c = ct.get("_words_title")
+                if words_c is None:
+                    words_c = set(c_key_title.split())
+                    ct["_words_title"] = words_c
 
-            if words_p and words_c:
-                common_words = words_p & words_c
-                if common_words:
-                    token_ratio = len(common_words) / min(len(words_p), len(words_c))
-                    if token_ratio >= 0.80 or key_prop in c_key_title or c_key_title in key_prop:
-                        sim_score = 0.70 + (0.15 * token_ratio)
-                        if year and c_year and year == c_year:
-                            sim_score += 0.10
-                        if sim_score >= 0.70:
-                            probabilistic_candidates.append((ct["id"], min(sim_score, 0.890)))
+                if words_c:
+                    common_words = words_p & words_c
+                    if common_words:
+                        token_ratio = len(common_words) / min(len_p, len(words_c))
+                        if token_ratio >= 0.80 or key_prop in c_key_title or c_key_title in key_prop:
+                            sim_score = 0.70 + (0.15 * token_ratio)
+                            if year and c_year and year == c_year:
+                                sim_score += 0.10
+                            if sim_score >= 0.70:
+                                probabilistic_candidates.append((ct["id"], min(sim_score, 0.890)))
 
-        if probabilistic_candidates:
-            probabilistic_candidates.sort(key=lambda x: x[1], reverse=True)
-            best_id, best_score = probabilistic_candidates[0]
-            if best_score >= 0.70:
-                logger.info(f"Identity Resolution Level 4: Probabilistic match candidate for '{title_prop}' -> Title '{best_id}' (score: {best_score:.3f})")
-                return (MatchState.REQUIRES_REVIEW, best_id, best_score, "RULE-LEVEL4-PROBABILISTIC-REVIEW-CANDIDATE")
+            if probabilistic_candidates:
+                probabilistic_candidates.sort(key=lambda x: x[1], reverse=True)
+                best_id, best_score = probabilistic_candidates[0]
+                if best_score >= 0.70:
+                    logger.info(f"Identity Resolution Level 4: Probabilistic match candidate for '{title_prop}' -> Title '{best_id}' (score: {best_score:.3f})")
+                    return (MatchState.REQUIRES_REVIEW, best_id, best_score, "RULE-LEVEL4-PROBABILISTIC-REVIEW-CANDIDATE")
+
 
 
         # ----------------------------------------------------------------------

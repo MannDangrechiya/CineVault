@@ -1,6 +1,7 @@
 # CineVault OS — Text & Script Normalization Engine
 # Implements deterministic text normalization, NFKC Unicode normalization, script handling, and matching keys (Day 5 Data Quality)
 
+import functools
 import re
 import unicodedata
 import difflib
@@ -19,6 +20,7 @@ from unidecode import unidecode as _unidecode
 # on'yomi/kun'yomi — see normalize_for_phonetic_matching's docstring.
 PHONETIC_MATCH_THRESHOLD = 0.80
 
+@functools.lru_cache(maxsize=65536)
 def normalize_title_text(text: Optional[str]) -> str:
     """
     Cleans title string with NFKC Unicode normalization and whitespace trimming.
@@ -32,11 +34,13 @@ def normalize_title_text(text: Optional[str]) -> str:
     normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized
 
+@functools.lru_cache(maxsize=65536)
 def strip_accents(text: str) -> str:
     """Decomposes Unicode characters and removes diacritic accent marks."""
     nfd = unicodedata.normalize("NFD", text)
     return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
 
+@functools.lru_cache(maxsize=65536)
 def normalize_for_matching(text: Optional[str]) -> str:
     """
     Generates a normalized comparison key for identity matching & duplicate detection.
@@ -63,6 +67,7 @@ def normalize_for_matching(text: Optional[str]) -> str:
     # Collapse remaining whitespace
     return re.sub(r"\s+", " ", cleaned).strip()
 
+@functools.lru_cache(maxsize=65536)
 def normalize_for_phonetic_matching(text: Optional[str]) -> str:
     """
     Deterministic, offline, script-independent comparison key. Transliterates
@@ -90,6 +95,7 @@ def normalize_for_phonetic_matching(text: Optional[str]) -> str:
     return normalize_for_matching(ascii_approx)
 
 
+@functools.lru_cache(maxsize=65536)
 def phonetic_similarity(text_a: Optional[str], text_b: Optional[str]) -> float:
     """
     Returns a 0.0-1.0 similarity ratio between the phonetic (transliterated)
@@ -105,7 +111,8 @@ def phonetic_similarity(text_a: Optional[str], text_b: Optional[str]) -> float:
     return difflib.SequenceMatcher(None, key_a, key_b).ratio()
 
 
-def is_transliteration_candidate(orig_title: str, prop_title: str) -> bool:
+@functools.lru_cache(maxsize=65536)
+def is_transliteration_candidate(orig_title: Optional[str], prop_title: Optional[str]) -> bool:
     """
     Determines if two title strings (e.g. Korean/Devanagari original title
     vs. a Latin-script proposal) could represent the same title.
@@ -123,6 +130,11 @@ def is_transliteration_candidate(orig_title: str, prop_title: str) -> bool:
     treating it as an automatic match. A transliteration candidate is never
     sufficient on its own to auto-merge two titles.
     """
+    if not orig_title or not prop_title:
+        return False
+    if orig_title == prop_title:
+        return True
+
     key1 = normalize_for_matching(orig_title)
     key2 = normalize_for_matching(prop_title)
 
@@ -130,3 +142,4 @@ def is_transliteration_candidate(orig_title: str, prop_title: str) -> bool:
         return True
 
     return phonetic_similarity(orig_title, prop_title) >= PHONETIC_MATCH_THRESHOLD
+

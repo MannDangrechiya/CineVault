@@ -81,9 +81,27 @@ class IngestionPipelineEngine:
             "cached_content_types": set(),
             "genre_lookup": {},
             "external_id_map": {},
-            "title_map": {},
+            # P0 fix (Day 1-7 remediation, Batch 4): catalog_snapshot replaces
+            # the old title_map. title_map was a canonical_title.lower() /
+            # original_title.lower() -> (title_id, year) dict, matched by raw
+            # string equality — it bypassed quality/identity_resolution.py
+            # entirely (Level 3/4 multi-signal and multilingual matching were
+            # dead code). catalog_snapshot is a list of lightweight dicts fed
+            # directly into identity_resolver.resolve_identity, which is now
+            # the actual decision authority for every non-external-ID match.
+            #
+            # Scaling note: this preloads up to CATALOG_SNAPSHOT_LIMIT titles
+            # into memory once per run so identity resolution doesn't require
+            # a DB round-trip per item. Beyond that limit it is intentionally
+            # left unset (None) and _match_canonical_title falls back to a
+            # narrower per-item SQL candidate lookup — correct, but with
+            # weaker multilingual candidate recall at very large catalog
+            # sizes. A phonetic-indexed candidate search is future work, not
+            # attempted here.
+            "catalog_snapshot": [],
             "pending_genres": []
         }
+        CATALOG_SNAPSHOT_LIMIT = 20000
 
         if db is not None:
             run_orm = IngestionRunModel(
@@ -121,18 +139,47 @@ class IngestionPipelineEngine:
             except Exception:
                 run_context["external_id_map"] = {}
 
-            # Preload title mappings for deterministic fast matching
+            # Preload a catalog snapshot for the real identity resolver (see
+            # note on run_context["catalog_snapshot"] above).
             try:
-                t_res = await db.execute(
-                    select(TitleModel.canonical_title, TitleModel.original_title, TitleModel.title_id, TitleModel.production_year)
-                )
-                for t in t_res.all():
-                    if t[0]:
-                        run_context["title_map"][t[0].lower()] = (str(t[2]), t[3])
-                    if t[1]:
-                        run_context["title_map"][t[1].lower()] = (str(t[2]), t[3])
+                count_res = await db.execute(select(func.count()).select_from(TitleModel))
+                total_titles = count_res.scalar_one()
+                if total_titles <= CATALOG_SNAPSHOT_LIMIT:
+                    t_res = await db.execute(
+                        select(
+                            TitleModel.title_id, TitleModel.display_id,
+                            TitleModel.canonical_title, TitleModel.original_title,
+                            TitleModel.production_year, TitleModel.content_type_id
+                        )
+                    )
+                    snapshot_items = []
+                    for t in t_res.all():
+                        c_title = t[2]
+                        o_title = t[3]
+                        norm_c = normalize_for_matching(c_title)
+                        norm_o = normalize_for_matching(o_title)
+                        snapshot_items.append({
+                            "id": str(t[0]),
+                            "display_id": t[1],
+                            "canonical_title": c_title,
+                            "original_title": o_title,
+                            "production_year": t[4],
+                            "content_type": t[5],
+                            "external_ids": {},
+                            "_norm_canonical_title": norm_c,
+                            "_norm_original_title": norm_o,
+                            "_words_title": set(norm_c.split()) if norm_c else set(),
+                        })
+                    run_context["catalog_snapshot"] = snapshot_items
+                else:
+                    run_context["catalog_snapshot"] = None
+                    logger.warning(
+                        f"Catalog has {total_titles} titles (> {CATALOG_SNAPSHOT_LIMIT}); "
+                        "skipping full-catalog identity resolution preload, falling back "
+                        "to narrower per-item candidate lookup."
+                    )
             except Exception:
-                pass
+                run_context["catalog_snapshot"] = None
 
             # Preload max sequence counters per prefix
             for pfx in ["MOV-", "TV-", "ANI-", "DOC-", "SHO-"]:
@@ -407,15 +454,34 @@ class IngestionPipelineEngine:
             except Exception as e:
                 logger.debug(f"TitleExternalId lookup skipped: {e}")
 
-        # Level 2 & 3: Deterministic matching using targeted preloaded title map
-        if run_context and "title_map" in run_context:
-            cand_title = (normalized.get("canonical_title_proposal") or normalized.get("original_title") or "").strip().lower()
-            if cand_title and cand_title in run_context["title_map"]:
-                matched_id, prod_year = run_context["title_map"][cand_title]
-                cand_year = normalized.get("production_year")
-                if not cand_year or not prod_year or cand_year == prod_year:
-                    return ("AUTO_MATCH", matched_id, 0.950, "RULE_LEVEL2_DETERMINISTIC_TITLE_YEAR")
+        # Level 2-4: the real identity resolver is the decision authority here
+        # (P0 fix, Day 1-7 remediation, Batch 4). Previously this branch did a
+        # raw canonical_title.lower() dict lookup that bypassed
+        # quality/identity_resolution.py entirely — Level 3 multi-signal
+        # matching, Level 4 probabilistic matching, and multilingual
+        # transliteration matching were all dead code. Now every non-external-
+        # ID match is decided by identity_resolver.resolve_identity.
+        match_payload = dict(normalized)
+        match_payload["provider_name"] = provider_name
+        match_payload["external_id"] = external_id
+
+        catalog_snapshot = run_context.get("catalog_snapshot") if run_context else None
+
+        if catalog_snapshot is not None:
+            # Preloaded whole-catalog path (see run_context init comment).
+            match_state, matched_id, score, rule = identity_resolver.resolve_identity(
+                match_payload, catalog_snapshot
+            )
+            if match_state == MatchState.MATCH_EXACT:
+                return ("AUTO_MATCH", matched_id, score, rule)
+            elif match_state in (MatchState.MATCH_AMBIGUOUS, MatchState.REQUIRES_REVIEW):
+                return ("REQUIRES_REVIEW", matched_id, score, rule)
         else:
+            # Large-catalog fallback: fetch a narrow same-title candidate set
+            # via SQL (exact ILIKE on canonical/original title), then still
+            # defer the actual decision to identity_resolver. Weaker
+            # multilingual candidate recall than the snapshot path (a
+            # different-script title won't ILIKE-match), documented above.
             try:
                 cand_title = normalized.get("canonical_title_proposal") or normalized.get("original_title")
                 if cand_title:
@@ -426,26 +492,25 @@ class IngestionPipelineEngine:
                     res = await db.execute(stmt)
                     titles = res.scalars().all()
                     if titles:
-                        catalog_list = []
-                        for t in titles:
-                            catalog_list.append({
+                        candidate_list = [
+                            {
                                 "id": str(t.title_id),
                                 "display_id": t.display_id,
                                 "canonical_title": t.canonical_title,
                                 "original_title": t.original_title,
                                 "production_year": t.production_year,
-                                "content_type": t.content_type_id
-                            })
-
-                        normalized["provider_name"] = provider_name
-                        normalized["external_id"] = external_id
-                        match_state, matched_id, score, rule = identity_resolver.resolve_identity(normalized, catalog_list)
-
+                                "content_type": t.content_type_id,
+                                "external_ids": {},
+                            }
+                            for t in titles
+                        ]
+                        match_state, matched_id, score, rule = identity_resolver.resolve_identity(
+                            match_payload, candidate_list
+                        )
                         if match_state == MatchState.MATCH_EXACT:
                             return ("AUTO_MATCH", matched_id, score, rule)
                         elif match_state in (MatchState.MATCH_AMBIGUOUS, MatchState.REQUIRES_REVIEW):
                             return ("REQUIRES_REVIEW", matched_id, score, rule)
-
             except Exception as e:
                 logger.debug(f"TitleModel catalog identity search skipped: {e}")
 
@@ -677,11 +742,30 @@ class IngestionPipelineEngine:
                         if run_context and "pending_genres" in run_context:
                             run_context["pending_genres"].append((new_title_id, g_id))
 
-                if run_context and "title_map" in run_context:
-                    if canonical_title:
-                        run_context["title_map"][canonical_title.lower()] = (str(new_title_id), prod_year)
-                    if original_title:
-                        run_context["title_map"][original_title.lower()] = (str(new_title_id), prod_year)
+                if run_context is not None and "external_id_map" in run_context and external_id:
+                    run_context["external_id_map"][str(external_id)] = str(new_title_id)
+
+                # Keep the in-memory catalog snapshot current so later items
+                # in the SAME batch can be matched (via identity_resolver,
+                # not a raw string dict) against titles this batch already
+                # created — without this, two items for the same new title
+                # within one batch would both resolve NO_MATCH and both get
+                # inserted as duplicates.
+                if run_context is not None and run_context.get("catalog_snapshot") is not None:
+                    norm_c = normalize_for_matching(canonical_title)
+                    norm_o = normalize_for_matching(original_title)
+                    run_context["catalog_snapshot"].append({
+                        "id": str(new_title_id),
+                        "display_id": display_id,
+                        "canonical_title": canonical_title,
+                        "original_title": original_title,
+                        "production_year": prod_year,
+                        "content_type": c_type_id,
+                        "external_ids": {provider_name: str(external_id)},
+                        "_norm_canonical_title": norm_c,
+                        "_norm_original_title": norm_o,
+                        "_words_title": set(norm_c.split()) if norm_c else set(),
+                    })
 
                 db.add(title_orm)
                 return (True, False)

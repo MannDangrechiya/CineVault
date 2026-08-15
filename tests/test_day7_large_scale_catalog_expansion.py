@@ -108,8 +108,24 @@ class TestDay7StagedCatalogExpansion(RollbackIsolatedAsyncTestCase):
             await session.commit()
 
             self.assertEqual(idempotent_res["records_created"], 0)
-            self.assertEqual(idempotent_res["duplicate_count"], 100)
-            self.assertEqual(idempotent_res["existing_matches"], 100)
+            # P0 fix (Day 1-7 remediation, Batch 4): duplicate_count is no
+            # longer a blind exact-string re-match count — it reflects the
+            # REAL identity resolver, which can legitimately route a
+            # re-ingested item to REQUIRES_REVIEW instead of AUTO_MATCH if
+            # its generated title token-overlaps enough with another title
+            # already in the catalog (e.g. the one preserved fixture title
+            # that scripts/cleanup_fixture_data.py deliberately kept because
+            # real personal data references it — its generic "Catalog ...
+            # Entry N" wording can trigger Level 4 probabilistic overlap
+            # against other generated fixture titles). The old
+            # canonical_title.lower() dict match silently ignored this
+            # ambiguity; the real resolver correctly flags it instead. The
+            # invariant that actually matters for idempotency is: no NEW
+            # canonical rows get created, and every previously-seen item is
+            # accounted for as either a duplicate or a flagged review — never
+            # a fresh NO_MATCH.
+            self.assertEqual(idempotent_res["duplicate_count"] + idempotent_res["needs_review"], 100)
+            self.assertEqual(idempotent_res["existing_matches"] + idempotent_res["needs_review"], 100)
 
     async def test_stage_500_controlled_expansion(self):
         """Validates Stage 500: Batched execution, Quality Gate, and Idempotency."""
@@ -145,7 +161,10 @@ class TestDay7StagedCatalogExpansion(RollbackIsolatedAsyncTestCase):
             await session.commit()
 
             self.assertEqual(re_run["records_created"], 0)
-            self.assertEqual(re_run["duplicates"], 500)
+            # See the identical comment in test_stage_100_dry_run_and_controlled_apply —
+            # the real identity resolver can legitimately route some
+            # re-ingested items to REQUIRES_REVIEW rather than AUTO_MATCH.
+            self.assertEqual(re_run["duplicates"] + re_run["needs_review"], 500)
 
     async def test_stage_1000_performance_and_metrics(self):
         """Validates Stage 1,000: Measuring ingestion throughput, timing metrics, and API latency."""
