@@ -3,7 +3,7 @@
 import React, { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Clapperboard, Lock, ArrowLeft, Shield, AlertTriangle, KeyRound } from "lucide-react";
+import { Clapperboard, Lock, ArrowLeft, Shield, AlertTriangle } from "lucide-react";
 
 function LoginContent() {
   const searchParams = useSearchParams();
@@ -49,28 +49,13 @@ function LoginContent() {
           <Lock className="w-4 h-4" />
           <span>Sign In with Keycloak OIDC</span>
         </button>
-
-        {/* Pre-seeded Local Dev Credentials Hint Box */}
-        <div className="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/80 text-[11px] text-slate-400 space-y-2">
-          <div className="flex items-center gap-1.5 font-semibold text-slate-300">
-            <KeyRound className="w-3.5 h-3.5 text-violet-400" />
-            <span>Local Development Keycloak Realm Credentials</span>
-          </div>
-          <div className="grid grid-cols-3 gap-1.5 text-[10.5px]">
-            <div className="bg-slate-900/60 p-1.5 rounded border border-slate-800">
-              <span className="text-slate-400 block">User:</span>
-              <code className="text-violet-300">dev_user</code> / <code className="text-slate-300">dev_user_pass</code>
-            </div>
-            <div className="bg-slate-900/60 p-1.5 rounded border border-slate-800">
-              <span className="text-slate-400 block">Curator:</span>
-              <code className="text-violet-300">dev_curator</code> / <code className="text-slate-300">dev_curator_pass</code>
-            </div>
-            <div className="bg-slate-900/60 p-1.5 rounded border border-slate-800">
-              <span className="text-violet-400 font-semibold block">Admin:</span>
-              <code className="text-emerald-300">Mann_068</code> / <code className="text-slate-300">Mann_068</code>
-            </div>
-          </div>
-        </div>
+        {/*
+          P0 fix (Day 1-7 remediation): this page previously rendered seeded
+          dev/curator/admin credentials — including a privileged system_admin
+          password — to any unauthenticated visitor. Credentials must never
+          ship in production UI. Local developers can find the seeded
+          accounts in docs/AUTHENTICATION_AUTHORIZATION_SPECIFICATION_V1.md.
+        */}
       </div>
 
       {/* Footer Info */}

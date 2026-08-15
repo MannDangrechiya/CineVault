@@ -50,8 +50,15 @@ def _load_local_user_store() -> dict:
     """
     Builds the local dev credential store from environment variables.
     Schema: { email: { "hash": bcrypt_hash, "user_id": uuid_str, "roles": [...] } }
+
+    P0 Fix (Day 1-7 remediation): the previous store baked a hardcoded
+    system_admin credential (`mann_068` / bcrypt hash committed in source)
+    directly into this function, and the login page rendered it to any
+    unauthenticated visitor. Privileged accounts must now be opted into
+    explicitly via environment variables — no privileged hash ships in
+    source, and nothing is rendered unless the operator configures it.
     """
-    return {
+    store = {
         os.getenv("DEV_USER_EMAIL", "dev@cinevault.local"): {
             "hash": os.getenv(
                 "DEV_USER_PASSWORD_HASH",
@@ -76,19 +83,20 @@ def _load_local_user_store() -> dict:
             ),
             "roles": ["authenticated_user", "curator"],
         },
-        "mann_068@cinevault.local": {
-            "hash": "$2b$12$LQej.wSHTrUQH6KMXA9ONeSq8Z5JgvuH.APTdUkm7cGKnUXbmcHc2",
-            "user_id": "018f0000-0000-7000-8000-000000000068",
-            "username": "Mann_068",
-            "roles": ["authenticated_user", "curator", "system_admin"],
-        },
-        "mann_068": {
-            "hash": "$2b$12$LQej.wSHTrUQH6KMXA9ONeSq8Z5JgvuH.APTdUkm7cGKnUXbmcHc2",
-            "user_id": "018f0000-0000-7000-8000-000000000068",
-            "username": "Mann_068",
-            "roles": ["authenticated_user", "curator", "system_admin"],
-        },
     }
+
+    # system_admin is opt-in only: requires the operator to set an explicit
+    # bcrypt hash via DEV_ADMIN_PASSWORD_HASH. No default hash is provided,
+    # so a fresh checkout has no privileged account until one is configured.
+    dev_admin_hash = os.getenv("DEV_ADMIN_PASSWORD_HASH")
+    if dev_admin_hash:
+        store[os.getenv("DEV_ADMIN_EMAIL", "dev_admin@cinevault.local")] = {
+            "hash": dev_admin_hash,
+            "user_id": os.getenv("DEV_ADMIN_UUID", "018f0000-0000-7000-8000-000000000003"),
+            "roles": ["authenticated_user", "curator", "system_admin"],
+        }
+
+    return store
 
 
 class LoginRequest(BaseModel):
