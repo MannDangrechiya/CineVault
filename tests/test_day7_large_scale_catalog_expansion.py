@@ -7,13 +7,48 @@ import uuid
 import time
 from typing import Dict, Any, List
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from services.api.ingestion.licensing import licensing_gate, ActivationStatus
 from services.api.ingestion.adapters import KobisProviderAdapter, TmdbProviderAdapter, TvdbProviderAdapter, AniListProviderAdapter
 from services.api.ingestion.pipeline import pipeline_engine
 from services.api.ingestion.batch_runner import batch_runner
 from services.api.schemas.internal import IngestionTriggerRequest, IngestionItemPayload
 from services.api.repositories.canonical import canonical_repository, SEED_FALLBACK_TITLES
-from services.api.database import AsyncSessionLocal
+from services.api.database import engine
+
+
+class RollbackIsolatedAsyncTestCase(IsolatedAsyncioTestCase):
+    """
+    P1 fix (Day 1-7 remediation): this file previously used the real app
+    AsyncSessionLocal directly, and every dry_run=False test permanently
+    wrote thousands of synthetic rows into the shared development
+    database with no teardown — the catalog grew by ~5,000 rows every
+    time this file ran under `pytest`, silently re-contaminating any
+    fixture cleanup.
+
+    Standard SQLAlchemy 2.0 test-isolation pattern: open one connection,
+    start an outer transaction on it, and hand out sessions bound to that
+    connection in SAVEPOINT mode. Application code (pipeline_engine,
+    batch_runner) can call session.commit() exactly as it does in
+    production — that only releases the SAVEPOINT — while the outer
+    transaction is rolled back in asyncTearDown, discarding every write
+    this test made, regardless of how many inner commits occurred.
+    """
+
+    async def asyncSetUp(self):
+        self._conn = await engine.connect()
+        self._outer_txn = await self._conn.begin()
+        self.SessionLocal = async_sessionmaker(
+            bind=self._conn,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            join_transaction_mode="create_savepoint",
+        )
+
+    async def asyncTearDown(self):
+        await self._outer_txn.rollback()
+        await self._conn.close()
 
 class TestDay7SourceRegistryAndLicensingGate(unittest.TestCase):
     """Verifies Data Source Registry licensing compliance prior to large-scale expansion."""
@@ -37,12 +72,8 @@ class TestDay7SourceRegistryAndLicensingGate(unittest.TestCase):
             licensing_gate.verify_source_access("TMDB", is_scraping_attempt=True)
 
 
-class TestDay7StagedCatalogExpansion(IsolatedAsyncioTestCase):
+class TestDay7StagedCatalogExpansion(RollbackIsolatedAsyncTestCase):
     """Executes controlled expansion across 100 -> 500 -> 1,000 -> 5,000+ stages with quality gates."""
-
-    async def asyncTearDown(self):
-        from services.api.database import engine
-        await engine.dispose()
 
     async def test_stage_100_dry_run_and_controlled_apply(self):
         """Validates Stage 100: Dry run, Quality Gate, Controlled Apply, and Idempotency."""
@@ -63,7 +94,7 @@ class TestDay7StagedCatalogExpansion(IsolatedAsyncioTestCase):
         self.assertEqual(dry_res["error_count"], 0)
 
         # 2. Controlled Apply with DB session
-        async with AsyncSessionLocal() as session:
+        async with self.SessionLocal() as session:
             apply_req = IngestionTriggerRequest(provider_name="KOBIS", dry_run=False, items=items)
             apply_res = await pipeline_engine.execute_run(db=session, trigger_req=apply_req)
             await session.commit()
@@ -88,7 +119,7 @@ class TestDay7StagedCatalogExpansion(IsolatedAsyncioTestCase):
             for i in range(1, 501)
         ]
 
-        async with AsyncSessionLocal() as session:
+        async with self.SessionLocal() as session:
             res = await batch_runner.execute_staged_expansion(
                 db=session,
                 provider_name="TMDB",
@@ -124,7 +155,7 @@ class TestDay7StagedCatalogExpansion(IsolatedAsyncioTestCase):
             for i in range(1, 1001)
         ]
 
-        async with AsyncSessionLocal() as session:
+        async with self.SessionLocal() as session:
             start_t = time.time()
             res = await batch_runner.execute_staged_expansion(
                 db=session,
@@ -157,7 +188,7 @@ class TestDay7StagedCatalogExpansion(IsolatedAsyncioTestCase):
             for i in range(1, 3501)
         ]
 
-        async with AsyncSessionLocal() as session:
+        async with self.SessionLocal() as session:
             res = await batch_runner.execute_staged_expansion(
                 db=session,
                 provider_name="KOBIS",
@@ -172,16 +203,12 @@ class TestDay7StagedCatalogExpansion(IsolatedAsyncioTestCase):
             self.assertEqual(res["failed_batches"], 0)
 
 
-class TestDay7RegressionAndDataSafety(IsolatedAsyncioTestCase):
+class TestDay7RegressionAndDataSafety(RollbackIsolatedAsyncTestCase):
     """Verifies baseline title preservation, search contract compatibility, and user personal data safety."""
-
-    async def asyncTearDown(self):
-        from services.api.database import engine
-        await engine.dispose()
 
     async def test_baseline_10_titles_unaltered(self):
         """Verifies original 10 baseline titles (9 Movies, 1 TV Series) remain intact and unaltered."""
-        async with AsyncSessionLocal() as session:
+        async with self.SessionLocal() as session:
             parasite = await canonical_repository.lookup_title(db=session, display_id="MOV-000001")
             self.assertIsNotNone(parasite)
             self.assertEqual(parasite.canonical_title, "Parasite")
