@@ -80,9 +80,29 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${appBaseUrl}/login?error=${encodeURIComponent("Identity server unreachable.")}`);
   }
 
-  // Retrieve user identity from FastAPI /v1/auth/me using access token
+  // Retrieve user identity from FastAPI /v1/auth/me using access token.
+  //
+  // P0 Fix (Day 1-7 remediation): this previously fell back to parsing the
+  // access token's JWT payload WITHOUT verifying its signature whenever
+  // /v1/auth/me failed, and trusted whatever `roles` it found there. That
+  // let an unverified claim set (including system_admin) install itself
+  // into the encrypted session. The FastAPI endpoint is the only place
+  // that verifies signature/issuer/audience/expiry — if it doesn't return
+  // a verified identity, authentication has failed and no session may be
+  // created. The user must retry login instead.
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
   let user: SessionUser;
+
+  const failAuthentication = (reason: string) => {
+    console.error("Authentication failed at /v1/auth/me verification step:", reason);
+    const response = NextResponse.redirect(
+      `${appBaseUrl}/login?error=${encodeURIComponent("Could not verify your identity. Please sign in again.")}`
+    );
+    response.cookies.delete("cv_pkce_verifier");
+    response.cookies.delete("cv_oauth_state");
+    response.cookies.delete("cv_return_to");
+    return response;
+  };
 
   try {
     const meResponse = await fetch(`${apiBaseUrl}/v1/auth/me`, {
@@ -92,35 +112,19 @@ export async function GET(request: Request) {
       },
     });
 
-    if (meResponse.ok) {
-      const meData = await meResponse.json();
-      user = {
-        sub: meData.sub,
-        email: meData.email,
-        username: meData.username,
-        roles: meData.roles || ["authenticated_user"],
-      };
-    } else {
-      // Fallback: parse unverified JWT claims if FastAPI me endpoint fails transiently
-      const payloadB64 = tokenData.access_token.split(".")[1];
-      const payload = JSON.parse(Buffer.from(payloadB64, "base64").toString("utf-8"));
-      user = {
-        sub: payload.sub,
-        email: payload.email,
-        username: payload.preferred_username,
-        roles: payload.realm_access?.roles || ["authenticated_user"],
-      };
+    if (!meResponse.ok) {
+      return failAuthentication(`/v1/auth/me returned ${meResponse.status}`);
     }
-  } catch {
-    // Fallback JWT claim extract
-    const payloadB64 = tokenData.access_token.split(".")[1];
-    const payload = JSON.parse(Buffer.from(payloadB64, "base64").toString("utf-8"));
+
+    const meData = await meResponse.json();
     user = {
-      sub: payload.sub,
-      email: payload.email,
-      username: payload.preferred_username,
-      roles: payload.realm_access?.roles || ["authenticated_user"],
+      sub: meData.sub,
+      email: meData.email,
+      username: meData.username,
+      roles: meData.roles || ["authenticated_user"],
     };
+  } catch (err) {
+    return failAuthentication(`/v1/auth/me request threw: ${err}`);
   }
 
   // Establish Session
