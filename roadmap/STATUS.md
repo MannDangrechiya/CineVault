@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 27 Complete_
+_Last updated: 2026-08-16 — Phase 28 Complete_
 
 ## Current Phase
-- Phase: 28 — Security Hardening
+- Phase: 29 — Privacy / Data Lifecycle
 - Status: NOT STARTED
-- Branch: feature/phase-27-performance-scale
+- Branch: feature/phase-28-security-hardening
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 27 gate passed: evidence-based performance tooling — latency histogram with P50/P95/P99 percentile tracking, cache-aside hit/miss metrics, slow-query detector with configurable thresholds per operation, query budget enforcer, benchmark reporter with 4-tier scale targets, and 4 internal performance API endpoints, all 27 tests passing)
+READY FOR NEXT PHASE (Phase 28 gate passed: security hardening complete — PKCE S256, SSRF URL allowlist, prompt injection detection (11 patterns), upload security (MIME/ext/size), CAT-2 user isolation enforcement, SQL/path/shell injection detection, secrets scanning (OpenAI/JWT/PEM/GitHub), security header auditor, and full 10-control audit runner, all 43 security tests passing)
 
 ## Notes for next session
-- What was done: Phase 27 Performance/Scale complete. Implemented latency histogram, cache-aside metrics, slow-query detector, query budget enforcement, and benchmark reporter. Constraint honored: optimizations are evidence-based, PostgreSQL remains canonical.
+- What was done: Phase 28 Security Hardening complete. Implemented security.py module with all required security controls and comprehensive security test suite with 43 tests covering all attack surface areas.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -45,8 +45,8 @@ READY FOR NEXT PHASE (Phase 27 gate passed: evidence-based performance tooling �
 | 25 | Observability | COMPLETE | feature/phase-25-observability | 2026-08-16 |
 | 26 | Background Jobs / Queue | COMPLETE | feature/phase-26-background-jobs | 2026-08-16 |
 | 27 | Performance / Scale | COMPLETE | feature/phase-27-performance-scale | 2026-08-16 |
-| 28 | Security Hardening | NOT STARTED | | |
-| 29 | Privacy / Data Lifecycle | | | |
+| 28 | Security Hardening | COMPLETE | feature/phase-28-security-hardening | 2026-08-16 |
+| 29 | Privacy / Data Lifecycle | NOT STARTED | | |
 | 30 | Backup / Disaster Recovery | | | |
 | 31 | CI/CD | | | |
 | 32 | Release Engineering | | | |
