@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 1 Complete_
+_Last updated: 2026-08-16 — Phase 2 Complete_
 
 ## Current Phase
-- Phase: 2 — Real Catalog Ingestion
+- Phase: 3 — Catalog Refresh / Update System
 - Status: NOT STARTED
-- Branch: feature/phase-01-canonical-data-foundation
+- Branch: feature/phase-02-real-catalog-ingestion
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 1 gate passed: 5 representative entity tests for Movie, TV Series, Anime, Documentary, and Edition vs Season structural separation verified, 247 tests passing)
+READY FOR NEXT PHASE (Phase 2 gate passed: single approved provider licensing gate, staged expansion 100 -> 500 -> 1,000 -> 5,000+ verified with dry runs, quality validation, idempotency, duplicate prevention, and provenance retention, all 6 Phase 2 tests passing)
 
 ## Notes for next session
-- What was done: Phase 1 Canonical Data Foundation complete. Added V2.4 migration, full canonical SQLAlchemy models & Pydantic schemas, comprehensive relational queries, and representative test verification.
+- What was done: Phase 2 Real Catalog Ingestion complete. Staged expansion across 100, 500, 1000, 5000+ items verified with batch runner, licensing gate, idempotency, and provenance retention.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -19,8 +19,8 @@ READY FOR NEXT PHASE (Phase 1 gate passed: 5 representative entity tests for Mov
 |---|-------|--------|--------|-----------|
 | 0 | Day 1–7 Remediation | COMPLETE | fix/day1-7-remediation | 2026-08-16 |
 | 1 | Canonical Data Foundation | COMPLETE | feature/phase-01-canonical-data-foundation | 2026-08-16 |
-| 2 | Real Catalog Ingestion | NOT STARTED | | |
-| 3 | Catalog Refresh / Update System | | | |
+| 2 | Real Catalog Ingestion | COMPLETE | feature/phase-02-real-catalog-ingestion | 2026-08-16 |
+| 3 | Catalog Refresh / Update System | NOT STARTED | | |
 | 4 | Search & Discovery | | | |
 | 5 | Personal User Foundation | | | |
 | 6 | Watch History Engine | | | |
