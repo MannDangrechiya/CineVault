@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 16 Complete_
+_Last updated: 2026-08-16 — Phase 17 Complete_
 
 ## Current Phase
-- Phase: 17 — Import / Export
+- Phase: 18 — Offline Personal Library
 - Status: NOT STARTED
-- Branch: feature/phase-16-ai-security
+- Branch: feature/phase-18-offline-library
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 16 gate passed: treat all untrusted text as DATA via passive boundary wrapping, prompt-injection/tag-smuggling/script defenses, PII and API-key exfiltration redaction, and non-authoritative boundary constraints with RBAC verified, all 17 tests passing)
+READY FOR NEXT PHASE (Phase 17 gate passed: personal data portability with full JSON/CSV exports across watch events, ratings, library states, notes, custom lists, identity matching, conflict preview detection, and controlled apply without silent overwrites verified, all 19 tests passing)
 
 ## Notes for next session
-- What was done: Phase 16 AI Security complete. Implemented & verified passive data payload encapsulation (`<untrusted_data>`), prompt injection/smuggling defense, PII / API token / password hash exfiltration redaction, and non-authoritative boundary governance prohibiting direct unvalidated canonical mutations.
+- What was done: Phase 17 Import / Export complete. Implemented & verified personal data export (`GET /v1/me/export`), import preview & conflict detection (`POST /v1/me/import/preview`), and controlled import apply (`POST /v1/me/import/apply`) enforcing user conflict strategies (`KEEP_EXISTING`, `OVERWRITE`, `MERGE`) without silent data loss.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -34,7 +34,7 @@ READY FOR NEXT PHASE (Phase 16 gate passed: treat all untrusted text as DATA via
 | 14 | AI Assistant Foundation | COMPLETE | feature/phase-14-ai-assistant-foundation | 2026-08-16 |
 | 15 | AI Assistant Capabilities | COMPLETE | feature/phase-15-ai-assistant-capabilities | 2026-08-16 |
 | 16 | AI Security | COMPLETE | feature/phase-16-ai-security | 2026-08-16 |
-| 17 | Import / Export | NOT STARTED | | |
+| 17 | Import / Export | COMPLETE | feature/phase-17-import-export | 2026-08-16 |
 | 18 | Offline Personal Library | | | |
 | 19 | Offline Sync | | | |
 | 20 | Flutter Client | | | |

@@ -14,7 +14,10 @@ from ..schemas.personal import (
     NoteCreate, NoteResponse,
     ReviewCreate, ReviewResponse,
     PersonalDataConflictResponse, PersonalDataConflictResolveRequest,
-    UserDashboardMetricsResponse
+    UserDashboardMetricsResponse,
+    PersonalDataExportResponse,
+    ImportPreviewRequest, ImportPreviewResponse,
+    ImportApplyRequest, ImportApplyResponse
 )
 from ..auth.dependencies import require_authenticated_user
 from ..auth.jwt_validator import SecurityTokenClaims
@@ -152,3 +155,45 @@ async def resolve_conflict(
         "conflict_id": conflict_id,
         "chosen_option_id": body.chosen_option_id
     }
+
+@router.get("/export", response_model=PersonalDataExportResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+async def export_personal_data(
+    format: str = "json",
+    scope: Optional[str] = None,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Exports personal library data (watch history, ratings, title states, notes, custom lists) for portability."""
+    return await personal_repository.export_user_data(
+        db=db,
+        user_id=claims.sub,
+        export_format=format,
+        scope=scope
+    )
+
+@router.post("/import/preview", response_model=ImportPreviewResponse, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+async def preview_personal_data_import(
+    body: ImportPreviewRequest,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Validates imported records, matches canonical titles, and detects existing conflicts before applying."""
+    return await personal_repository.preview_user_import(
+        db=db,
+        user_id=claims.sub,
+        items=body.items
+    )
+
+@router.post("/import/apply", response_model=ImportApplyResponse, status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+async def apply_personal_data_import(
+    body: ImportApplyRequest,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Applies imported personal library records using the user's chosen conflict resolution strategy."""
+    return await personal_repository.apply_user_import(
+        db=db,
+        user_id=claims.sub,
+        items=body.items,
+        conflict_strategy=body.conflict_strategy.value
+    )

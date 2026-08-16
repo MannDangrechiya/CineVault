@@ -18,7 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.personal import (
     LibraryEntryModel, WatchEventModel, UserTitleStateModel,
-    RatingModel, NoteModel, ReviewModel, PersonalDataConflictModel
+    RatingModel, NoteModel, ReviewModel, PersonalDataConflictModel,
+    UserListModel, UserListItemModel
 )
 from ..models.canonical import (
     TitleModel, EditionModel, TitleCountryModel, TitleLanguageModel
@@ -30,7 +31,15 @@ from ..schemas.personal import (
     NoteCreate, NoteResponse,
     ReviewCreate, ReviewResponse,
     PersonalDataConflictResponse,
-    UserDashboardMetricsResponse
+    UserDashboardMetricsResponse,
+    PersonalDataExportResponse,
+    ImportPreviewResponse,
+    ImportPreviewRequest,
+    ImportConflictItem,
+    ImportApplyResponse,
+    ImportApplyRequest,
+    ImportItemPayload,
+    ImportConflictStrategyEnum
 )
 
 logger = logging.getLogger("cinevault.repositories.personal")
@@ -870,6 +879,301 @@ class PersonalRepository:
             monthly_watch_count=0,
             annual_watch_count=0,
             average_personal_rating=None
+        )
+
+    async def export_user_data(
+        self,
+        db: Optional[AsyncSession],
+        user_id: str,
+        export_format: str = "json",
+        scope: Optional[str] = None
+    ) -> PersonalDataExportResponse:
+        """Exports user personal library data across watch events, ratings, states, notes, and custom lists."""
+        user_uuid = _resolve_user_uuid(user_id)
+        exported_at = datetime.now(timezone.utc).isoformat()
+
+        watch_history: List[Dict[str, Any]] = []
+        ratings: List[Dict[str, Any]] = []
+        states: List[Dict[str, Any]] = []
+        notes: List[Dict[str, Any]] = []
+        custom_lists: List[Dict[str, Any]] = []
+
+        if db is not None:
+            try:
+                if scope is None or scope == "watch_history":
+                    we_stmt = select(WatchEventModel).where(
+                        and_(
+                            WatchEventModel.user_id == user_uuid,
+                            WatchEventModel.is_tombstoned == False  # noqa: E712
+                        )
+                    ).order_by(WatchEventModel.watched_at.desc())
+                    we_res = await db.execute(we_stmt)
+                    for we in we_res.scalars().all():
+                        watch_history.append({
+                            "watch_event_id": str(we.watch_event_id),
+                            "title_id": str(we.title_id),
+                            "watched_at": we.watched_at.isoformat() if we.watched_at else None,
+                            "notes": we.notes,
+                            "device_type": we.device_type
+                        })
+
+                if scope is None or scope == "ratings":
+                    r_stmt = select(RatingModel).where(RatingModel.user_id == user_uuid)
+                    r_res = await db.execute(r_stmt)
+                    for r in r_res.scalars().all():
+                        ratings.append({
+                            "rating_id": str(r.rating_id),
+                            "title_id": str(r.title_id),
+                            "rating_value": r.rating_value,
+                            "rated_at": r.rated_at.isoformat() if r.rated_at else None
+                        })
+
+                if scope is None or scope == "states":
+                    st_stmt = select(UserTitleStateModel).where(UserTitleStateModel.user_id == user_uuid)
+                    st_res = await db.execute(st_stmt)
+                    for st in st_res.scalars().all():
+                        states.append({
+                            "title_id": str(st.title_id),
+                            "manual_status_override": st.manual_status_override,
+                            "is_favorite": st.is_favorite,
+                            "updated_at": st.updated_at.isoformat() if st.updated_at else None
+                        })
+
+                if scope is None or scope == "notes":
+                    n_stmt = select(NoteModel).where(NoteModel.user_id == user_uuid)
+                    n_res = await db.execute(n_stmt)
+                    for n in n_res.scalars().all():
+                        notes.append({
+                            "note_id": str(n.note_id),
+                            "title_id": str(n.title_id),
+                            "note_text": n.note_text,
+                            "created_at": n.created_at.isoformat() if n.created_at else None
+                        })
+
+                if scope is None or scope == "lists":
+                    ul_stmt = select(UserListModel).options(selectinload(UserListModel.items)).where(UserListModel.user_id == user_uuid)
+                    ul_res = await db.execute(ul_stmt)
+                    for ul in ul_res.scalars().all():
+                        custom_lists.append({
+                            "list_id": str(ul.list_id),
+                            "title": ul.title,
+                            "description": ul.description,
+                            "items": [
+                                {
+                                    "title_id": str(it.title_id),
+                                    "position": it.position,
+                                    "notes": it.notes
+                                }
+                                for it in ul.items
+                            ]
+                        })
+
+            except Exception as exc:
+                logger.error("export_user_data failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return PersonalDataExportResponse(
+            schema_version="v1.0.0",
+            exported_at=exported_at,
+            user_id=user_id,
+            watch_history=watch_history,
+            ratings=ratings,
+            user_title_states=states,
+            private_notes=notes,
+            custom_lists=custom_lists
+        )
+
+    async def preview_user_import(
+        self,
+        db: Optional[AsyncSession],
+        user_id: str,
+        items: List[ImportItemPayload]
+    ) -> ImportPreviewResponse:
+        """Validates and previews personal data import, matching canonical titles and identifying conflicts."""
+        user_uuid = _resolve_user_uuid(user_id)
+        conflicts: List[ImportConflictItem] = []
+        matched_count = 0
+        unmatched_count = 0
+
+        if db is not None:
+            try:
+                for item in items:
+                    matched_title: Optional[TitleModel] = None
+
+                    if item.title_id:
+                        try:
+                            t_uuid = uuid.UUID(item.title_id)
+                            matched_title = await db.get(TitleModel, t_uuid)
+                        except ValueError:
+                            pass
+
+                    if not matched_title and item.canonical_title:
+                        stmt = select(TitleModel).where(TitleModel.canonical_title.ilike(item.canonical_title.strip()))
+                        if item.production_year:
+                            stmt = stmt.where(TitleModel.production_year == item.production_year)
+                        res = await db.execute(stmt)
+                        matched_title = res.scalars().first()
+
+                    if matched_title:
+                        matched_count += 1
+                        t_id_str = str(matched_title.title_id)
+
+                        # Check for conflicts against existing rating
+                        if item.rating_value is not None:
+                            r_stmt = select(RatingModel).where(
+                                and_(RatingModel.user_id == user_uuid, RatingModel.title_id == matched_title.title_id)
+                            )
+                            r_res = await db.execute(r_stmt)
+                            existing_r = r_res.scalar_one_or_none()
+                            if existing_r and existing_r.rating_value != item.rating_value:
+                                conflicts.append(
+                                    ImportConflictItem(
+                                        title_id=t_id_str,
+                                        canonical_title=matched_title.canonical_title,
+                                        field_name="rating_value",
+                                        existing_value=existing_r.rating_value,
+                                        imported_value=item.rating_value
+                                    )
+                                )
+
+                        # Check for conflicts against existing state
+                        if item.manual_status_override is not None:
+                            st_stmt = select(UserTitleStateModel).where(
+                                and_(UserTitleStateModel.user_id == user_uuid, UserTitleStateModel.title_id == matched_title.title_id)
+                            )
+                            st_res = await db.execute(st_stmt)
+                            existing_st = st_res.scalar_one_or_none()
+                            if existing_st and existing_st.manual_status_override and existing_st.manual_status_override != item.manual_status_override:
+                                conflicts.append(
+                                    ImportConflictItem(
+                                        title_id=t_id_str,
+                                        canonical_title=matched_title.canonical_title,
+                                        field_name="manual_status_override",
+                                        existing_value=existing_st.manual_status_override,
+                                        imported_value=item.manual_status_override
+                                    )
+                                )
+                    else:
+                        unmatched_count += 1
+
+            except Exception as exc:
+                logger.error("preview_user_import failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return ImportPreviewResponse(
+            total_items=len(items),
+            matched_titles=matched_count,
+            unmatched_titles=unmatched_count,
+            conflicts_count=len(conflicts),
+            conflicts=conflicts
+        )
+
+    async def apply_user_import(
+        self,
+        db: Optional[AsyncSession],
+        user_id: str,
+        items: List[ImportItemPayload],
+        conflict_strategy: str = "KEEP_EXISTING"
+    ) -> ImportApplyResponse:
+        """Applies validated imported records into the personal user domain using the chosen conflict strategy."""
+        user_uuid = _resolve_user_uuid(user_id)
+        applied_count = 0
+        conflicts_resolved = 0
+        now = datetime.now(timezone.utc)
+
+        if db is not None:
+            try:
+                for item in items:
+                    matched_title: Optional[TitleModel] = None
+
+                    if item.title_id:
+                        try:
+                            t_uuid = uuid.UUID(item.title_id)
+                            matched_title = await db.get(TitleModel, t_uuid)
+                        except ValueError:
+                            pass
+
+                    if not matched_title and item.canonical_title:
+                        stmt = select(TitleModel).where(TitleModel.canonical_title.ilike(item.canonical_title.strip()))
+                        if item.production_year:
+                            stmt = stmt.where(TitleModel.production_year == item.production_year)
+                        res = await db.execute(stmt)
+                        matched_title = res.scalars().first()
+
+                    if not matched_title:
+                        continue
+
+                    t_uuid = matched_title.title_id
+
+                    # 1. Watch event
+                    if item.watched_at:
+                        we = WatchEventModel(
+                            watch_event_id=uuid.uuid4(),
+                            user_id=user_uuid,
+                            title_id=t_uuid,
+                            watched_at=datetime.fromisoformat(item.watched_at.replace("Z", "+00:00")),
+                            notes=item.notes,
+                            created_at=now
+                        )
+                        db.add(we)
+
+                    # 2. Rating
+                    if item.rating_value is not None:
+                        r_stmt = select(RatingModel).where(
+                            and_(RatingModel.user_id == user_uuid, RatingModel.title_id == t_uuid)
+                        )
+                        r_res = await db.execute(r_stmt)
+                        existing_r = r_res.scalar_one_or_none()
+
+                        if not existing_r:
+                            db.add(RatingModel(rating_id=uuid.uuid4(), user_id=user_uuid, title_id=t_uuid, rating_value=item.rating_value, rated_at=now))
+                        elif conflict_strategy in ("OVERWRITE", "MERGE"):
+                            existing_r.rating_value = item.rating_value
+                            existing_r.rated_at = now
+                            conflicts_resolved += 1
+
+                    # 3. Title state
+                    if item.is_favorite or item.manual_status_override:
+                        st_stmt = select(UserTitleStateModel).where(
+                            and_(UserTitleStateModel.user_id == user_uuid, UserTitleStateModel.title_id == t_uuid)
+                        )
+                        st_res = await db.execute(st_stmt)
+                        existing_st = st_res.scalar_one_or_none()
+
+                        if not existing_st:
+                            db.add(
+                                UserTitleStateModel(
+                                    user_id=user_uuid,
+                                    title_id=t_uuid,
+                                    manual_status_override=item.manual_status_override,
+                                    is_favorite=item.is_favorite or False,
+                                    updated_at=now
+                                )
+                            )
+                        elif conflict_strategy in ("OVERWRITE", "MERGE"):
+                            if item.manual_status_override:
+                                existing_st.manual_status_override = item.manual_status_override
+                            if item.is_favorite:
+                                existing_st.is_favorite = item.is_favorite
+                            existing_st.updated_at = now
+                            conflicts_resolved += 1
+
+                    applied_count += 1
+
+                await db.commit()
+            except Exception as exc:
+                await db.rollback()
+                logger.error("apply_user_import failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return ImportApplyResponse(
+            applied_count=applied_count,
+            conflicts_resolved=conflicts_resolved,
+            strategy_applied=conflict_strategy,
+            applied_at=now.isoformat()
         )
 
 

@@ -1,8 +1,63 @@
-# CineVault OS — Personal Data Schemas (CAT-2)
-# User personal logs, watch events (append-only), ratings, notes, reviews & conflicts (ADR-003)
-
+from enum import Enum
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
+
+class ExportFormatEnum(str, Enum):
+    JSON = "json"
+    CSV = "csv"
+
+class PersonalDataExportResponse(BaseModel):
+    schema_version: str = "v1.0.0"
+    exported_at: str
+    user_id: str
+    watch_history: List[Dict[str, Any]]
+    ratings: List[Dict[str, Any]]
+    user_title_states: List[Dict[str, Any]]
+    private_notes: List[Dict[str, Any]]
+    custom_lists: List[Dict[str, Any]]
+
+class ImportConflictStrategyEnum(str, Enum):
+    KEEP_EXISTING = "KEEP_EXISTING"
+    OVERWRITE = "OVERWRITE"
+    MERGE = "MERGE"
+
+class ImportItemPayload(BaseModel):
+    canonical_title: Optional[str] = None
+    production_year: Optional[int] = None
+    title_id: Optional[str] = None
+    watched_at: Optional[str] = None
+    progress_percentage: Optional[float] = 100.0
+    rating_value: Optional[int] = None
+    is_favorite: Optional[bool] = False
+    manual_status_override: Optional[str] = None
+    notes: Optional[str] = None
+
+class ImportPreviewRequest(BaseModel):
+    items: List[ImportItemPayload]
+
+class ImportConflictItem(BaseModel):
+    title_id: str
+    canonical_title: str
+    field_name: str
+    existing_value: Any
+    imported_value: Any
+
+class ImportPreviewResponse(BaseModel):
+    total_items: int
+    matched_titles: int
+    unmatched_titles: int
+    conflicts_count: int
+    conflicts: List[ImportConflictItem]
+
+class ImportApplyRequest(BaseModel):
+    items: List[ImportItemPayload]
+    conflict_strategy: ImportConflictStrategyEnum = ImportConflictStrategyEnum.KEEP_EXISTING
+
+class ImportApplyResponse(BaseModel):
+    applied_count: int
+    conflicts_resolved: int
+    strategy_applied: str
+    applied_at: str
 
 class WatchEventCreate(BaseModel):
     title_id: str = Field(..., description="Target canonical Title UUIDv7")
