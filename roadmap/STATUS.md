@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 20 Complete_
+_Last updated: 2026-08-16 — Phase 21 Complete_
 
 ## Current Phase
-- Phase: 21 — Web UI Completion
+- Phase: 22 — Data Curation
 - Status: NOT STARTED
-- Branch: feature/phase-20-flutter-client
+- Branch: feature/phase-21-web-ui
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 20 gate passed: comprehensive Flutter client featuring authentication, home catalog, swipe discovery, faceted search, title detail, personal media library with watchlist, watch history, ratings, analytics, recommendations, AI assistant, and outbox sync verified, all 33 Flutter tests passing)
+READY FOR NEXT PHASE (Phase 21 gate passed: polished Next.js App Router web client with Home discovery, Movies & Series catalogs, Watchlist, Watch history timeline, Custom collections, Dashboard analytics, Data import/export portability, AI assistant integration, and dark theme accessibility verified, build succeeded across all 20 routes)
 
 ## Notes for next session
-- What was done: Phase 20 Flutter Client complete. Implemented & verified full Flutter client navigation shell, authentication lifecycle, catalog, swipe discovery, search, recommendations, AI assistant, personal library (`LibraryScreen` with watchlist, history, ratings, analytics), and offline sync status.
+- What was done: Phase 21 Web UI Completion complete. Enhanced Next.js web application with full discovery hub, movies/series browsing, watchlist, history, collections, dashboard analytics, data portability, and verified clean production build across all 20 routes.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -38,8 +38,8 @@ READY FOR NEXT PHASE (Phase 20 gate passed: comprehensive Flutter client featuri
 | 18 | Offline Personal Library | COMPLETE | feature/phase-18-offline-library | 2026-08-16 |
 | 19 | Offline Sync | COMPLETE | feature/phase-19-offline-sync | 2026-08-16 |
 | 20 | Flutter Client | COMPLETE | feature/phase-20-flutter-client | 2026-08-16 |
-| 21 | Web UI Completion | NOT STARTED | | |
-| 22 | Data Curation | | | |
+| 21 | Web UI Completion | COMPLETE | feature/phase-21-web-ui | 2026-08-16 |
+| 22 | Data Curation | NOT STARTED | | |
 | 23 | Data Quality Control Room | | | |
 | 24 | Metadata Update History | | | |
 | 25 | Observability | | | |
