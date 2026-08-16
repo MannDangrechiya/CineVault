@@ -35,7 +35,7 @@ def generate_mock_jwt(roles: list = None, sub: str = "018f4a00-0000-7000-8000-00
     signature = base64.urlsafe_b64encode(b"mock_signature").decode().rstrip("=")
     return f"{header}.{payload}.{signature}"
 
-class TestAIAssistantFoundation(unittest.TestCase):
+class TestAIAssistantFoundation(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
         self.client = TestClient(app)
@@ -58,7 +58,7 @@ class TestAIAssistantFoundation(unittest.TestCase):
         self.assertIn("[REDACTED_EMAIL]", sanitized)
         self.assertIn("[REDACTED_JWT_TOKEN]", sanitized)
 
-    def test_ai_provider_factory_and_fallback(self):
+    async def test_ai_provider_factory_and_fallback(self):
         """Verifies AIProviderFactory instantiates authorized adapters and handles missing API key fallbacks."""
         mock_provider = AIProviderFactory.get_provider("mock")
         self.assertEqual(mock_provider.provider_enum, AIProviderEnum.MOCK)
@@ -66,14 +66,14 @@ class TestAIAssistantFoundation(unittest.TestCase):
         openai_provider = OpenAIProviderAdapter(api_key=None)
         self.assertEqual(openai_provider.provider_enum, AIProviderEnum.OPENAI)
         # Should execute fallback cleanly when API key is missing
-        intent = asyncio.run(openai_provider.extract_intent("sci-fi movies under 90 minutes"))
+        intent = await openai_provider.extract_intent("sci-fi movies under 90 minutes")
         self.assertIn("Sci-Fi", intent.target_genres)
         self.assertEqual(intent.max_runtime, 90)
 
-    def test_natural_language_intent_extraction(self):
+    async def test_natural_language_intent_extraction(self):
         """Verifies natural language queries are parsed into structured intent schemas."""
         query = "Recommend Christopher Nolan sci-fi movies under 120 minutes from 2010"
-        intent = asyncio.run(MockAIProviderAdapter().extract_intent(query))
+        intent = await MockAIProviderAdapter().extract_intent(query)
 
         self.assertIn("Sci-Fi", intent.target_genres)
         self.assertIn("Christopher Nolan", intent.target_directors)

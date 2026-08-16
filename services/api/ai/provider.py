@@ -110,17 +110,17 @@ class MockAIProviderAdapter(AIProviderAdapter):
         query_lower = sanitized.lower()
 
         genres = []
-        for g in ["Sci-Fi", "Action", "Drama", "Mystery", "Crime", "Thriller", "Adventure"]:
+        for g in ["Sci-Fi", "Action", "Drama", "Mystery", "Crime", "Thriller", "Adventure", "Horror", "Comedy", "Animation"]:
             if g.lower() in query_lower:
                 genres.append(g)
 
         directors = []
-        for d in ["Christopher Nolan", "Denis Villeneuve", "Damien Chazelle"]:
+        for d in ["Christopher Nolan", "Denis Villeneuve", "Damien Chazelle", "Bong Joon-ho", "Quentin Tarantino", "Martin Scorsese", "Hayao Miyazaki"]:
             if d.lower() in query_lower:
                 directors.append(d)
 
         actors = []
-        for a in ["Leonardo DiCaprio", "Ryan Gosling", "Matthew McConaughey", "Amy Adams"]:
+        for a in ["Leonardo DiCaprio", "Ryan Gosling", "Matthew McConaughey", "Amy Adams", "Song Kang-ho"]:
             if a.lower() in query_lower:
                 actors.append(a)
 
@@ -131,10 +131,9 @@ class MockAIProviderAdapter(AIProviderAdapter):
             max_runtime = 120
 
         min_year = None
-        if "2000" in query_lower:
-            min_year = 2000
-        elif "2010" in query_lower:
-            min_year = 2010
+        year_matches = re.findall(r"\b(19\d\d|20\d\d)\b", query_lower)
+        if year_matches:
+            min_year = int(year_matches[0])
 
         mode = "GENERAL_SEARCH"
         if "recommend" in query_lower or "tonight" in query_lower:

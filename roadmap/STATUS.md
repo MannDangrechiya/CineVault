@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 13 Complete_
+_Last updated: 2026-08-16 — Phase 14 Complete_
 
 ## Current Phase
-- Phase: 14 — AI Assistant Foundation
+- Phase: 15 — AI Assistant Capabilities
 - Status: NOT STARTED
-- Branch: feature/phase-13-recommendation-quality
+- Branch: feature/phase-14-ai-assistant-foundation
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 13 gate passed: already-watched exclusion, negative preference signal penalties on poor ratings & dropped titles, MMR genre diversity re-ranking, popularity controls, and non-clickbait quality verified, all 18 tests passing)
+READY FOR NEXT PHASE (Phase 14 gate passed: provider-agnostic AI abstraction, non-authoritative AI metadata proposals carrying source, model, prompt_version, timestamp, confidence, and PENDING review status, prompt-injection sanitization, and curator human approval workflow verified, all 11 tests passing)
 
 ## Notes for next session
-- What was done: Phase 13 Recommendation Quality complete. Implemented & verified already-watched exclusion, negative preference signal penalties on poor ratings & dropped titles, MMR genre diversity re-ranking, popularity controls, and non-clickbait quality.
+- What was done: Phase 14 AI Assistant Foundation complete. Implemented & verified provider-agnostic AI adapters (Mock, OpenAI, Gemini), prompt-injection sanitization, non-authoritative AI proposal staging with full audit provenance (source, model, prompt version, confidence, PENDING status), and curator approval pipeline.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -31,8 +31,8 @@ READY FOR NEXT PHASE (Phase 13 gate passed: already-watched exclusion, negative 
 | 11 | Taste Profile | COMPLETE | feature/phase-11-taste-profile | 2026-08-16 |
 | 12 | Recommendation Engine Foundation | COMPLETE | feature/phase-12-recommendation-foundation | 2026-08-16 |
 | 13 | Recommendation Quality | COMPLETE | feature/phase-13-recommendation-quality | 2026-08-16 |
-| 14 | AI Assistant Foundation | NOT STARTED | | |
-| 15 | AI Assistant Capabilities | | | |
+| 14 | AI Assistant Foundation | COMPLETE | feature/phase-14-ai-assistant-foundation | 2026-08-16 |
+| 15 | AI Assistant Capabilities | NOT STARTED | | |
 | 16 | AI Security | | | |
 | 17 | Import / Export | | | |
 | 18 | Offline Personal Library | | | |
