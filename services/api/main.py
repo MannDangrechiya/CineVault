@@ -26,7 +26,8 @@ from .routers import (
     control_room,
     observability,
     jobs,
-    performance
+    performance,
+    social
 )
 
 @asynccontextmanager
@@ -96,6 +97,7 @@ app.include_router(control_room.router)
 app.include_router(observability.router)
 app.include_router(jobs.router)
 app.include_router(performance.router)
+app.include_router(social.router)
 
 if __name__ == "__main__":
     import os
