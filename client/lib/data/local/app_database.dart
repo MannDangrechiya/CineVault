@@ -1,4 +1,4 @@
-// CineVault OS — Drift Local Database (8.9, ADR-004)
+// CineVault OS — Drift Local Database (8.9, ADR-004, Phase 18 Offline Personal Library)
 // Stores durable outbox mutations, local cached canonical metadata, and personal offline records
 
 import 'dart:io';
@@ -16,7 +16,7 @@ part 'app_database.g.dart';
 @DataClassName('OutboxMutationRow')
 class OutboxMutations extends Table {
   TextColumn get mutationId => text()(); // Client UUIDv7
-  TextColumn get mutationType => text()(); // CREATE_WATCH_EVENT, SET_RATING, UPSERT_NOTE
+  TextColumn get mutationType => text()(); // CREATE_WATCH_EVENT, SET_RATING, UPSERT_NOTE, UPDATE_TITLE_STATE
   TextColumn get clientTimestamp => text()(); // ISO-8601 UTC
   TextColumn get payloadJson => text()(); // Serialized JSON map
   TextColumn get status => text().withDefault(const Constant('PENDING'))(); // PENDING, SYNCED, FAILED
@@ -36,6 +36,7 @@ class CachedTitles extends Table {
   TextColumn get posterUrl => text().nullable()();
   TextColumn get genresJson => text()();
   TextColumn get cachedAt => text()();
+  BoolColumn get isAuthoritative => boolean().withDefault(const Constant(false))(); // Non-authoritative offline cache constraint
 
   @override
   Set<Column> get primaryKey => {titleId};
@@ -50,11 +51,90 @@ class RecentSearches extends Table {
   Set<Column> get primaryKey => {query};
 }
 
+@DataClassName('OfflineWatchEventRow')
+class OfflineWatchEvents extends Table {
+  TextColumn get watchEventId => text()();
+  TextColumn get titleId => text()();
+  TextColumn get watchedAt => text()();
+  RealColumn get progressPercentage => real().withDefault(const Constant(100.0))();
+  TextColumn get notes => text().nullable()();
+  BoolColumn get isTombstoned => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {watchEventId};
+}
+
+@DataClassName('OfflineRatingRow')
+class OfflineRatings extends Table {
+  TextColumn get ratingId => text()();
+  TextColumn get titleId => text()();
+  IntColumn get ratingValue => integer()();
+  TextColumn get ratedAt => text()();
+
+  @override
+  Set<Column> get primaryKey => {ratingId};
+}
+
+@DataClassName('OfflineUserTitleStateRow')
+class OfflineUserTitleStates extends Table {
+  TextColumn get titleId => text()();
+  TextColumn get manualStatusOverride => text().nullable()();
+  BoolColumn get isFavorite => boolean().withDefault(const Constant(false))();
+  TextColumn get updatedAt => text()();
+
+  @override
+  Set<Column> get primaryKey => {titleId};
+}
+
+@DataClassName('OfflineNoteRow')
+class OfflineNotes extends Table {
+  TextColumn get noteId => text()();
+  TextColumn get titleId => text()();
+  TextColumn get noteText => text()();
+  TextColumn get updatedAt => text()();
+
+  @override
+  Set<Column> get primaryKey => {noteId};
+}
+
+@DataClassName('OfflineUserListRow')
+class OfflineUserLists extends Table {
+  TextColumn get listId => text()();
+  TextColumn get title => text()();
+  TextColumn get description => text().nullable()();
+  TextColumn get updatedAt => text()();
+
+  @override
+  Set<Column> get primaryKey => {listId};
+}
+
+@DataClassName('OfflineUserListItemRow')
+class OfflineUserListItems extends Table {
+  TextColumn get itemId => text()();
+  TextColumn get listId => text()();
+  TextColumn get titleId => text()();
+  IntColumn get position => integer().withDefault(const Constant(0))();
+  TextColumn get notes => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {itemId};
+}
+
 // ------------------------------------------------------------------------
 // App Database Class
 // ------------------------------------------------------------------------
 
-@DriftDatabase(tables: [OutboxMutations, CachedTitles, RecentSearches])
+@DriftDatabase(tables: [
+  OutboxMutations,
+  CachedTitles,
+  RecentSearches,
+  OfflineWatchEvents,
+  OfflineRatings,
+  OfflineUserTitleStates,
+  OfflineNotes,
+  OfflineUserLists,
+  OfflineUserListItems,
+])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
@@ -88,6 +168,10 @@ class AppDatabase extends _$AppDatabase {
     return await select(cachedTitles).get();
   }
 
+  Future<CachedTitleRow?> getCachedTitleById(String titleId) async {
+    return await (select(cachedTitles)..where((tbl) => tbl.titleId.equals(titleId))).getSingleOrNull();
+  }
+
   // --- Recent Searches Queries ---
   Future<void> addRecentSearch(String queryText) async {
     await into(recentSearches).insertOnConflictUpdate(
@@ -100,6 +184,73 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<RecentSearchRow>> getRecentSearches() async {
     return await (select(recentSearches)..orderBy([(tbl) => OrderingTerm.desc(tbl.searchedAt)])).get();
+  }
+
+  // --- Offline Watch Events ---
+  Future<void> upsertOfflineWatchEvent(OfflineWatchEventsCompanion event) async {
+    await into(offlineWatchEvents).insertOnConflictUpdate(event);
+  }
+
+  Future<List<OfflineWatchEventRow>> getOfflineWatchEvents() async {
+    return await (select(offlineWatchEvents)
+          ..where((tbl) => tbl.isTombstoned.equals(false))
+          ..orderBy([(tbl) => OrderingTerm.desc(tbl.watchedAt)]))
+        .get();
+  }
+
+  // --- Offline Ratings ---
+  Future<void> upsertOfflineRating(OfflineRatingsCompanion rating) async {
+    await into(offlineRatings).insertOnConflictUpdate(rating);
+  }
+
+  Future<List<OfflineRatingRow>> getOfflineRatings() async {
+    return await select(offlineRatings).get();
+  }
+
+  Future<OfflineRatingRow?> getOfflineRatingForTitle(String titleId) async {
+    return await (select(offlineRatings)..where((tbl) => tbl.titleId.equals(titleId))).getSingleOrNull();
+  }
+
+  // --- Offline User Title States ---
+  Future<void> upsertOfflineTitleState(OfflineUserTitleStatesCompanion state) async {
+    await into(offlineUserTitleStates).insertOnConflictUpdate(state);
+  }
+
+  Future<OfflineUserTitleStateRow?> getOfflineTitleState(String titleId) async {
+    return await (select(offlineUserTitleStates)..where((tbl) => tbl.titleId.equals(titleId))).getSingleOrNull();
+  }
+
+  Future<List<OfflineUserTitleStateRow>> getOfflineFavorites() async {
+    return await (select(offlineUserTitleStates)..where((tbl) => tbl.isFavorite.equals(true))).get();
+  }
+
+  // --- Offline Notes ---
+  Future<void> upsertOfflineNote(OfflineNotesCompanion note) async {
+    await into(offlineNotes).insertOnConflictUpdate(note);
+  }
+
+  Future<List<OfflineNoteRow>> getOfflineNotes() async {
+    return await select(offlineNotes).get();
+  }
+
+  // --- Offline Custom Lists ---
+  Future<void> upsertOfflineUserList(OfflineUserListsCompanion list) async {
+    await into(offlineUserLists).insertOnConflictUpdate(list);
+  }
+
+  Future<List<OfflineUserListRow>> getOfflineUserLists() async {
+    return await select(offlineUserLists).get();
+  }
+
+  Future<void> upsertOfflineUserListItem(OfflineUserListItemsCompanion item) async {
+    await into(offlineUserListItems).insertOnConflictUpdate(item);
+  }
+
+  Future<List<OfflineUserListItemRow>> getOfflineListItems(String listId) async {
+    return await (select(offlineUserListItems)
+          ..where((tbl) => tbl.listId.equals(listId))
+          ..orderBy([(tbl) => OrderingTerm.asc(tbl.position)]))
+        .get();
   }
 }
 

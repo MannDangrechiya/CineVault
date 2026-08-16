@@ -101,3 +101,43 @@ class UserNoteEntity {
     };
   }
 }
+
+class UserTitleStateEntity {
+  final String titleId;
+  final String derivedStatus;
+  final String? manualStatusOverride;
+  final bool isFavorite;
+  final String? preferredEditionId;
+  final String updatedAt;
+
+  const UserTitleStateEntity({
+    required this.titleId,
+    required this.derivedStatus,
+    this.manualStatusOverride,
+    this.isFavorite = false,
+    this.preferredEditionId,
+    required this.updatedAt,
+  });
+
+  factory UserTitleStateEntity.fromJson(Map<String, dynamic> json) {
+    return UserTitleStateEntity(
+      titleId: json['title_id'] ?? '',
+      derivedStatus: json['derived_status'] ?? 'UNWATCHED',
+      manualStatusOverride: json['manual_status_override'],
+      isFavorite: json['is_favorite'] ?? false,
+      preferredEditionId: json['preferred_edition_id'],
+      updatedAt: json['updated_at'] ?? DateTime.now().toIso8601String(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title_id': titleId,
+      'derived_status': derivedStatus,
+      if (manualStatusOverride != null) 'manual_status_override': manualStatusOverride,
+      'is_favorite': isFavorite,
+      if (preferredEditionId != null) 'preferred_edition_id': preferredEditionId,
+    };
+  }
+}
+

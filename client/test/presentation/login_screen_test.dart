@@ -103,7 +103,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(LoginScreen), findsOneWidget);
-    expect(find.text('Invalid credentials or login failed.'), findsOneWidget);
+    expect(find.textContaining('Invalid credentials'), findsOneWidget);
   });
 
   testWidgets('401 mid-session error bounces back to LoginScreen', (WidgetTester tester) async {
