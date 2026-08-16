@@ -112,6 +112,17 @@ class ReleaseModel(Base):
 
     edition: Mapped[EditionModel] = relationship("EditionModel", back_populates="releases")
 
+class IdentityRedirectModel(Base):
+    __tablename__ = "identity_redirect"
+    __table_args__ = {"schema": "canonical"}
+
+    redirect_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    from_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    to_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    merge_reason: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    merged_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
 class PlatformModel(Base):
     __tablename__ = "platform"
     __table_args__ = {"schema": "canonical"}

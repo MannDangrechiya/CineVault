@@ -142,4 +142,86 @@ class ReconciliationEngine:
             logger.warning(f"Canonical Merge Gate Blocked: {blocking_reasons}")
         return is_safe, blocking_reasons
 
+    async def execute_title_merge(
+        self,
+        db: Any,
+        source_title_id: uuid.UUID,
+        target_title_id: uuid.UUID,
+        merge_reason: str = "MANUAL_OR_AUTO_DEDUPLICATION",
+        user_personal_data_attached: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Executes a canonical merge adhering to ADR-003 and DEC-PHYS-PRP-06:
+        1. Validates merge safety rules.
+        2. Soft-deletes source title (status_flag='RETIRED').
+        3. Creates canonical.identity_redirect record (from_id -> to_id).
+        4. Re-points external IDs from source to target.
+        """
+        from ..models.canonical import TitleModel, TitleExternalIdModel, IdentityRedirectModel
+        from sqlalchemy import select
+
+        # Fetch source and target
+        stmt_s = select(TitleModel).where(TitleModel.title_id == source_title_id)
+        stmt_t = select(TitleModel).where(TitleModel.title_id == target_title_id)
+        res_s = await db.execute(stmt_s)
+        res_t = await db.execute(stmt_t)
+        source = res_s.scalars().first()
+        target = res_t.scalars().first()
+
+        if not source or not target:
+            raise ValueError("Source or target title not found for merge execution")
+
+        # Verify safety
+        source_dict = {
+            "content_type": source.content_type_id,
+            "production_year": source.production_year,
+            "canonical_title": source.canonical_title
+        }
+        target_dict = {
+            "content_type": target.content_type_id,
+            "production_year": target.production_year,
+            "canonical_title": target.canonical_title
+        }
+
+        is_safe, blocking = self.verify_merge_safety(source_dict, target_dict, user_personal_data_attached=user_personal_data_attached)
+        if not is_safe:
+            raise RuntimeError(f"Merge execution aborted by safety gate: {blocking}")
+
+        # 1. Create IdentityRedirectModel
+        redirect_orm = IdentityRedirectModel(
+            redirect_id=uuid.uuid4(),
+            from_id=source_title_id,
+            to_id=target_title_id,
+            entity_type="TITLE",
+            merge_reason=merge_reason,
+            merged_at=datetime.now(timezone.utc)
+        )
+        db.add(redirect_orm)
+
+        # 2. Re-point external IDs that don't conflict
+        ext_stmt = select(TitleExternalIdModel).where(TitleExternalIdModel.title_id == source_title_id)
+        ext_res = await db.execute(ext_stmt)
+        source_exts = ext_res.scalars().all()
+        for ext in source_exts:
+            t_ext_stmt = select(TitleExternalIdModel).where(
+                TitleExternalIdModel.title_id == target_title_id,
+                TitleExternalIdModel.provider_name == ext.provider_name
+            )
+            t_ext_res = await db.execute(t_ext_stmt)
+            if not t_ext_res.scalars().first():
+                ext.title_id = target_title_id
+
+        # 3. Mark source title as RETIRED (Tombstone pattern)
+        source.status_flag = "RETIRED"
+        source.updated_at = datetime.now(timezone.utc)
+
+        await db.flush()
+        return {
+            "status": "MERGED",
+            "redirect_id": str(redirect_orm.redirect_id),
+            "from_id": str(source_title_id),
+            "to_id": str(target_title_id),
+            "merged_at": redirect_orm.merged_at.isoformat()
+        }
+
 reconciliation_engine = ReconciliationEngine()

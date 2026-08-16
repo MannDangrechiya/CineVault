@@ -150,8 +150,10 @@ class IngestionPipelineEngine:
                         select(
                             TitleModel.title_id, TitleModel.display_id,
                             TitleModel.canonical_title, TitleModel.original_title,
-                            TitleModel.production_year, TitleModel.content_type_id
+                            TitleModel.production_year, TitleModel.content_type_id,
+                            EditionModel.runtime_minutes
                         )
+                        .outerjoin(EditionModel, (EditionModel.title_id == TitleModel.title_id) & (EditionModel.is_primary == True))
                     )
                     snapshot_items = []
                     for t in t_res.all():
@@ -161,11 +163,14 @@ class IngestionPipelineEngine:
                         norm_o = normalize_for_matching(o_title)
                         snapshot_items.append({
                             "id": str(t[0]),
+                            "title_id": str(t[0]),
                             "display_id": t[1],
                             "canonical_title": c_title,
                             "original_title": o_title,
                             "production_year": t[4],
                             "content_type": t[5],
+                            "content_type_id": t[5],
+                            "runtime_minutes": t[6],
                             "external_ids": {},
                             "_norm_canonical_title": norm_c,
                             "_norm_original_title": norm_o,
@@ -282,7 +287,7 @@ class IngestionPipelineEngine:
 
                 # F. Conflict Detection & Provenance
                 has_conflict = await self._detect_conflicts_and_record_provenance(
-                    db, provider_name, ext_id, matched_title_id, normalized
+                    db, provider_name, ext_id, matched_title_id, normalized, run_context=run_context
                 )
                 if has_conflict:
                     records_conflicted += 1
@@ -523,26 +528,87 @@ class IngestionPipelineEngine:
         provider_name: str,
         external_id: str,
         matched_title_id: Optional[str],
-        normalized: Dict[str, Any]
+        normalized: Dict[str, Any],
+        run_context: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Detects field level conflicts and records field provenance."""
         has_conflict = False
         entity_uuid = uuid.UUID(matched_title_id) if matched_title_id else uuid.uuid4()
 
+        # If matched to existing title, lookup existing title and primary edition to compare fields
+        existing_title: Dict[str, Any] = {}
+        existing_runtime: Optional[int] = None
+
+        if matched_title_id and db is not None:
+            if run_context and "catalog_snapshot" in run_context:
+                existing_item = next((c for c in run_context["catalog_snapshot"] if str(c.get("title_id")) == matched_title_id), None)
+                if existing_item:
+                    existing_title = {
+                        "canonical_title": existing_item.get("canonical_title"),
+                        "original_title": existing_item.get("original_title"),
+                        "production_year": existing_item.get("production_year"),
+                        "content_type_id": existing_item.get("content_type_id")
+                    }
+                    existing_runtime = existing_item.get("runtime_minutes")
+
+            if not existing_title:
+                try:
+                    stmt = select(TitleModel).where(TitleModel.title_id == uuid.UUID(matched_title_id))
+                    res = await db.execute(stmt)
+                    t_row = res.scalars().first()
+                    if t_row:
+                        existing_title = {
+                            "canonical_title": t_row.canonical_title,
+                            "original_title": t_row.original_title,
+                            "production_year": t_row.production_year,
+                            "content_type_id": t_row.content_type_id
+                        }
+                    # Also lookup primary edition runtime
+                    ed_stmt = select(EditionModel).where(EditionModel.title_id == uuid.UUID(matched_title_id))
+                    ed_res = await db.execute(ed_stmt)
+                    editions = ed_res.scalars().all()
+                    if editions:
+                        primary_ed = next((e for e in editions if e.is_primary), editions[0])
+                        existing_runtime = primary_ed.runtime_minutes
+                except Exception as e:
+                    logger.debug(f"Could not load existing title for conflict checking: {e}")
+
         fields_to_track = [
-            ("canonical_title", normalized.get("canonical_title_proposal")),
-            ("original_title", normalized.get("original_title")),
-            ("runtime_minutes", str(normalized.get("runtime_minutes")) if normalized.get("runtime_minutes") else None),
-            ("release_year", str(normalized.get("production_year")) if normalized.get("production_year") else None)
+            ("canonical_title", normalized.get("canonical_title_proposal"), existing_title.get("canonical_title")),
+            ("original_title", normalized.get("original_title"), existing_title.get("original_title")),
+            ("runtime_minutes", str(normalized.get("runtime_minutes")) if normalized.get("runtime_minutes") is not None else None, str(existing_runtime) if existing_runtime is not None else None),
+            ("release_year", str(normalized.get("production_year")) if normalized.get("production_year") is not None else None, str(existing_title.get("production_year")) if existing_title.get("production_year") is not None else None)
         ]
 
-        for field_name, val in fields_to_track:
+        for field_name, val, existing_val in fields_to_track:
             if not val:
                 continue
 
             confidence = "HIGH"
-            if matched_title_id and field_name == "runtime_minutes" and val == "140":
-                # Simulated runtime conflict (e.g. 142 vs 140)
+            is_field_conflict = False
+
+            if existing_val is not None and matched_title_id:
+                if field_name == "runtime_minutes":
+                    try:
+                        cand_min = int(val)
+                        exist_min = int(existing_val)
+                        if abs(cand_min - exist_min) > 1:
+                            is_field_conflict = True
+                    except (ValueError, TypeError):
+                        if str(val) != str(existing_val):
+                            is_field_conflict = True
+                elif field_name == "release_year":
+                    try:
+                        if int(val) != int(existing_val):
+                            is_field_conflict = True
+                    except (ValueError, TypeError):
+                        if str(val) != str(existing_val):
+                            is_field_conflict = True
+                elif field_name in ("canonical_title", "original_title"):
+                    if str(val).strip().lower() != str(existing_val).strip().lower():
+                        is_field_conflict = True
+
+            if is_field_conflict:
                 confidence = "CONFLICT"
                 has_conflict = True
 
@@ -554,7 +620,7 @@ class IngestionPipelineEngine:
                             entity_id=entity_uuid,
                             field_name=field_name,
                             candidate_value=str(val),
-                            existing_value="142",
+                            existing_value=str(existing_val),
                             source_provider=provider_name,
                             confidence="CONFLICT",
                             status="OPEN"
