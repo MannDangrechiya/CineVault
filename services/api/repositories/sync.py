@@ -175,8 +175,10 @@ class SyncRepository:
         """Retrieves incremental delta changes occurring since the client's last sync_cursor pointer."""
         new_cursor = f"cursor_seq_{int(datetime.now(timezone.utc).timestamp())}"
         
-        # Build delta changes list from personal repository
+        # Build delta changes list across personal entities
         changes: List[Dict[str, Any]] = []
+
+        # 1. Watch events
         events = await personal_repository.list_watch_events(db=db, user_id=user_id)
         if events:
             for e in events[:limit]:
@@ -188,6 +190,36 @@ class SyncRepository:
                         "title_id": e.title_id,
                         "watched_at": e.watched_at,
                         "progress_percentage": e.progress_percentage
+                    }
+                })
+
+        # 2. Ratings
+        ratings = await personal_repository.list_ratings(db=db, user_id=user_id)
+        if ratings:
+            for r in ratings[:limit]:
+                changes.append({
+                    "entity_type": "RATING",
+                    "entity_id": r.id,
+                    "action": "UPSERT",
+                    "data": {
+                        "title_id": r.title_id,
+                        "rating_value": r.rating_value,
+                        "updated_at": r.updated_at
+                    }
+                })
+
+        # 3. Notes
+        notes = await personal_repository.list_notes(db=db, user_id=user_id)
+        if notes:
+            for n in notes[:limit]:
+                changes.append({
+                    "entity_type": "NOTE",
+                    "entity_id": n.id,
+                    "action": "UPSERT",
+                    "data": {
+                        "title_id": n.title_id,
+                        "note_text": n.note_text,
+                        "updated_at": n.updated_at
                     }
                 })
 
