@@ -1,14 +1,14 @@
 # CineVault OS v2.0 — Automated Development Environment Startup Script
 # Usage:
 #   .\scripts\start-dev.ps1
-#   .\scripts\start-dev.ps1 -OpenBrowser:$false
+#   .\scripts\start-dev.ps1 -NoBrowser
 #   .\scripts\start-dev.ps1 -NoDocker
 #   .\scripts\start-dev.ps1 -WithFlutter
 
 param (
     [switch]$NoDocker,
+    [switch]$NoBrowser,
     [switch]$WithFlutter,
-    [bool]$OpenBrowser = $true,
     [int]$ApiPort = 8000,
     [int]$WebPort = 3000
 )
@@ -18,7 +18,7 @@ $RootDir = (Resolve-Path "$PSScriptRoot\..").Path
 
 Write-Host ""
 Write-Host "=================================================================" -ForegroundColor Cyan
-Write-Host "       🎬 CineVault OS v2.0 — Development Stack Launcher" -ForegroundColor Cyan
+Write-Host "       [CineVault OS v2.0] Development Stack Launcher" -ForegroundColor Cyan
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host " Root Directory: $RootDir" -ForegroundColor DarkGray
 Write-Host " API Port:       $ApiPort" -ForegroundColor DarkGray
@@ -35,7 +35,7 @@ if (-not $NoDocker) {
             Write-Host "      Starting containers via docker compose..." -ForegroundColor DarkGray
             docker compose up -d
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "      ✓ Docker infrastructure online (Postgres/pgvector, Valkey, RabbitMQ, MinIO)." -ForegroundColor Green
+                Write-Host "      [OK] Docker infrastructure online (Postgres/pgvector, Valkey, RabbitMQ, MinIO)." -ForegroundColor Green
             } else {
                 Write-Warning "Docker compose encountered an issue. Starting standalone mode."
             }
@@ -57,83 +57,58 @@ try {
     $ollamaReq = [System.Net.WebRequest]::Create("http://localhost:11434/api/tags")
     $ollamaReq.Timeout = 1500
     $ollamaRes = $ollamaReq.GetResponse()
-    Write-Host "      ✓ Ollama AI Brain active on http://localhost:11434 (LLM & Embeddings ready)." -ForegroundColor Green
+    Write-Host "      [OK] Ollama AI Brain active on http://localhost:11434 (LLM and Embeddings ready)." -ForegroundColor Green
     $ollamaRes.Close()
 } catch {
-    Write-Host "      ℹ Ollama is not active on port 11434 (Optional for local AI matchmaking)." -ForegroundColor DarkGray
-    Write-Host "        To enable local AI embeddings: run 'ollama serve' in another terminal." -ForegroundColor DarkGray
+    Write-Host "      [INFO] Ollama is not active on port 11434 (Optional for local AI matchmaking)." -ForegroundColor DarkGray
+    Write-Host "             To enable local AI embeddings: run 'ollama serve' in another terminal." -ForegroundColor DarkGray
 }
 
 # 3. Launch FastAPI Backend Service
 Write-Host ""
 Write-Host "[3/4] Launching FastAPI Backend Service (Port $ApiPort)..." -ForegroundColor Yellow
-$BackendCmd = @"
-`$host.UI.RawUI.WindowTitle = 'CineVault API Service (Port $ApiPort)'
-cd '$RootDir'
-Write-Host '==================================================' -ForegroundColor Cyan
-Write-Host '   🎬 CineVault OS v2.0 — FastAPI Backend API' -ForegroundColor Cyan
-Write-Host '==================================================' -ForegroundColor Cyan
-Write-Host ' Port:        http://localhost:$ApiPort' -ForegroundColor White
-Write-Host ' OpenAPI:     http://localhost:$ApiPort/docs' -ForegroundColor White
-Write-Host ' Redoc:       http://localhost:$ApiPort/redoc' -ForegroundColor White
-Write-Host '==================================================' -ForegroundColor Cyan
-Write-Host ''
-`$env:PORT = '$ApiPort'
-`$env:ENVIRONMENT = 'local_development'
-python -m uvicorn services.api.main:app --host 0.0.0.0 --port $ApiPort --reload
-"@
-Start-Process powershell -ArgumentList "-NoExit", "-Command", $BackendCmd
-Write-Host "      ✓ Backend process started in dedicated window." -ForegroundColor Green
+$BackendCmd = "cd '$RootDir'; `$env:PORT = '$ApiPort'; `$env:ENVIRONMENT = 'local_development'; Write-Host '--- CineVault OS v2.0 API Service (Port $ApiPort) ---' -ForegroundColor Cyan; python -m uvicorn services.api.main:app --host 0.0.0.0 --port $ApiPort --reload"
+Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $BackendCmd
+Write-Host "      [OK] Backend process started in dedicated window." -ForegroundColor Green
 
 # 4. Launch Next.js Web Client
 Write-Host ""
 Write-Host "[4/4] Launching Next.js OLED Web Client (Port $WebPort)..." -ForegroundColor Yellow
-$WebCmd = @"
-`$host.UI.RawUI.WindowTitle = 'CineVault Web Client (Port $WebPort)'
-cd '$RootDir\web'
-Write-Host '==================================================' -ForegroundColor Magenta
-Write-Host '   🌟 CineVault OS v2.0 — Next.js OLED Web UI' -ForegroundColor Magenta
-Write-Host '==================================================' -ForegroundColor Magenta
-Write-Host ' URL:         http://localhost:$WebPort' -ForegroundColor White
-Write-Host ' Mode:        Turbopack / Fast Refresh' -ForegroundColor White
-Write-Host '==================================================' -ForegroundColor Magenta
-Write-Host ''
-npm run dev
-"@
-Start-Process powershell -ArgumentList "-NoExit", "-Command", $WebCmd
-Write-Host "      ✓ Web client process started in dedicated window." -ForegroundColor Green
+$WebCmd = "cd '$RootDir\web'; Write-Host '--- CineVault OS v2.0 Web UI (Port $WebPort) ---' -ForegroundColor Magenta; npm run dev"
+Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $WebCmd
+Write-Host "      [OK] Web client process started in dedicated window." -ForegroundColor Green
 
 # 5. Optional Flutter Client
 if ($WithFlutter) {
     Write-Host ""
     Write-Host "[+] Launching Flutter Client..." -ForegroundColor Yellow
-    $FlutterCmd = "cd '$RootDir\client'; `$host.UI.RawUI.WindowTitle = 'CineVault Flutter Client'; flutter run -d chrome"
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", $FlutterCmd
-    Write-Host "      ✓ Flutter client launched." -ForegroundColor Green
+    $FlutterCmd = "cd '$RootDir\client'; flutter run -d chrome"
+    Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $FlutterCmd
+    Write-Host "      [OK] Flutter client launched." -ForegroundColor Green
 }
 
 # Summary Dashboard
 Write-Host ""
 Write-Host "=================================================================" -ForegroundColor Green
-Write-Host "       🎉 CineVault OS v2.0 Services Active!" -ForegroundColor Green
+Write-Host "       [READY] CineVault OS v2.0 Services Active!" -ForegroundColor Green
 Write-Host "=================================================================" -ForegroundColor Green
-Write-Host "  • Web Application:     http://localhost:$WebPort" -ForegroundColor White
-Write-Host "  • Backend API & Docs:  http://localhost:$ApiPort/docs" -ForegroundColor White
-Write-Host "  • Social & AI Route:   http://localhost:$WebPort/social" -ForegroundColor White
-Write-Host "  • Movies Catalog:      http://localhost:$WebPort/movies" -ForegroundColor White
-Write-Host "  • TV Series Catalog:   http://localhost:$WebPort/series" -ForegroundColor White
-Write-Host "  • Personal Dashboard:  http://localhost:$WebPort/dashboard" -ForegroundColor White
+Write-Host "  * Web Application:     http://localhost:$WebPort" -ForegroundColor White
+Write-Host "  * Backend API & Docs:  http://localhost:$ApiPort/docs" -ForegroundColor White
+Write-Host "  * Social & AI Route:   http://localhost:$WebPort/social" -ForegroundColor White
+Write-Host "  * Movies Catalog:      http://localhost:$WebPort/movies" -ForegroundColor White
+Write-Host "  * TV Series Catalog:   http://localhost:$WebPort/series" -ForegroundColor White
+Write-Host "  * Personal Dashboard:  http://localhost:$WebPort/dashboard" -ForegroundColor White
 if (-not $NoDocker) {
     Write-Host "  ---------------------------------------------------------------" -ForegroundColor DarkGray
-    Write-Host "  • RabbitMQ Dashboard:  http://localhost:15672 (guest/guest)" -ForegroundColor DarkGray
-    Write-Host "  • MinIO S3 Console:    http://localhost:9001 (minioadmin)" -ForegroundColor DarkGray
-    Write-Host "  • Keycloak SSO Console:http://localhost:8080" -ForegroundColor DarkGray
-    Write-Host "  • Grafana Metrics:     http://localhost:3002" -ForegroundColor DarkGray
+    Write-Host "  * RabbitMQ Dashboard:  http://localhost:15672 (guest/guest)" -ForegroundColor DarkGray
+    Write-Host "  * MinIO S3 Console:    http://localhost:9001 (minioadmin)" -ForegroundColor DarkGray
+    Write-Host "  * Keycloak SSO Console:http://localhost:8080" -ForegroundColor DarkGray
+    Write-Host "  * Grafana Metrics:     http://localhost:3002" -ForegroundColor DarkGray
 }
 Write-Host "=================================================================" -ForegroundColor Green
 Write-Host ""
 
-if ($OpenBrowser) {
+if (-not $NoBrowser) {
     Write-Host "Opening web application in default browser..." -ForegroundColor Cyan
     Start-Sleep -Seconds 2
     Start-Process "http://localhost:$WebPort"
