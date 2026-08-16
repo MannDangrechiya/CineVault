@@ -612,7 +612,16 @@ class TmdbProviderAdapter(BaseProviderAdapter):
         """Normalizes TMDb payload to standardized intermediate structure."""
         release_date = raw_payload.get("release_date") or raw_payload.get("first_air_date") or ""
         prod_year = int(release_date[:4]) if len(release_date) >= 4 and release_date[:4].isdigit() else None
-        c_type = "TV_SERIES" if "first_air_date" in raw_payload or "name" in raw_payload else "MOVIE"
+
+        media_type = str(raw_payload.get("media_type") or "").lower()
+        if media_type == "tv":
+            c_type = "TV_SERIES"
+        elif media_type == "movie":
+            c_type = "MOVIE"
+        elif raw_payload.get("first_air_date") or (raw_payload.get("name") and not raw_payload.get("title")):
+            c_type = "TV_SERIES"
+        else:
+            c_type = "MOVIE"
 
         return {
             "provider_name": "TMDB",
