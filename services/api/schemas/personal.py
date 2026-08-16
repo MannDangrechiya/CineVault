@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field
 class WatchEventCreate(BaseModel):
     title_id: str = Field(..., description="Target canonical Title UUIDv7")
     edition_id: Optional[str] = None
+    season_id: Optional[str] = None
+    episode_id: Optional[str] = None
+    device_type: Optional[str] = None
+    notes: Optional[str] = None
     watched_at: str = Field(..., description="ISO-8601 UTC timestamp")
     progress_percentage: float = Field(100.0, ge=0.0, le=100.0)
     tombstone_reference_id: Optional[str] = Field(None, description="Tombstone reference if correcting a prior event")
@@ -16,6 +20,10 @@ class WatchEventResponse(BaseModel):
     user_id: str
     title_id: str
     edition_id: Optional[str] = None
+    season_id: Optional[str] = None
+    episode_id: Optional[str] = None
+    device_type: Optional[str] = None
+    notes: Optional[str] = None
     watched_at: str
     progress_percentage: float
     created_at: str

@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 5 Complete_
+_Last updated: 2026-08-16 — Phase 6 Complete_
 
 ## Current Phase
-- Phase: 6 — Watch History Engine
+- Phase: 7 — Collections / Franchises / Lists
 - Status: NOT STARTED
-- Branch: feature/phase-05-personal-user-foundation
+- Branch: feature/phase-06-watch-history-engine
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 5 gate passed: personal media layer lifecycle across watchlist/watched/watching/completed/dropped/paused/favorites, 1-10 ratings, private notes, reviews, append-only rewatch tracking, and strict cross-user privacy isolation verified, all 15 personal tests passing)
+READY FOR NEXT PHASE (Phase 6 gate passed: TV series -> season -> episode -> watch events and Movie title -> edition -> watch events hierarchies, rewatch tracking, idempotency enforcement, and canonical update resilience verified, all 19 tests passing)
 
 ## Notes for next session
-- What was done: Phase 5 Personal User Foundation complete. Implemented & verified media status transitions, ratings, private notes, reviews, append-only watch events, rewatch tracking, and strict cross-user privacy boundaries.
+- What was done: Phase 6 Watch History Engine complete. Implemented & verified TV and Movie watch event hierarchies, episode-level progress, multiple rewatches, idempotency deduplication, and metadata change resilience.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -23,8 +23,8 @@ READY FOR NEXT PHASE (Phase 5 gate passed: personal media layer lifecycle across
 | 3 | Catalog Refresh / Update System | COMPLETE | feature/phase-03-catalog-refresh | 2026-08-16 |
 | 4 | Search & Discovery | COMPLETE | feature/phase-04-search-discovery | 2026-08-16 |
 | 5 | Personal User Foundation | COMPLETE | feature/phase-05-personal-user-foundation | 2026-08-16 |
-| 6 | Watch History Engine | NOT STARTED | | |
-| 7 | Collections / Franchises / Lists | | | |
+| 6 | Watch History Engine | COMPLETE | feature/phase-06-watch-history-engine | 2026-08-16 |
+| 7 | Collections / Franchises / Lists | NOT STARTED | | |
 | 8 | Streaming Availability | | | |
 | 9 | Release Calendar | | | |
 | 10 | Dashboard & Personal Analytics | | | |

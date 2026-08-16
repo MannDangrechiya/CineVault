@@ -69,6 +69,18 @@ def _resolve_edition_uuid(edition_id: Optional[str]) -> Optional[uuid.UUID]:
     return _resolve_uuid(edition_id, "edition_id")
 
 
+def _resolve_season_uuid(season_id: Optional[str]) -> Optional[uuid.UUID]:
+    if season_id is None:
+        return None
+    return _resolve_uuid(season_id, "season_id")
+
+
+def _resolve_episode_uuid(episode_id: Optional[str]) -> Optional[uuid.UUID]:
+    if episode_id is None:
+        return None
+    return _resolve_uuid(episode_id, "episode_id")
+
+
 def _resolve_idempotency_key(key: Optional[str]) -> uuid.UUID:
     """Resolves an idempotency key to UUID, or generates a fresh UUIDv4 if None."""
     if key is None:
@@ -76,7 +88,6 @@ def _resolve_idempotency_key(key: Optional[str]) -> uuid.UUID:
     try:
         return uuid.UUID(key)
     except (ValueError, AttributeError):
-        # Malformed idempotency keys generate a fresh UUID rather than failing
         logger.warning(
             "Idempotency key '%s' is not a valid UUID — generating new UUID for this event.",
             key,
@@ -116,6 +127,10 @@ class PersonalRepository:
                         user_id=str(e.user_id),
                         title_id=str(e.title_id),
                         edition_id=str(e.edition_id) if e.edition_id else None,
+                        season_id=str(e.season_id) if e.season_id else None,
+                        episode_id=str(e.episode_id) if e.episode_id else None,
+                        device_type=e.device_type,
+                        notes=e.notes,
                         watched_at=(
                             e.watched_at.isoformat()
                             if e.watched_at
@@ -170,12 +185,38 @@ class PersonalRepository:
                 user_uuid = _resolve_user_uuid(user_id)
                 title_uuid = _resolve_title_uuid(body.title_id)
                 edition_uuid = _resolve_edition_uuid(body.edition_id)
+                season_uuid = _resolve_season_uuid(body.season_id)
+                episode_uuid = _resolve_episode_uuid(body.episode_id)
+
+                # Idempotency check: if event already exists with this ID, return it
+                existing_stmt = select(WatchEventModel).where(
+                    WatchEventModel.watch_event_id == new_event_uuid
+                )
+                existing_ev = (await db.execute(existing_stmt)).scalar_one_or_none()
+                if existing_ev:
+                    return WatchEventResponse(
+                        id=str(existing_ev.watch_event_id),
+                        user_id=user_id,
+                        title_id=str(existing_ev.title_id),
+                        edition_id=str(existing_ev.edition_id) if existing_ev.edition_id else None,
+                        season_id=str(existing_ev.season_id) if existing_ev.season_id else None,
+                        episode_id=str(existing_ev.episode_id) if existing_ev.episode_id else None,
+                        device_type=existing_ev.device_type,
+                        notes=existing_ev.notes,
+                        watched_at=existing_ev.watched_at.isoformat(),
+                        progress_percentage=body.progress_percentage,
+                        created_at=existing_ev.created_at.isoformat(),
+                    )
 
                 event_orm = WatchEventModel(
                     watch_event_id=new_event_uuid,
                     user_id=user_uuid,
                     title_id=title_uuid,
                     edition_id=edition_uuid,
+                    season_id=season_uuid,
+                    episode_id=episode_uuid,
+                    device_type=body.device_type,
+                    notes=body.notes,
                     watched_at=(
                         datetime.fromisoformat(body.watched_at.replace("Z", "+00:00"))
                         if "T" in body.watched_at
@@ -211,6 +252,10 @@ class PersonalRepository:
                     user_id=user_id,
                     title_id=body.title_id,
                     edition_id=body.edition_id,
+                    season_id=body.season_id,
+                    episode_id=body.episode_id,
+                    device_type=body.device_type,
+                    notes=body.notes,
                     watched_at=body.watched_at,
                     progress_percentage=body.progress_percentage,
                     created_at=created_iso,
