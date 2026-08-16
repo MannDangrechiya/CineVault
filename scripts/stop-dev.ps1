@@ -1,4 +1,4 @@
-# CineVault OS — Automated Development Environment Shutdown Script
+﻿# CineVault OS — Automated Development Environment Shutdown Script
 # Usage: .\scripts\stop-dev.ps1
 
 $RootDir = Resolve-Path "$PSScriptRoot\.."

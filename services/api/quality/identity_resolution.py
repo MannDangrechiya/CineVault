@@ -3,6 +3,7 @@
 # Multilingual title comparison, and External ID collision detection (Day 5 Architecture)
 
 import logging
+import re
 from enum import Enum
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -48,39 +49,28 @@ class IdentityResolutionEngine:
         key_orig = normalize_for_matching(orig_title)
 
         # ----------------------------------------------------------------------
-        # LEVEL 1: EXACT PROVIDER EXTERNAL ID MATCH
+        # COMBINED SCAN: LEVEL 1, LEVEL 2, AND LEVEL 3 MATCHING
+        # Single-pass iteration preserves specification priority while eliminating
+        # redundant full-catalog traversals.
         # ----------------------------------------------------------------------
         id_matches = []
+        target_uuid = str(normalized_data.get("title_id") or normalized_data.get("id") or "")
+        target_display_id = normalized_data.get("display_id")
+        candidate_matches = []
+
         for ct in existing_canonical_titles:
+            # Level 1: Exact Provider External ID Match
             ext_mappings = ct.get("external_ids", {})
             if ext_mappings.get(provider_name) == external_id or ext_mappings.get(provider_name.lower()) == external_id:
                 id_matches.append(ct["id"])
 
-        if len(id_matches) == 1:
-            logger.info(f"Identity Resolution Level 1: Exact provider ID match for {provider_name}:{external_id} -> Title '{id_matches[0]}'")
-            return (MatchState.MATCH_EXACT, id_matches[0], 1.000, "RULE-LEVEL1-EXACT-EXTERNAL-ID")
-        elif len(id_matches) > 1:
-            # External ID Collision Detection: Same external ID mapped to multiple distinct titles!
-            logger.error(f"External ID Collision Detected: Provider ID {provider_name}:{external_id} mapped to multiple titles {id_matches}. Requires review.")
-            return (MatchState.REQUIRES_REVIEW, None, 0.500, "RULE-LEVEL1-EXTERNAL-ID-COLLISION")
-
-        # ----------------------------------------------------------------------
-        # LEVEL 2: CANONICAL IDENTITY / DISPLAY ID MATCH
-        # ----------------------------------------------------------------------
-        target_uuid = normalized_data.get("title_id") or normalized_data.get("id")
-        target_display_id = normalized_data.get("display_id")
-        for ct in existing_canonical_titles:
-            if target_uuid and str(ct.get("id")) == str(target_uuid):
+            # Level 2: Canonical Identity / Display ID Match
+            if target_uuid and str(ct.get("id")) == target_uuid:
                 return (MatchState.MATCH_EXACT, ct["id"], 1.000, "RULE-LEVEL2-CANONICAL-UUID-MATCH")
             if target_display_id and ct.get("display_id") == target_display_id:
                 return (MatchState.MATCH_EXACT, ct["id"], 1.000, "RULE-LEVEL2-DISPLAY-ID-MATCH")
 
-        # ----------------------------------------------------------------------
-        # LEVEL 3: DETERMINISTIC MULTI-SIGNAL MATCHING
-        # (Never use title alone! Requires title + year + country/runtime/director)
-        # ----------------------------------------------------------------------
-        candidate_matches = []
-        for ct in existing_canonical_titles:
+            # Level 3: Deterministic Multi-Signal Candidate Match
             c_title = ct.get("canonical_title", "")
             c_orig = ct.get("original_title", "")
             c_year = ct.get("production_year")
@@ -98,28 +88,34 @@ class IdentityResolutionEngine:
             # Exact title key match
             name_exact_match = (key_prop and key_prop == c_key_title) or (key_orig and c_key_orig and key_orig == c_key_orig)
 
-            # Multilingual title comparison candidate check (e.g. "Your Name" / "Kimi no Na wa" / "君の名は。")
+            # Multilingual title comparison candidate check
             multilingual_match = False
-            if not name_exact_match and c_orig:
+            if not name_exact_match and c_orig and (year is not None and c_year is not None and year == c_year):
                 if orig_title:
                     multilingual_match = is_transliteration_candidate(orig_title, c_orig)
                 if not multilingual_match and title_prop:
                     multilingual_match = is_transliteration_candidate(title_prop, c_orig)
 
             if name_exact_match or multilingual_match:
-                # Deterministic check: Title + Year exact match
                 if year is not None and c_year is not None and year == c_year:
                     score = 0.950
-                    # Edition distinction per ADR-002: If edition_name indicates a cut, it belongs under existing title
                     if edition_name and edition_name.lower() in ("director's cut", "extended cut", "theatrical cut", "uncut"):
                         rule = "RULE-LEVEL3-TITLE-EDITION-MATCH"
                     else:
                         rule = "RULE-LEVEL3-TITLE-YEAR-EXACT-MATCH"
                     candidate_matches.append((ct["id"], score, rule))
                 elif name_exact_match and (country and country == c_country or runtime and abs(runtime - (c_runtime or 0)) <= 3):
-                    # Multi-signal match: Title + Country or Runtime within 3 minutes
                     candidate_matches.append((ct["id"], 0.910, "RULE-LEVEL3-MULTI-SIGNAL-MATCH"))
 
+        # Evaluate Level 1 priority
+        if len(id_matches) == 1:
+            logger.info(f"Identity Resolution Level 1: Exact provider ID match for {provider_name}:{external_id} -> Title '{id_matches[0]}'")
+            return (MatchState.MATCH_EXACT, id_matches[0], 1.000, "RULE-LEVEL1-EXACT-EXTERNAL-ID")
+        elif len(id_matches) > 1:
+            logger.error(f"External ID Collision Detected: Provider ID {provider_name}:{external_id} mapped to multiple titles {id_matches}. Requires review.")
+            return (MatchState.REQUIRES_REVIEW, None, 0.500, "RULE-LEVEL1-EXTERNAL-ID-COLLISION")
+
+        # Evaluate Level 3 priority
         if len(candidate_matches) == 1:
             matched_id, score, rule = candidate_matches[0]
             return (MatchState.MATCH_EXACT, matched_id, score, rule)
@@ -131,9 +127,12 @@ class IdentityResolutionEngine:
         # LEVEL 4: PROBABILISTIC CANDIDATE MATCHING
         # ----------------------------------------------------------------------
         probabilistic_candidates = []
+        STOP_WORDS = {"the", "a", "an", "of", "and", "in", "to", "catalog", "entry", "movie", "series", "season", "episode"}
         words_p = set(key_prop.split()) if key_prop else set()
-        if words_p:
-            len_p = len(words_p)
+        words_p_filtered = words_p - STOP_WORDS
+        if words_p_filtered:
+            len_p = len(words_p_filtered)
+            digits_p = set(re.findall(r"\d+", key_prop))
             for ct in existing_canonical_titles:
                 c_title = ct.get("canonical_title", "")
                 c_year = ct.get("production_year")
@@ -142,16 +141,29 @@ class IdentityResolutionEngine:
                 if not c_key_title:
                     continue
 
-                words_c = ct.get("_words_title")
+                # Years must not conflict if both are known
+                if year and c_year and year != c_year:
+                    continue
+
+                # Digits/numbers in title must not conflict (e.g. 'Entry 1' vs 'Entry 2')
+                digits_c = ct.get("_digits_title")
+                if digits_c is None:
+                    digits_c = set(re.findall(r"\d+", c_key_title))
+                    ct["_digits_title"] = digits_c
+                if digits_p and digits_c and digits_p != digits_c:
+                    continue
+
+                words_c = ct.get("_words_title_filtered")
                 if words_c is None:
-                    words_c = set(c_key_title.split())
-                    ct["_words_title"] = words_c
+                    raw_words_c = ct.get("_words_title") or set(c_key_title.split())
+                    words_c = raw_words_c - STOP_WORDS
+                    ct["_words_title_filtered"] = words_c
 
                 if words_c:
-                    common_words = words_p & words_c
+                    common_words = words_p_filtered & words_c
                     if common_words:
                         token_ratio = len(common_words) / min(len_p, len(words_c))
-                        if token_ratio >= 0.80 or key_prop in c_key_title or c_key_title in key_prop:
+                        if token_ratio >= 0.80:
                             sim_score = 0.70 + (0.15 * token_ratio)
                             if year and c_year and year == c_year:
                                 sim_score += 0.10

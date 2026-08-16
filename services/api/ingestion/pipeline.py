@@ -156,12 +156,13 @@ class IngestionPipelineEngine:
                         .outerjoin(EditionModel, (EditionModel.title_id == TitleModel.title_id) & (EditionModel.is_primary == True))
                     )
                     snapshot_items = []
+                    snapshot_by_id = {}
                     for t in t_res.all():
                         c_title = t[2]
                         o_title = t[3]
                         norm_c = normalize_for_matching(c_title)
                         norm_o = normalize_for_matching(o_title)
-                        snapshot_items.append({
+                        item_dict = {
                             "id": str(t[0]),
                             "title_id": str(t[0]),
                             "display_id": t[1],
@@ -175,10 +176,14 @@ class IngestionPipelineEngine:
                             "_norm_canonical_title": norm_c,
                             "_norm_original_title": norm_o,
                             "_words_title": set(norm_c.split()) if norm_c else set(),
-                        })
+                        }
+                        snapshot_items.append(item_dict)
+                        snapshot_by_id[str(t[0])] = item_dict
                     run_context["catalog_snapshot"] = snapshot_items
+                    run_context["catalog_snapshot_by_id"] = snapshot_by_id
                 else:
                     run_context["catalog_snapshot"] = None
+                    run_context["catalog_snapshot_by_id"] = {}
                     logger.warning(
                         f"Catalog has {total_titles} titles (> {CATALOG_SNAPSHOT_LIMIT}); "
                         "skipping full-catalog identity resolution preload, falling back "
@@ -467,6 +472,11 @@ class IngestionPipelineEngine:
         # matching, Level 4 probabilistic matching, and multilingual
         # transliteration matching were all dead code. Now every non-external-
         # ID match is decided by identity_resolver.resolve_identity.
+        # Fast-path Level 1 match if already indexed in run_context
+        if run_context and "external_id_map" in run_context and str(external_id) in run_context["external_id_map"]:
+            matched_id = run_context["external_id_map"][str(external_id)]
+            return ("AUTO_MATCH", matched_id, 1.000, "RULE-LEVEL1-EXACT-EXTERNAL-ID")
+
         match_payload = dict(normalized)
         match_payload["provider_name"] = provider_name
         match_payload["external_id"] = external_id
@@ -540,7 +550,17 @@ class IngestionPipelineEngine:
         existing_runtime: Optional[int] = None
 
         if matched_title_id and db is not None:
-            if run_context and "catalog_snapshot" in run_context:
+            if run_context and "catalog_snapshot_by_id" in run_context and run_context["catalog_snapshot_by_id"]:
+                existing_item = run_context["catalog_snapshot_by_id"].get(matched_title_id)
+                if existing_item:
+                    existing_title = {
+                        "canonical_title": existing_item.get("canonical_title"),
+                        "original_title": existing_item.get("original_title"),
+                        "production_year": existing_item.get("production_year"),
+                        "content_type_id": existing_item.get("content_type_id")
+                    }
+                    existing_runtime = existing_item.get("runtime_minutes")
+            elif run_context and "catalog_snapshot" in run_context and run_context["catalog_snapshot"]:
                 existing_item = next((c for c in run_context["catalog_snapshot"] if str(c.get("title_id")) == matched_title_id), None)
                 if existing_item:
                     existing_title = {
@@ -667,6 +687,10 @@ class IngestionPipelineEngine:
             return (False, False)
 
         if match_status in ("AUTO_MATCH", "MATCH_EXACT") and matched_title_id:
+            # If mapping is already in run_context, skip redundant DB check
+            if run_context and "external_id_map" in run_context and str(external_id) in run_context["external_id_map"]:
+                return (False, False)
+
             # Ensure external ID mapping exists
             try:
                 stmt = select(TitleExternalIdModel).where(
@@ -683,7 +707,11 @@ class IngestionPipelineEngine:
                         external_id=str(external_id)
                     )
                     db.add(new_map)
+                    if run_context and "external_id_map" in run_context:
+                        run_context["external_id_map"][str(external_id)] = str(matched_title_id)
                     return (False, True)
+                elif run_context and "external_id_map" in run_context:
+                    run_context["external_id_map"][str(external_id)] = str(matched_title_id)
             except Exception as e:
                 logger.error(f"Error updating TitleExternalIdModel mapping: {e}")
             return (False, False)
@@ -886,8 +914,9 @@ class IngestionPipelineEngine:
                 if run_context is not None and run_context.get("catalog_snapshot") is not None:
                     norm_c = normalize_for_matching(canonical_title)
                     norm_o = normalize_for_matching(original_title)
-                    run_context["catalog_snapshot"].append({
+                    new_item_dict = {
                         "id": str(new_title_id),
+                        "title_id": str(new_title_id),
                         "display_id": display_id,
                         "canonical_title": canonical_title,
                         "original_title": original_title,
@@ -897,7 +926,10 @@ class IngestionPipelineEngine:
                         "_norm_canonical_title": norm_c,
                         "_norm_original_title": norm_o,
                         "_words_title": set(norm_c.split()) if norm_c else set(),
-                    })
+                    }
+                    run_context["catalog_snapshot"].append(new_item_dict)
+                    if "catalog_snapshot_by_id" in run_context and run_context["catalog_snapshot_by_id"] is not None:
+                        run_context["catalog_snapshot_by_id"][str(new_title_id)] = new_item_dict
 
                 db.add(title_orm)
                 return (True, False)
