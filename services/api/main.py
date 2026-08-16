@@ -23,7 +23,8 @@ from .routers import (
     metrics,
     recommendations,
     ai_assistant,
-    control_room
+    control_room,
+    observability
 )
 
 @asynccontextmanager
@@ -90,6 +91,7 @@ app.include_router(recommendations.router)
 app.include_router(ai_assistant.public_router)
 app.include_router(ai_assistant.internal_router)
 app.include_router(control_room.router)
+app.include_router(observability.router)
 
 if __name__ == "__main__":
     import os

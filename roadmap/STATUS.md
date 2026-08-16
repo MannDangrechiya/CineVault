@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 24 Complete_
+_Last updated: 2026-08-16 — Phase 25 Complete_
 
 ## Current Phase
-- Phase: 25 — Observability
+- Phase: 26 — Background Jobs / Queue
 - Status: NOT STARTED
-- Branch: feature/phase-24-metadata-history
+- Branch: feature/phase-25-observability
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 24 gate passed: append-only metadata change tracking with old/new value delta, source provider, actor type, reason, confidence, and SHA-256 tamper-evident integrity hash preservation verified, public API endpoint `GET /v1/titles/{title_id}/history` and all 10 canonical & history tests passing)
+READY FOR NEXT PHASE (Phase 25 gate passed: vendor-neutral observability implemented — 5-type signal router fan-out, W3C traceparent span tracking, extended Prometheus metrics across API/ingestion/quality/sync/AI/business, health-matrix with per-subsystem HEALTHY/DEGRADED status, 4 internal observability endpoints protected by X-Service-Identity auth, all 32 tests passing)
 
 ## Notes for next session
-- What was done: Phase 24 Metadata Update History complete. Implemented & verified append-only metadata change tracking (`MetadataChangeHistoryRecord`), recording old/new values, source provider, actor, reason, confidence, and SHA-256 integrity hashes, exposed via `GET /v1/titles/{title_id}/history`.
+- What was done: Phase 25 Observability complete. Implemented vendor-neutral 5-type signal router (AUDIT/SECURITY/BUSINESS/DATA_QUALITY/SYSTEM), W3C traceparent span tracker, extended Prometheus metrics for all subsystems, health-matrix endpoint, and 4 internal observability API endpoints.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -42,8 +42,8 @@ READY FOR NEXT PHASE (Phase 24 gate passed: append-only metadata change tracking
 | 22 | Data Curation | COMPLETE | feature/phase-22-data-curation | 2026-08-16 |
 | 23 | Data Quality Control Room | COMPLETE | feature/phase-23-data-quality-control-room | 2026-08-16 |
 | 24 | Metadata Update History | COMPLETE | feature/phase-24-metadata-history | 2026-08-16 |
-| 25 | Observability | NOT STARTED | | |
-| 26 | Background Jobs / Queue | | | |
+| 25 | Observability | COMPLETE | feature/phase-25-observability | 2026-08-16 |
+| 26 | Background Jobs / Queue | NOT STARTED | | |
 | 27 | Performance / Scale | | | |
 | 28 | Security Hardening | | | |
 | 29 | Privacy / Data Lifecycle | | | |
