@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 28 Complete_
+_Last updated: 2026-08-16 — Phase 29 Complete_
 
 ## Current Phase
-- Phase: 29 — Privacy / Data Lifecycle
+- Phase: 30 — Backup / Disaster Recovery
 - Status: NOT STARTED
-- Branch: feature/phase-28-security-hardening
+- Branch: feature/phase-29-privacy-data-lifecycle
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 28 gate passed: security hardening complete — PKCE S256, SSRF URL allowlist, prompt injection detection (11 patterns), upload security (MIME/ext/size), CAT-2 user isolation enforcement, SQL/path/shell injection detection, secrets scanning (OpenAI/JWT/PEM/GitHub), security header auditor, and full 10-control audit runner, all 43 security tests passing)
+READY FOR NEXT PHASE (Phase 29 gate passed: privacy data lifecycle complete — GDPR-aligned erasure (CAT-2 field zeroing + audit scrubbing), right-to-portability export with field minimization, retention policy evaluation (5 data types), sensitive data minimization, tamper-evident DeletionRecord with SHA-256 integrity hash, all 25 privacy tests passing)
 
 ## Notes for next session
-- What was done: Phase 28 Security Hardening complete. Implemented security.py module with all required security controls and comprehensive security test suite with 43 tests covering all attack surface areas.
+- What was done: Phase 29 Privacy/Data Lifecycle complete. Implemented privacy.py with PrivacyEngine (erasure, export, retention, minimization, audit scrubbing). Constraint honored: deleted data actually disappears, audit records scrubbed on deletion with anonymized fact retention.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -46,8 +46,8 @@ READY FOR NEXT PHASE (Phase 28 gate passed: security hardening complete — PKCE
 | 26 | Background Jobs / Queue | COMPLETE | feature/phase-26-background-jobs | 2026-08-16 |
 | 27 | Performance / Scale | COMPLETE | feature/phase-27-performance-scale | 2026-08-16 |
 | 28 | Security Hardening | COMPLETE | feature/phase-28-security-hardening | 2026-08-16 |
-| 29 | Privacy / Data Lifecycle | NOT STARTED | | |
-| 30 | Backup / Disaster Recovery | | | |
+| 29 | Privacy / Data Lifecycle | COMPLETE | feature/phase-29-privacy-data-lifecycle | 2026-08-16 |
+| 30 | Backup / Disaster Recovery | NOT STARTED | | |
 | 31 | CI/CD | | | |
 | 32 | Release Engineering | | | |
 | 33 | Production Readiness | | | |
