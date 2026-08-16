@@ -162,3 +162,17 @@ class AvailabilityDiscoveryResponse(BaseModel):
     total_offers: int
     offers: List[PlatformOfferSummary]
     releases: List[ReleaseSummary]
+
+class MetadataChangeHistoryRecord(BaseModel):
+    history_id: str
+    title_id: str
+    field_name: str
+    old_value: Optional[str] = None
+    new_value: str
+    source_provider: str
+    actor_id: str
+    actor_type: str = Field(default="SYSTEM", description="SYSTEM, CURATOR, USER_SUGGESTION")
+    reason: str
+    confidence: float
+    timestamp: str
+    integrity_hash: str

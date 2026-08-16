@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas.common import PaginatedResponse, CursorPagination
 from ..schemas.titles import (
     TitleSummary, TitleDetail, TitleLookupResponse, ProvenanceRecord,
-    ReleaseSummary, AvailabilityDiscoveryResponse
+    ReleaseSummary, AvailabilityDiscoveryResponse, MetadataChangeHistoryRecord
 )
 from ..rate_limiter import enforce_rate_limit
 from ..auth.dependencies import get_optional_claims
@@ -108,3 +108,15 @@ async def get_title_availability(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Title entity '{title_id}' not found.")
 
     return await canonical_repository.get_title_availability(db=db, title_id=title_id, country_code=country_code)
+
+@router.get("/{title_id}/history", response_model=List[MetadataChangeHistoryRecord], dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+async def get_title_metadata_history(
+    title_id: str,
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Retrieves full append-only metadata change history tracking old/new values, actor, timestamp, reason, and confidence."""
+    title = await canonical_repository.get_title_by_id(db=db, title_id=title_id)
+    if not title:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Title entity '{title_id}' not found.")
+
+    return await canonical_repository.get_metadata_history(db=db, title_id=title_id)

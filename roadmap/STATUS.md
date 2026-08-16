@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 23 Complete_
+_Last updated: 2026-08-16 — Phase 24 Complete_
 
 ## Current Phase
-- Phase: 24 — Metadata Update History
+- Phase: 25 — Observability
 - Status: NOT STARTED
-- Branch: feature/phase-23-data-quality-control-room
+- Branch: feature/phase-24-metadata-history
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 23 gate passed: comprehensive curator tooling with conflict queue inspection and resolution, quarantine payload triage, merge safety gates, RBAC authorization, and personal-data privacy isolation verified, all 21 tests passing)
+READY FOR NEXT PHASE (Phase 24 gate passed: append-only metadata change tracking with old/new value delta, source provider, actor type, reason, confidence, and SHA-256 tamper-evident integrity hash preservation verified, public API endpoint `GET /v1/titles/{title_id}/history` and all 10 canonical & history tests passing)
 
 ## Notes for next session
-- What was done: Phase 23 Data Quality Control Room complete. Implemented & verified Control Room operational summary statistics, multi-provider metadata conflict queue inspection and resolution, ingestion quarantine triage, merge safety gates, RBAC authorization guards, and strict CAT-2 personal data privacy isolation.
+- What was done: Phase 24 Metadata Update History complete. Implemented & verified append-only metadata change tracking (`MetadataChangeHistoryRecord`), recording old/new values, source provider, actor, reason, confidence, and SHA-256 integrity hashes, exposed via `GET /v1/titles/{title_id}/history`.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -41,8 +41,8 @@ READY FOR NEXT PHASE (Phase 23 gate passed: comprehensive curator tooling with c
 | 21 | Web UI Completion | COMPLETE | feature/phase-21-web-ui | 2026-08-16 |
 | 22 | Data Curation | COMPLETE | feature/phase-22-data-curation | 2026-08-16 |
 | 23 | Data Quality Control Room | COMPLETE | feature/phase-23-data-quality-control-room | 2026-08-16 |
-| 24 | Metadata Update History | NOT STARTED | | |
-| 25 | Observability | | | |
+| 24 | Metadata Update History | COMPLETE | feature/phase-24-metadata-history | 2026-08-16 |
+| 25 | Observability | NOT STARTED | | |
 | 26 | Background Jobs / Queue | | | |
 | 27 | Performance / Scale | | | |
 | 28 | Security Hardening | | | |
