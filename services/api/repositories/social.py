@@ -1,14 +1,15 @@
-# CineVault OS — Social Core Repository (v2.0 Module 1)
-# Data access layer supporting PostgreSQL AsyncPG session and in-memory test fallback
+# CineVault OS — Social Core Repository (v2.0 Module 1 & 2)
+# Data access layer supporting PostgreSQL AsyncPG session, pgvector similarity, and in-memory test fallback
 
 import logging
+import math
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Tuple, Any
 import uuid
 from sqlalchemy import select, and_, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.social import FriendshipModel, RecommendationModel
+from ..models.social import FriendshipModel, RecommendationModel, UserTasteProfileModel
 from ..schemas.social import (
     FriendshipStatusEnum,
     FriendshipResponse,
@@ -17,6 +18,9 @@ from ..schemas.social import (
     RecommendationCreate,
     RecommendationStateUpdate,
     RecommendationResponse,
+    TasteMatchResponse,
+    UserTasteProfileUpdate,
+    UserTasteProfileResponse,
     ALLOWED_STATE_TRANSITIONS,
 )
 
@@ -25,6 +29,7 @@ logger = logging.getLogger("cinevault.repositories.social")
 # In-memory stores used during tests or offline fallback when db session is None
 SEED_FRIENDSHIPS: Dict[uuid.UUID, FriendshipResponse] = {}
 SEED_RECOMMENDATIONS: Dict[uuid.UUID, RecommendationResponse] = {}
+SEED_TASTE_PROFILES: Dict[uuid.UUID, Dict[str, Any]] = {}
 
 
 def _resolve_uuid(val: Any, field_name: str = "id") -> uuid.UUID:
@@ -36,8 +41,25 @@ def _resolve_uuid(val: Any, field_name: str = "id") -> uuid.UUID:
         return uuid.uuid5(uuid.NAMESPACE_DNS, f"cinevault:{field_name}:{val}")
 
 
+def _compute_cosine_distance(vec_a: List[float], vec_b: List[float]) -> float:
+    """
+    Computes cosine distance = 1 - cosine_similarity between two vector embeddings.
+    Cosine similarity = (A . B) / (||A|| * ||B||)
+    """
+    if not vec_a or not vec_b or len(vec_a) != len(vec_b):
+        return 1.0
+    dot_product = sum(a * b for a, b in zip(vec_a, vec_b))
+    norm_a = math.sqrt(sum(a * a for a in vec_a))
+    norm_b = math.sqrt(sum(b * b for b in vec_b))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 1.0
+    similarity = dot_product / (norm_a * norm_b)
+    # Cosine distance = 1 - similarity (bounded between 0.0 and 2.0)
+    return max(0.0, min(2.0, 1.0 - similarity))
+
+
 class SocialRepository:
-    """Provides async database operations and state machine management for social relationships and recommendations."""
+    """Provides async database operations, pgvector cosine similarity, and state machine management."""
 
     # -------------------------------------------------------------------------
     # Friendship Operations
@@ -427,5 +449,212 @@ class SocialRepository:
                     results.append(r)
             return sorted(results, key=lambda x: x.sent_at, reverse=True)
 
+    # -------------------------------------------------------------------------
+    # Taste Profile & Vector Operations (v2.0 Module 2)
+    # -------------------------------------------------------------------------
+
+    async def upsert_taste_profile(
+        self,
+        db_or_user_id: Any = None,
+        user_id_or_vector: Any = None,
+        taste_vector: Optional[List[float]] = None,
+        db: Optional[AsyncSession] = None,
+        user_id: Optional[uuid.UUID] = None,
+        vector_data: Optional[List[float]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Creates or updates a user's 384-dimensional taste vector profile.
+        Supports both (db, user_id, taste_vector) and (user_id, vector_data) calling conventions.
+        """
+        session: Optional[AsyncSession] = db
+        target_user_id: Optional[Any] = user_id
+        target_vector: Optional[List[float]] = vector_data or taste_vector
+
+        if isinstance(db_or_user_id, AsyncSession) or (db_or_user_id is None and user_id_or_vector is not None and taste_vector is not None):
+            session = db_or_user_id
+            target_user_id = user_id_or_vector
+            target_vector = taste_vector
+        elif isinstance(db_or_user_id, (uuid.UUID, str)):
+            target_user_id = db_or_user_id
+            if user_id_or_vector is not None and isinstance(user_id_or_vector, (list, tuple)):
+                target_vector = list(user_id_or_vector)
+        elif db_or_user_id is not None and target_user_id is None:
+            target_user_id = db_or_user_id
+
+        if target_user_id is None:
+            raise ValueError("user_id is required to upsert taste profile.")
+        if target_vector is None:
+            raise ValueError("taste_vector is required to upsert taste profile.")
+
+        u_uuid = _resolve_uuid(target_user_id, "user_id")
+        now = datetime.now(timezone.utc)
+
+        if session is not None:
+            stmt = select(UserTasteProfileModel).where(UserTasteProfileModel.user_id == u_uuid)
+            res = await session.execute(stmt)
+            existing = res.scalars().first()
+            if existing:
+                existing.taste_vector = target_vector
+                existing.last_computed_at = now
+                await session.flush()
+                return {
+                    "user_id": existing.user_id,
+                    "taste_vector": list(existing.taste_vector) if existing.taste_vector is not None else None,
+                    "last_computed_at": existing.last_computed_at,
+                    "dimension": len(target_vector),
+                }
+            else:
+                record = UserTasteProfileModel(
+                    user_id=u_uuid,
+                    taste_vector=target_vector,
+                    last_computed_at=now,
+                )
+                session.add(record)
+                await session.flush()
+                return {
+                    "user_id": record.user_id,
+                    "taste_vector": list(record.taste_vector) if record.taste_vector is not None else None,
+                    "last_computed_at": record.last_computed_at,
+                    "dimension": len(target_vector),
+                }
+        else:
+            profile_data = {
+                "user_id": u_uuid,
+                "taste_vector": list(target_vector),
+                "last_computed_at": now,
+                "dimension": len(target_vector),
+            }
+            SEED_TASTE_PROFILES[u_uuid] = profile_data
+            return profile_data
+
+    async def get_taste_compatibility(
+        self,
+        db_or_user_id: Any = None,
+        user_id_or_limit: Any = None,
+        limit: int = 5,
+        db: Optional[AsyncSession] = None,
+        user_id: Optional[uuid.UUID] = None,
+    ) -> List[TasteMatchResponse]:
+        """
+        Calculates cosine similarity / distance between user_id and all ACCEPTED friends.
+        Orders results by highest taste compatibility (lowest cosine distance).
+        Formula: compatibility_score = (1 - cosine_distance) * 100
+        """
+        session: Optional[AsyncSession] = db
+        target_user_id: Optional[Any] = user_id
+        target_limit: int = limit
+
+        if isinstance(db_or_user_id, AsyncSession) or (db_or_user_id is None and user_id_or_limit is not None and not isinstance(user_id_or_limit, int)):
+            session = db_or_user_id
+            target_user_id = user_id_or_limit
+            target_limit = limit
+        elif isinstance(db_or_user_id, (uuid.UUID, str)):
+            target_user_id = db_or_user_id
+            if isinstance(user_id_or_limit, int):
+                target_limit = user_id_or_limit
+        elif db_or_user_id is not None and target_user_id is None:
+            target_user_id = db_or_user_id
+
+        if target_user_id is None:
+            return []
+
+        u_uuid = _resolve_uuid(target_user_id, "user_id")
+
+        if session is not None:
+            # 1. Fetch user's taste profile
+            stmt_user = select(UserTasteProfileModel).where(UserTasteProfileModel.user_id == u_uuid)
+            res_user = await session.execute(stmt_user)
+            user_profile = res_user.scalars().first()
+            if not user_profile or user_profile.taste_vector is None:
+                return []
+
+            target_vector = user_profile.taste_vector
+
+            # 2. Query all ACCEPTED friendships
+            stmt_friends = select(FriendshipModel).where(
+                and_(
+                    FriendshipModel.status == FriendshipStatusEnum.ACCEPTED.value,
+                    or_(
+                        FriendshipModel.requester_id == u_uuid,
+                        FriendshipModel.addressee_id == u_uuid,
+                    ),
+                )
+            )
+            res_friends = await session.execute(stmt_friends)
+            friend_records = res_friends.scalars().all()
+
+            friend_ids: List[uuid.UUID] = []
+            for f in friend_records:
+                if f.requester_id == u_uuid:
+                    friend_ids.append(f.addressee_id)
+                elif f.addressee_id == u_uuid:
+                    friend_ids.append(f.requester_id)
+
+            if not friend_ids:
+                return []
+
+            # 3. Query pgvector cosine distance: UserTasteProfileModel.taste_vector.cosine_distance(target_vector)
+            dist_expr = UserTasteProfileModel.taste_vector.cosine_distance(target_vector)
+            stmt_matches = (
+                select(
+                    UserTasteProfileModel.user_id,
+                    dist_expr.label("distance"),
+                )
+                .where(
+                    and_(
+                        UserTasteProfileModel.user_id.in_(friend_ids),
+                        UserTasteProfileModel.taste_vector.is_not(None),
+                    )
+                )
+                .order_by(dist_expr.asc())
+                .limit(target_limit)
+            )
+            res_matches = await session.execute(stmt_matches)
+            results: List[TasteMatchResponse] = []
+            for f_id, dist in res_matches.all():
+                d_val = float(dist) if dist is not None else 1.0
+                score = max(0.0, min(100.0, round((1.0 - d_val) * 100.0, 2)))
+                results.append(
+                    TasteMatchResponse(
+                        friend_id=f_id,
+                        compatibility_score=score,
+                    )
+                )
+            return results
+        else:
+            # In-memory fallback
+            if u_uuid not in SEED_TASTE_PROFILES or not SEED_TASTE_PROFILES[u_uuid].get("taste_vector"):
+                return []
+
+            target_vector = SEED_TASTE_PROFILES[u_uuid]["taste_vector"]
+
+            # Find accepted friends
+            friend_ids: List[uuid.UUID] = []
+            for f in SEED_FRIENDSHIPS.values():
+                if f.status == FriendshipStatusEnum.ACCEPTED:
+                    if f.requester_id == u_uuid:
+                        friend_ids.append(f.addressee_id)
+                    elif f.addressee_id == u_uuid:
+                        friend_ids.append(f.requester_id)
+
+            if not friend_ids:
+                return []
+
+            matches = []
+            for f_id in friend_ids:
+                if f_id in SEED_TASTE_PROFILES and SEED_TASTE_PROFILES[f_id].get("taste_vector"):
+                    f_vector = SEED_TASTE_PROFILES[f_id]["taste_vector"]
+                    cos_dist = _compute_cosine_distance(target_vector, f_vector)
+                    score = max(0.0, min(100.0, round((1.0 - cos_dist) * 100.0, 2)))
+                    matches.append((f_id, cos_dist, score))
+
+            matches.sort(key=lambda x: x[1])
+
+            return [
+                TasteMatchResponse(friend_id=item[0], compatibility_score=item[2])
+                for item in matches[:target_limit]
+            ]
+
 
 social_repository = SocialRepository()
+

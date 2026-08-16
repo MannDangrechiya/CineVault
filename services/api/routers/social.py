@@ -1,8 +1,10 @@
-# CineVault OS — Social Core API Router (v2.0 Module 1)
-# Implements Friendships, Peer Recommendations, and Recommendation State Machine (ADR-003, ADR-004)
+# CineVault OS — Social Core API Router (v2.0 Module 1 & 2)
+# Implements Friendships, Peer Recommendations, and Taste Vector Compatibility (ADR-003, ADR-004)
 
 import logging
-from typing import Optional, List
+import math
+import random
+from typing import Optional, List, Dict, Any
 import uuid
 from fastapi import APIRouter, Depends, Query, Path, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,9 @@ from ..schemas.social import (
     RecommendationCreate,
     RecommendationStateUpdate,
     RecommendationResponse,
+    TasteMatchResponse,
+    UserTasteProfileUpdate,
+    UserTasteProfileResponse,
 )
 from ..auth.dependencies import require_authenticated_user, get_optional_claims
 from ..auth.jwt_validator import SecurityTokenClaims
@@ -25,7 +30,7 @@ from ..repositories.social import social_repository, _resolve_uuid
 
 logger = logging.getLogger("cinevault.routers.social")
 
-router = APIRouter(prefix="/social", tags=["Social Core (v2.0 Module 1)"])
+router = APIRouter(prefix="/social", tags=["Social Core (v2.0 Module 1 & 2)"])
 
 
 def _extract_user_id(claims: Optional[SecurityTokenClaims]) -> uuid.UUID:
@@ -219,3 +224,88 @@ async def list_user_friendships(
     """Lists all friendships associated with the authenticated user."""
     user_id = _extract_user_id(claims)
     return await social_repository.list_friendships(db=db, user_id=user_id)
+
+
+# =============================================================================
+# Vector Taste Engine & Profile Endpoints (v2.0 Module 2)
+# =============================================================================
+
+@router.get(
+    "/taste-matches",
+    response_model=List[TasteMatchResponse],
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_taste_matches(
+    limit: int = Query(5, ge=1, le=50, description="Max number of taste matches to return"),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """
+    Returns a list of ACCEPTED friends sorted by semantic taste compatibility
+    calculated via pgvector cosine distance on 384-dimensional taste vectors.
+    """
+    user_id = _extract_user_id(claims)
+    return await social_repository.get_taste_compatibility(
+        db=db,
+        user_id=user_id,
+        limit=limit,
+    )
+
+
+@router.put(
+    "/taste-profile/mock-compute",
+    dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))],
+)
+async def mock_compute_taste_profile(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """
+    Temporary utility for testing before Module 3.
+    Generates a random 384-dimensional unit vector for the current user and persists it.
+    """
+    user_id = _extract_user_id(claims)
+
+    # Generate 384-dimensional random vector
+    raw_vector = [random.uniform(-1.0, 1.0) for _ in range(384)]
+    norm = math.sqrt(sum(x * x for x in raw_vector))
+    normalized_vector = [round(x / norm, 6) for x in raw_vector] if norm > 0 else raw_vector
+
+    result = await social_repository.upsert_taste_profile(
+        db=db,
+        user_id=user_id,
+        taste_vector=normalized_vector,
+    )
+    return {
+        "status": "success",
+        "user_id": str(user_id),
+        "dimension": 384,
+        "message": "Taste profile mock-computed successfully",
+        "last_computed_at": result.get("last_computed_at"),
+    }
+
+
+@router.put(
+    "/taste-profile",
+    dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))],
+)
+async def update_taste_profile(
+    body: UserTasteProfileUpdate,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """
+    Updates or creates a user's 384-dimensional taste vector profile.
+    """
+    user_id = _extract_user_id(claims)
+    result = await social_repository.upsert_taste_profile(
+        db=db,
+        user_id=user_id,
+        taste_vector=body.taste_vector,
+    )
+    return {
+        "status": "success",
+        "user_id": str(user_id),
+        "dimension": len(body.taste_vector),
+        "last_computed_at": result.get("last_computed_at"),
+    }

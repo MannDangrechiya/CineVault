@@ -1,14 +1,15 @@
-# CineVault OS — Social Schema ORM Models (v2.0 Module 1)
-# Implements Social Core, Friendships, and Peer Recommendations (ADR-003, ADR-004)
+# CineVault OS — Social Schema ORM Models (v2.0 Module 1 & 2)
+# Implements Social Core, Friendships, Peer Recommendations, and Taste Vector Profiles (ADR-003, ADR-004)
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any
 import uuid
 from sqlalchemy import (
     String, Text, Float, ForeignKey, DateTime
 )
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import Mapped, mapped_column
+from pgvector.sqlalchemy import Vector
 from .canonical import Base
 
 
@@ -90,3 +91,26 @@ class RecommendationModel(Base):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+
+class UserTasteProfileModel(Base):
+    """
+    Represents 384-dimensional dense taste vector profiles for semantic
+    taste similarity and peer compatibility matching (all-MiniLM-L6-v2 compatible).
+    Isolated within the `social` PostgreSQL schema.
+    """
+    __tablename__ = "user_taste_profile"
+    __table_args__ = {"schema": "social"}
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True
+    )
+    taste_vector: Mapped[Optional[Any]] = mapped_column(
+        Vector(384), nullable=True
+    )
+    last_computed_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+

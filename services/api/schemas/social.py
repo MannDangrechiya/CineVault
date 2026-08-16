@@ -1,11 +1,11 @@
-# CineVault OS — Social Core Schemas (v2.0 Module 1)
-# Request and response models for Friendships, Recommendations, and State Machine (ADR-003, ADR-004)
+# CineVault OS — Social Core Schemas (v2.0 Module 1 & 2)
+# Request and response models for Friendships, Recommendations, and Taste Profiles (ADR-003, ADR-004)
 
 from enum import Enum
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import uuid
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 
 
 # =========================================================================
@@ -113,3 +113,42 @@ class FriendshipResponse(BaseModel):
     trust_score: float
     created_at: datetime
     updated_at: datetime
+
+
+# =========================================================================
+# Vector Taste Profile & Compatibility Schemas (v2.0 Module 2)
+# =========================================================================
+
+class TasteMatchResponse(BaseModel):
+    """Represents peer taste compatibility derived from pgvector cosine similarity."""
+    model_config = ConfigDict(from_attributes=True)
+
+    friend_id: uuid.UUID = Field(..., description="Target friend user UUID")
+    compatibility_score: float = Field(
+        ..., ge=0.0, le=100.0, description="Taste compatibility percentage score (0.0 to 100.0)"
+    )
+
+
+class UserTasteProfileUpdate(BaseModel):
+    """Schema for updating 384-dimensional user taste embedding vector."""
+    taste_vector: List[float] = Field(
+        ..., description="Dense 384-dimensional taste vector for all-MiniLM-L6-v2 embeddings"
+    )
+
+    @field_validator("taste_vector")
+    @classmethod
+    def validate_vector_dimensions(cls, v: List[float]) -> List[float]:
+        if len(v) != 384:
+            raise ValueError(f"taste_vector must have exactly 384 dimensions, got {len(v)}")
+        return v
+
+
+class UserTasteProfileResponse(BaseModel):
+    """Schema representing stored user taste profile metadata."""
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    taste_vector: Optional[List[float]] = None
+    last_computed_at: datetime
+    dimension: Optional[int] = 384
+
