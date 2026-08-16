@@ -314,6 +314,7 @@ class RecommendationRepository:
         watched_title_ids: Set[str] = set()
         user_ratings: Dict[str, int] = {}
         favorite_title_ids: Set[str] = set()
+        dropped_title_ids: Set[str] = set()
 
         if db is not None:
             try:
@@ -350,6 +351,15 @@ class RecommendationRepository:
                     f_res = await db.execute(f_stmt)
                     favorite_title_ids = {str(r[0]) for r in f_res.fetchall()}
 
+                    d_stmt = select(UserTitleStateModel.title_id).where(
+                        and_(
+                            UserTitleStateModel.user_id == user_uuid,
+                            UserTitleStateModel.manual_status_override == "DROPPED",
+                        )
+                    )
+                    d_res = await db.execute(d_stmt)
+                    dropped_title_ids = {str(r[0]) for r in d_res.fetchall()}
+
             except Exception as exc:
                 logger.warning(
                     "Personal context query failed for user %s: %s", user_id, exc
@@ -360,6 +370,7 @@ class RecommendationRepository:
             len(watched_title_ids) == 0
             and len(user_ratings) == 0
             and len(favorite_title_ids) == 0
+            and len(dropped_title_ids) == 0
         ) or (mode == RecommendationModeEnum.COLD_START)
 
         # -----------------------------------------------------------------------
@@ -460,14 +471,19 @@ class RecommendationRepository:
                 tid = item["title_id"]
                 rating = user_ratings.get(tid, 0)
                 is_fav = tid in favorite_title_ids
+                is_dropped = tid in dropped_title_ids
 
                 weight = 0.0
-                if rating >= 8:
+                if is_dropped:
+                    weight -= 5.0
+                elif rating >= 8:
                     weight = (rating - 5) * 1.5
                 elif rating >= 6:
                     weight = 1.0
+                elif rating <= 3 and rating > 0:
+                    weight = -4.0
                 elif rating > 0:
-                    weight = -1.0
+                    weight = -2.0
 
                 if is_fav:
                     weight += 3.0
@@ -521,7 +537,7 @@ class RecommendationRepository:
             if available_only and not item.get("is_available", True):
                 continue
 
-            # 6. Content Similarity Scoring
+            # Content Similarity (Jaccard on genres + bonus for shared directors/actors)
             content_similarity = 0.0
             matched_genres: List[str] = []
             matched_directors: List[str] = []
@@ -533,54 +549,52 @@ class RecommendationRepository:
                 seed_title_name = seed_item["canonical_title"]
                 user_rating_applied = user_ratings.get(seed_item["title_id"])
 
-                common_genres = set(item.get("genres", [])).intersection(
-                    set(seed_item.get("genres", []))
-                )
-                matched_genres = list(common_genres)
-                if seed_item.get("genres"):
-                    content_similarity += (len(common_genres) / len(seed_item["genres"])) * 50.0
+                target_genres = set(seed_item.get("genres", []))
+                cand_genres = set(item.get("genres", []))
+                matched_genres = list(target_genres.intersection(cand_genres))
 
-                common_directors = set(item.get("directors", [])).intersection(
-                    set(seed_item.get("directors", []))
-                )
-                matched_directors = list(common_directors)
-                if common_directors:
-                    content_similarity += 30.0
+                if target_genres or cand_genres:
+                    union_size = len(target_genres.union(cand_genres))
+                    jaccard = (
+                        len(matched_genres) / union_size if union_size > 0 else 0.0
+                    )
+                    content_similarity += jaccard * 50.0
 
-                common_actors = set(item.get("actors", [])).intersection(
-                    set(seed_item.get("actors", []))
+                target_directors = set(seed_item.get("directors", []))
+                cand_directors = set(item.get("directors", []))
+                matched_directors = list(
+                    target_directors.intersection(cand_directors)
                 )
-                matched_actors = list(common_actors)
-                if common_actors:
-                    content_similarity += 20.0
+                if matched_directors:
+                    content_similarity += 35.0
+
+                target_actors = set(seed_item.get("actors", []))
+                cand_actors = set(item.get("actors", []))
+                matched_actors = list(target_actors.intersection(cand_actors))
+                if matched_actors:
+                    content_similarity += 15.0
             else:
                 content_similarity = item.get("vote_average", 7.0) * 8.0
 
-            # 7. Personal Taste Scoring
+            # 7. Personal Taste Alignment Score
             personal_taste = 0.0
-            for g in item.get("genres", []):
-                if g in preferred_genres:
-                    personal_taste += preferred_genres[g] * 4.0
-                    if g not in matched_genres:
-                        matched_genres.append(g)
+            cand_genres_list = item.get("genres", [])
+            for g in cand_genres_list:
+                personal_taste += preferred_genres.get(g, 0.0)
 
-            for d in item.get("directors", []):
-                if d in preferred_directors:
-                    personal_taste += preferred_directors[d] * 8.0
-                    if d not in matched_directors:
-                        matched_directors.append(d)
+            cand_directors_list = item.get("directors", [])
+            for d in cand_directors_list:
+                personal_taste += preferred_directors.get(d, 0.0) * 2.0
 
-            # 8. Context & Mode Weighting
+            # 8. Context & Mode Scoring
             context_score = 0.0
-            if mode == RecommendationModeEnum.TONIGHT:
-                context_score += item.get("vote_average", 7.0) * 3.0
-                if item.get("runtime_minutes") and item["runtime_minutes"] <= 120:
-                    context_score += 15.0
-            elif mode == RecommendationModeEnum.UNDER_90:
+            if mode == RecommendationModeEnum.UNDER_90:
                 if item.get("runtime_minutes") and item["runtime_minutes"] <= 90:
                     context_score += 30.0
             elif mode == RecommendationModeEnum.FAVORITE_DIRECTORS:
-                if matched_directors:
+                if matched_directors or any(
+                    preferred_directors.get(d, 0) > 0 for d in cand_directors_list
+                ):
                     context_score += 40.0
             elif mode == RecommendationModeEnum.HIDDEN_GEMS:
                 if item.get("vote_average", 0.0) >= 7.0:
@@ -652,14 +666,31 @@ class RecommendationRepository:
             )
             ranked_items.append(rec_item)
 
-        ranked_items.sort(key=lambda x: x.recommendation_score, reverse=True)
-        ranked_items = ranked_items[:limit]
+        # 11. Diversity & MMR-inspired Re-ranking
+        candidates = sorted(ranked_items, key=lambda x: x.recommendation_score, reverse=True)
+        final_ranked: List[RecommendationItemResponse] = []
+        genre_frequency: Dict[str, int] = {}
+
+        for cand in candidates:
+            if len(final_ranked) >= limit:
+                break
+            primary_genre = cand.genres[0] if cand.genres else "General"
+            overlap = genre_frequency.get(primary_genre, 0)
+            if overlap > 0:
+                penalty = overlap * 2.0
+                cand.recommendation_score = max(10.0, round(cand.recommendation_score - penalty, 1))
+
+            final_ranked.append(cand)
+            for g in cand.genres:
+                genre_frequency[g] = genre_frequency.get(g, 0) + 1
+
+        final_ranked.sort(key=lambda x: x.recommendation_score, reverse=True)
 
         return RecommendationListResponse(
             mode=mode,
-            total=len(ranked_items),
+            total=len(final_ranked),
             is_cold_start=is_cold_start,
-            data=ranked_items,
+            data=final_ranked,
         )
 
     async def get_similar_titles(

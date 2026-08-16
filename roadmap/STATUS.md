@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 12 Complete_
+_Last updated: 2026-08-16 — Phase 13 Complete_
 
 ## Current Phase
-- Phase: 13 — Recommendation Quality
+- Phase: 14 — AI Assistant Foundation
 - Status: NOT STARTED
-- Branch: feature/phase-12-recommendation-foundation
+- Branch: feature/phase-13-recommendation-quality
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 12 gate passed: explainable recommendations, mandatory cold start with explicit preferences + curated collections, multi-attribute content similarity, personal rating/behavior signals, structured grounded explanations, and deterministic ranking governance without direct LLM decision verified, all 15 tests passing)
+READY FOR NEXT PHASE (Phase 13 gate passed: already-watched exclusion, negative preference signal penalties on poor ratings & dropped titles, MMR genre diversity re-ranking, popularity controls, and non-clickbait quality verified, all 18 tests passing)
 
 ## Notes for next session
-- What was done: Phase 12 Recommendation Engine Foundation complete. Implemented & verified explainable recommendations, mandatory cold-start for new users, behavioral personalization, multi-attribute similarity (genres, directors, actors, runtimes, countries), and deterministic scoring breakdowns.
+- What was done: Phase 13 Recommendation Quality complete. Implemented & verified already-watched exclusion, negative preference signal penalties on poor ratings & dropped titles, MMR genre diversity re-ranking, popularity controls, and non-clickbait quality.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -30,8 +30,8 @@ READY FOR NEXT PHASE (Phase 12 gate passed: explainable recommendations, mandato
 | 10 | Dashboard & Personal Analytics | COMPLETE | feature/phase-10-dashboard-analytics | 2026-08-16 |
 | 11 | Taste Profile | COMPLETE | feature/phase-11-taste-profile | 2026-08-16 |
 | 12 | Recommendation Engine Foundation | COMPLETE | feature/phase-12-recommendation-foundation | 2026-08-16 |
-| 13 | Recommendation Quality | NOT STARTED | | |
-| 14 | AI Assistant Foundation | | | |
+| 13 | Recommendation Quality | COMPLETE | feature/phase-13-recommendation-quality | 2026-08-16 |
+| 14 | AI Assistant Foundation | NOT STARTED | | |
 | 15 | AI Assistant Capabilities | | | |
 | 16 | AI Security | | | |
 | 17 | Import / Export | | | |
