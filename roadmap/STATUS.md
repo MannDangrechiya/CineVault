@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 6 Complete_
+_Last updated: 2026-08-16 — Phase 7 Complete_
 
 ## Current Phase
-- Phase: 7 — Collections / Franchises / Lists
+- Phase: 8 — Streaming Availability
 - Status: NOT STARTED
-- Branch: feature/phase-06-watch-history-engine
+- Branch: feature/phase-07-collections-franchises
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 6 gate passed: TV series -> season -> episode -> watch events and Movie title -> edition -> watch events hierarchies, rewatch tracking, idempotency enforcement, and canonical update resilience verified, all 19 tests passing)
+READY FOR NEXT PHASE (Phase 7 gate passed: Universe -> Franchise -> Franchise Entry relational hierarchy, structured viewing orders (theatrical release vs narrative chronological), personal custom user lists with ordered items and notes, item reordering, and cross-user privacy isolation verified, all 4 tests passing)
 
 ## Notes for next session
-- What was done: Phase 6 Watch History Engine complete. Implemented & verified TV and Movie watch event hierarchies, episode-level progress, multiple rewatches, idempotency deduplication, and metadata change resilience.
+- What was done: Phase 7 Collections / Franchises / Lists complete. Implemented & verified canonical universe/franchise relationships, canonical viewing orders (release vs chronological), personal user custom lists, item reordering, and privacy boundaries.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -24,8 +24,8 @@ READY FOR NEXT PHASE (Phase 6 gate passed: TV series -> season -> episode -> wat
 | 4 | Search & Discovery | COMPLETE | feature/phase-04-search-discovery | 2026-08-16 |
 | 5 | Personal User Foundation | COMPLETE | feature/phase-05-personal-user-foundation | 2026-08-16 |
 | 6 | Watch History Engine | COMPLETE | feature/phase-06-watch-history-engine | 2026-08-16 |
-| 7 | Collections / Franchises / Lists | NOT STARTED | | |
-| 8 | Streaming Availability | | | |
+| 7 | Collections / Franchises / Lists | COMPLETE | feature/phase-07-collections-franchises | 2026-08-16 |
+| 8 | Streaming Availability | NOT STARTED | | |
 | 9 | Release Calendar | | | |
 | 10 | Dashboard & Personal Analytics | | | |
 | 11 | Taste Profile | | | |

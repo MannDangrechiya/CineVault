@@ -2,7 +2,7 @@
 # Maps PostgreSQL personal schema tables enforcing ADR-003, ADR-004, and Physical Database Design V1
 
 from datetime import datetime, date
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import uuid
 from sqlalchemy import (
     Column, String, Text, SmallInteger, Integer, Boolean, Date, DateTime, ForeignKey, PrimaryKeyConstraint
@@ -121,3 +121,31 @@ class SyncCursorStateModel(Base):
     device_id: Mapped[str] = mapped_column(String(128), nullable=False)
     last_synced_mutation_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     last_synced_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+class UserListModel(Base):
+    __tablename__ = "user_list"
+    __table_args__ = {"schema": "personal"}
+
+    list_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_private: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+    items: Mapped[List["UserListItemModel"]] = relationship("UserListItemModel", back_populates="user_list", cascade="all, delete-orphan")
+
+class UserListItemModel(Base):
+    __tablename__ = "user_list_item"
+    __table_args__ = {"schema": "personal"}
+
+    item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    list_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("personal.user_list.list_id", ondelete="CASCADE"), nullable=False)
+    title_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.title.title_id", ondelete="RESTRICT"), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    added_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+    user_list: Mapped[UserListModel] = relationship("UserListModel", back_populates="items")
+
