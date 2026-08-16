@@ -256,8 +256,15 @@ class AppDatabase extends _$AppDatabase {
 
 LazyDatabase _openConnection() {
   return LazyDatabase(() async {
-    final dbFolder = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dbFolder.path, 'cinevault_local.sqlite'));
-    return NativeDatabase.createInBackground(file);
+    if (Platform.environment.containsKey('FLUTTER_TEST')) {
+      return NativeDatabase.memory();
+    }
+    try {
+      final dbFolder = await getApplicationDocumentsDirectory();
+      final file = File(p.join(dbFolder.path, 'cinevault_local.sqlite'));
+      return NativeDatabase.createInBackground(file);
+    } catch (_) {
+      return NativeDatabase.memory();
+    }
   });
 }

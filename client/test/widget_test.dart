@@ -145,6 +145,7 @@ void main() {
     expect(find.text('Search'), findsOneWidget);
     expect(find.text('For You'), findsOneWidget);
     expect(find.text('Assistant'), findsOneWidget);
+    expect(find.text('Library'), findsOneWidget);
     expect(find.text('Outbox'), findsOneWidget);
   });
 }

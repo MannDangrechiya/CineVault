@@ -13,6 +13,7 @@ import 'presentation/screens/recommendations_screen.dart';
 import 'presentation/screens/ai_assistant_screen.dart';
 import 'presentation/screens/swipe_discovery_screen.dart';
 import 'presentation/screens/sync_status_screen.dart';
+import 'presentation/screens/library_screen.dart';
 import 'presentation/screens/control_room_screen.dart';
 
 class CineVaultApp extends StatelessWidget {
@@ -71,6 +72,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
       const SearchScreen(),
       const RecommendationsScreen(),
       const AiAssistantScreen(),
+      const LibraryScreen(),
       const SyncStatusScreen(),
       if (isCurator) const ControlRoomScreen(),
     ];
@@ -100,6 +102,11 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
         icon: Icon(Icons.forum_outlined),
         activeIcon: Icon(Icons.forum),
         label: 'Assistant',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.local_library_outlined),
+        activeIcon: Icon(Icons.local_library),
+        label: 'Library',
       ),
       const BottomNavigationBarItem(
         icon: Icon(Icons.sync_outlined),
