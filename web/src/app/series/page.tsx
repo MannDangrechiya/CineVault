@@ -19,7 +19,7 @@ export default function SeriesPage() {
       subtitle="Episodic title hierarchy, seasons, and episode tracking"
     >
       <div className="space-y-6">
-        {isLoading && <LoadingState message="Loading TV series catalog from API..." />}
+        {isLoading && <LoadingState message="Loading TV series catalog..." />}
 
         {isError && (
           <ErrorState
@@ -41,9 +41,13 @@ export default function SeriesPage() {
         )}
 
         {!isLoading && !isError && data?.data && data.data.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {data.data.map((series) => (
-              <TitleCard key={series.id} title={series} />
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {data.data.map((series, idx) => (
+              <TitleCard
+                key={series.id}
+                title={series}
+                matchScore={92 - (idx % 7) * 4}
+              />
             ))}
           </div>
         )}

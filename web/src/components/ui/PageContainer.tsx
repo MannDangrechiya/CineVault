@@ -19,13 +19,13 @@ export const PageContainer: React.FC<PageContainerProps> = ({
   return (
     <div className={cn("space-y-6 animate-in fade-in duration-300", className)}>
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-800/80">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-zinc-900">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-100">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-50">
             {title}
           </h1>
           {subtitle && (
-            <p className="text-xs sm:text-sm text-slate-400 mt-1">
+            <p className="text-xs sm:text-sm text-zinc-400 mt-1">
               {subtitle}
             </p>
           )}

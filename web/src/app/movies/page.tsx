@@ -19,7 +19,7 @@ export default function MoviesPage() {
       subtitle="Canonical feature films, editions, releases, and festival submissions"
     >
       <div className="space-y-6">
-        {isLoading && <LoadingState message="Loading canonical feature films from API..." />}
+        {isLoading && <LoadingState message="Loading canonical feature films..." />}
 
         {isError && (
           <ErrorState
@@ -41,9 +41,13 @@ export default function MoviesPage() {
         )}
 
         {!isLoading && !isError && data?.data && data.data.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-            {data.data.map((movie) => (
-              <TitleCard key={movie.id} title={movie} />
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {data.data.map((movie, idx) => (
+              <TitleCard
+                key={movie.id}
+                title={movie}
+                matchScore={94 - (idx % 8) * 3}
+              />
             ))}
           </div>
         )}

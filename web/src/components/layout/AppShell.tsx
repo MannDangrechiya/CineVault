@@ -11,17 +11,17 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const isLoginPage = pathname === "/login";
 
   if (isLoginPage) {
-    return <main className="min-h-screen bg-slate-950 text-slate-100">{children}</main>;
+    return <main className="min-h-screen bg-zinc-950 text-zinc-50">{children}</main>;
   }
 
   return (
-    <div className="min-h-screen flex bg-slate-950 text-slate-100 selection:bg-violet-600/30 selection:text-violet-200">
-      {/* Responsive Desktop Sidebar */}
+    <div className="min-h-screen flex bg-zinc-950 text-zinc-50 selection:bg-violet-600/30 selection:text-violet-200">
+      {/* Responsive Desktop Frosted Sidebar */}
       <Sidebar />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 pb-16 md:pb-0">
-        {/* Sticky Header */}
+        {/* Sticky Frosted Glass Header */}
         <Header />
 
         {/* Page Main Content Container */}

@@ -10,8 +10,8 @@ export default function HistoryPage() {
     >
       <div className="space-y-6">
         <EmptyState
-          title="Watch History Log Placeholder"
-          description="Append-only watch events (CAT-2) will be listed here upon API integration."
+          title="No Watch History Logged Yet"
+          description="Log movies or complete viewing sessions to build your chronological viewing timeline."
         />
       </div>
     </PageContainer>

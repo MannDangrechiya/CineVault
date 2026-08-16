@@ -10,8 +10,8 @@ export default function CollectionsPage() {
     >
       <div className="space-y-6">
         <EmptyState
-          title="Collections Placeholder"
-          description="Curated collections and franchise viewing orders will render here upon API integration."
+          title="Collections & Franchise Order"
+          description="Curated collections, MCU/Star Wars/Dune chronological watch orders, and thematic marathons will render here."
         />
       </div>
     </PageContainer>
