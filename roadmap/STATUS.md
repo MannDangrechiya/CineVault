@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 29 Complete_
+_Last updated: 2026-08-16 — Phase 30 Complete_
 
 ## Current Phase
-- Phase: 30 — Backup / Disaster Recovery
+- Phase: 31 — CI/CD
 - Status: NOT STARTED
-- Branch: feature/phase-29-privacy-data-lifecycle
+- Branch: feature/phase-30-backup-disaster-recovery
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 29 gate passed: privacy data lifecycle complete — GDPR-aligned erasure (CAT-2 field zeroing + audit scrubbing), right-to-portability export with field minimization, retention policy evaluation (5 data types), sensitive data minimization, tamper-evident DeletionRecord with SHA-256 integrity hash, all 25 privacy tests passing)
+READY FOR NEXT PHASE (Phase 30 gate passed: operational recovery complete — backup manifests with SHA-256 integrity, restore testing enforcement ensuring backups are not valid until restore is tested, RPO < 5 min and RTO < 1 hr measurement, multi-subsystem recovery runbooks, and health tracking, all 29 backup/DR tests passing)
 
 ## Notes for next session
-- What was done: Phase 29 Privacy/Data Lifecycle complete. Implemented privacy.py with PrivacyEngine (erasure, export, retention, minimization, audit scrubbing). Constraint honored: deleted data actually disappears, audit records scrubbed on deletion with anonymized fact retention.
+- What was done: Phase 30 Backup / Disaster Recovery complete. Implemented backup.py with BackupRecoveryManager (manifests, integrity verification, restore test gates, RPO/RTO metrics, recovery runbooks). Constraint honored: backup not valid until restore is tested.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -47,8 +47,8 @@ READY FOR NEXT PHASE (Phase 29 gate passed: privacy data lifecycle complete — 
 | 27 | Performance / Scale | COMPLETE | feature/phase-27-performance-scale | 2026-08-16 |
 | 28 | Security Hardening | COMPLETE | feature/phase-28-security-hardening | 2026-08-16 |
 | 29 | Privacy / Data Lifecycle | COMPLETE | feature/phase-29-privacy-data-lifecycle | 2026-08-16 |
-| 30 | Backup / Disaster Recovery | NOT STARTED | | |
-| 31 | CI/CD | | | |
+| 30 | Backup / Disaster Recovery | COMPLETE | feature/phase-30-backup-disaster-recovery | 2026-08-16 |
+| 31 | CI/CD | NOT STARTED | | |
 | 32 | Release Engineering | | | |
 | 33 | Production Readiness | | | |
 | 34 | Full Product QA | | | |
