@@ -432,9 +432,12 @@ class TvdbProviderAdapter(BaseProviderAdapter):
             "original_title": raw_payload.get("originalName"),
             "content_type": "TV_SERIES",
             "production_year": raw_payload.get("year"),
+            "runtime_minutes": raw_payload.get("runtime_minutes") or raw_payload.get("runtime") or raw_payload.get("averageRuntime"),
             "origin_country": "KR",
             "genres": [g["name"] for g in raw_payload.get("genres", [])] if isinstance(raw_payload.get("genres"), list) else [],
-            "synopsis": raw_payload.get("overview")
+            "synopsis": raw_payload.get("overview"),
+            "seasons": raw_payload.get("seasons"),
+            "episodes": raw_payload.get("episodes") if isinstance(raw_payload.get("episodes"), list) else None,
         }
 
 
@@ -633,7 +636,9 @@ class TmdbProviderAdapter(BaseProviderAdapter):
             "runtime_minutes": raw_payload.get("runtime"),
             "origin_country": (raw_payload.get("origin_country") or ["US"])[0] if isinstance(raw_payload.get("origin_country"), list) and raw_payload.get("origin_country") else "US",
             "genres": [g["name"] for g in raw_payload.get("genres", [])] if isinstance(raw_payload.get("genres"), list) else [],
-            "synopsis": raw_payload.get("overview")
+            "synopsis": raw_payload.get("overview"),
+            "seasons": raw_payload.get("seasons"),
+            "episodes": raw_payload.get("episodes") if isinstance(raw_payload.get("episodes"), list) else None,
         }
 
 

@@ -20,7 +20,8 @@ from ..models.ingestion import (
 )
 from ..models.quality import MetadataConflictModel
 from ..models.canonical import (
-    TitleModel, TitleExternalIdModel, EditionModel, GenreModel, TitleGenreModel, TitleCountryModel, ContentTypeModel
+    TitleModel, TitleExternalIdModel, EditionModel, SeasonModel, EpisodeModel,
+    GenreModel, TitleGenreModel, TitleCountryModel, ContentTypeModel
 )
 from ..schemas.internal import IngestionTriggerRequest, IngestionRunDetail, CandidateTitleDetail, IngestionItemPayload
 from ..quality.verification import quality_verifier
@@ -695,7 +696,7 @@ class IngestionPipelineEngine:
                 )
 
                 # 2. Create primary EditionModel
-                ed_name = "Season 1" if c_type_id in ["tv_series", "anime"] else "Theatrical Cut"
+                ed_name = "Standard Broadcast" if c_type_id in ["tv_series", "anime"] else "Theatrical Cut"
                 ed_orm = EditionModel(
                     edition_id=uuid.uuid4(),
                     title_id=new_title_id,
@@ -704,6 +705,71 @@ class IngestionPipelineEngine:
                     runtime_minutes=runtime_min or (120 if c_type_id == "movie" else 45)
                 )
                 title_orm.editions.append(ed_orm)
+
+                # 2b. Hierarchy Ingestion (ADR-002): Seasons and Episodes for TV Series / Anime
+                if c_type_id in ["tv_series", "anime"]:
+                    seasons_payload = normalized.get("seasons")
+                    if isinstance(seasons_payload, list) and seasons_payload:
+                        for s_data in seasons_payload:
+                            s_num = int(s_data.get("season_number", 1))
+                            s_name = s_data.get("season_name") or f"Season {s_num}"
+                            s_overview = s_data.get("overview")
+                            s_id = uuid.uuid4()
+                            s_orm = SeasonModel(
+                                season_id=s_id,
+                                title_id=new_title_id,
+                                season_number=s_num,
+                                season_name=s_name,
+                                overview=s_overview
+                            )
+                            ep_list = s_data.get("episodes", [])
+                            if isinstance(ep_list, list):
+                                for ep_data in ep_list:
+                                    ep_num = int(ep_data.get("episode_number", 1))
+                                    ep_name = ep_data.get("episode_name") or f"Episode {ep_num}"
+                                    ep_air = ep_data.get("air_date")
+                                    ep_runtime = ep_data.get("runtime_minutes") or runtime_min
+                                    ep_overview = ep_data.get("overview")
+                                    ep_orm = EpisodeModel(
+                                        episode_id=uuid.uuid4(),
+                                        season_id=s_id,
+                                        episode_number=ep_num,
+                                        episode_name=ep_name,
+                                        air_date=datetime.strptime(ep_air, "%Y-%m-%d").date() if isinstance(ep_air, str) and len(ep_air) == 10 else None,
+                                        runtime_minutes=ep_runtime,
+                                        overview=ep_overview
+                                    )
+                                    s_orm.episodes.append(ep_orm)
+                            title_orm.seasons.append(s_orm)
+                    else:
+                        # Create default Season 1 for episodic content
+                        s_id = uuid.uuid4()
+                        s_orm = SeasonModel(
+                            season_id=s_id,
+                            title_id=new_title_id,
+                            season_number=1,
+                            season_name="Season 1",
+                            overview=synopsis
+                        )
+                        episodes_payload = normalized.get("episodes")
+                        if isinstance(episodes_payload, list) and episodes_payload:
+                            for ep_data in episodes_payload:
+                                ep_num = int(ep_data.get("episode_number", 1))
+                                ep_name = ep_data.get("episode_name") or f"Episode {ep_num}"
+                                ep_air = ep_data.get("air_date")
+                                ep_runtime = ep_data.get("runtime_minutes") or runtime_min
+                                ep_overview = ep_data.get("overview")
+                                ep_orm = EpisodeModel(
+                                    episode_id=uuid.uuid4(),
+                                    season_id=s_id,
+                                    episode_number=ep_num,
+                                    episode_name=ep_name,
+                                    air_date=datetime.strptime(ep_air, "%Y-%m-%d").date() if isinstance(ep_air, str) and len(ep_air) == 10 else None,
+                                    runtime_minutes=ep_runtime,
+                                    overview=ep_overview
+                                )
+                                s_orm.episodes.append(ep_orm)
+                        title_orm.seasons.append(s_orm)
 
                 # 3. Create TitleExternalIdModel
                 ext_map = TitleExternalIdModel(

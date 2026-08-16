@@ -75,6 +75,7 @@ class TitleModel(Base):
 
     # Relationships
     editions: Mapped[List["EditionModel"]] = relationship("EditionModel", back_populates="title", cascade="all, delete-orphan")
+    seasons: Mapped[List["SeasonModel"]] = relationship("SeasonModel", cascade="all, delete-orphan")
     external_ids: Mapped[List["TitleExternalIdModel"]] = relationship("TitleExternalIdModel", back_populates="title", cascade="all, delete-orphan")
     genres: Mapped[List[GenreModel]] = relationship("GenreModel", secondary="canonical.title_genre")
     countries: Mapped[List[TitleCountryModel]] = relationship("TitleCountryModel", cascade="all, delete-orphan")
