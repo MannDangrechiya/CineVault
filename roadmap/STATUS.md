@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 7 Complete_
+_Last updated: 2026-08-16 — Phase 8 Complete_
 
 ## Current Phase
-- Phase: 8 — Streaming Availability
+- Phase: 9 — Release Calendar
 - Status: NOT STARTED
-- Branch: feature/phase-07-collections-franchises
+- Branch: feature/phase-08-streaming-availability
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 7 gate passed: Universe -> Franchise -> Franchise Entry relational hierarchy, structured viewing orders (theatrical release vs narrative chronological), personal custom user lists with ordered items and notes, item reordering, and cross-user privacy isolation verified, all 4 tests passing)
+READY FOR NEXT PHASE (Phase 8 gate passed: multi-offer types (subscription, rent, buy, free, ad_supported), regional pricing and currencies, temporal validity window filters (active vs expired), and source evidence with confidence score gates verified, all 3 tests passing)
 
 ## Notes for next session
-- What was done: Phase 7 Collections / Franchises / Lists complete. Implemented & verified canonical universe/franchise relationships, canonical viewing orders (release vs chronological), personal user custom lists, item reordering, and privacy boundaries.
+- What was done: Phase 8 Streaming Availability complete. Implemented & verified temporal and regional streaming offers, subscription/rent/buy/free/ad_supported types, validity window filtering, and source evidence gates.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -25,8 +25,8 @@ READY FOR NEXT PHASE (Phase 7 gate passed: Universe -> Franchise -> Franchise En
 | 5 | Personal User Foundation | COMPLETE | feature/phase-05-personal-user-foundation | 2026-08-16 |
 | 6 | Watch History Engine | COMPLETE | feature/phase-06-watch-history-engine | 2026-08-16 |
 | 7 | Collections / Franchises / Lists | COMPLETE | feature/phase-07-collections-franchises | 2026-08-16 |
-| 8 | Streaming Availability | NOT STARTED | | |
-| 9 | Release Calendar | | | |
+| 8 | Streaming Availability | COMPLETE | feature/phase-08-streaming-availability | 2026-08-16 |
+| 9 | Release Calendar | NOT STARTED | | |
 | 10 | Dashboard & Personal Analytics | | | |
 | 11 | Taste Profile | | | |
 | 12 | Recommendation Engine Foundation | | | |

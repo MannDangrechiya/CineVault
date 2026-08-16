@@ -5,7 +5,7 @@ from datetime import datetime, date
 from typing import List, Optional
 import uuid
 from sqlalchemy import (
-    Column, String, Text, SmallInteger, Integer, Boolean, Date, DateTime, ForeignKey, PrimaryKeyConstraint, Table
+    Column, String, Text, SmallInteger, Integer, Boolean, Date, DateTime, ForeignKey, PrimaryKeyConstraint, Table, Numeric
 )
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -532,3 +532,37 @@ class PlatformOfferModel(Base):
 
     title: Mapped[TitleModel] = relationship("TitleModel", back_populates="platform_offers")
     platform: Mapped[PlatformModel] = relationship("PlatformModel", back_populates="offers")
+
+class StreamingProviderModel(Base):
+    __tablename__ = "streaming_provider"
+    __table_args__ = {"schema": "canonical"}
+
+    provider_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    logo_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    home_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+
+    offers: Mapped[List["StreamingOfferModel"]] = relationship("StreamingOfferModel", back_populates="provider", cascade="all, delete-orphan")
+
+class StreamingOfferModel(Base):
+    __tablename__ = "streaming_offer"
+    __table_args__ = {"schema": "canonical"}
+
+    offer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("canonical.title.title_id", ondelete="CASCADE"), nullable=False)
+    provider_id: Mapped[str] = mapped_column(String(64), ForeignKey("canonical.streaming_provider.provider_id"), nullable=False)
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False)
+    offer_type: Mapped[str] = mapped_column(String(32), nullable=False) # 'subscription', 'rent', 'buy', 'free', 'ad_supported'
+    price_amount: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
+    currency_code: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
+    web_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    valid_from: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+    valid_until: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    last_verified_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+    source_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Numeric(3, 2), default=1.00, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
+    provider: Mapped[StreamingProviderModel] = relationship("StreamingProviderModel", back_populates="offers")
+
