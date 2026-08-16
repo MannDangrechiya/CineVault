@@ -1,29 +1,109 @@
-import React from "react";
+"use client";
+
+import React, { useState } from "react";
+import Link from "next/link";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { Lock, ShieldAlert } from "lucide-react";
+import { Plus } from "lucide-react";
+import { MOCK_MOVIES, MOCK_SERIES } from "@/lib/api/titles";
 
 export default function LibraryPage() {
+  const [tab, setTab] = useState<"ALL" | "MOVIES" | "SERIES">("ALL");
+
+  const libraryMovies = MOCK_MOVIES.slice(0, 6);
+  const librarySeries = MOCK_SERIES.slice(0, 4);
+
+  const displayed =
+    tab === "MOVIES"
+      ? libraryMovies
+      : tab === "SERIES"
+      ? librarySeries
+      : [...libraryMovies, ...librarySeries];
+
   return (
     <PageContainer
-      title="Personal Library"
-      subtitle="Organized collection of titles added to your personal library (CAT-2)"
+      title="Personal Media Library"
+      subtitle="Canonical entertainment records and custom user editions stored in your personal vault (CAT-2)"
+      action={
+        <Link
+          href="/movies"
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 rounded-full shadow-lg shadow-violet-600/30 transition-all"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>Add New Title</span>
+        </Link>
+      }
     >
       <div className="space-y-6">
-        <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl bg-zinc-900/30 border border-zinc-900 backdrop-blur-md min-h-[300px]">
-          <div className="w-12 h-12 rounded-2xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-center mb-4 text-violet-400">
-            <Lock className="w-6 h-6" />
+        {/* Navigation Filters */}
+        <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setTab("ALL")}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                tab === "ALL"
+                  ? "bg-violet-600/15 text-violet-300 font-semibold border border-violet-500/30 shadow-sm"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
+              }`}
+            >
+              All Media ({libraryMovies.length + librarySeries.length})
+            </button>
+            <button
+              onClick={() => setTab("MOVIES")}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                tab === "MOVIES"
+                  ? "bg-violet-600/15 text-violet-300 font-semibold border border-violet-500/30 shadow-sm"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
+              }`}
+            >
+              Feature Films ({libraryMovies.length})
+            </button>
+            <button
+              onClick={() => setTab("SERIES")}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                tab === "SERIES"
+                  ? "bg-violet-600/15 text-violet-300 font-semibold border border-violet-500/30 shadow-sm"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
+              }`}
+            >
+              TV Series ({librarySeries.length})
+            </button>
           </div>
-          <h3 className="text-base font-bold text-zinc-100 mb-2">
-            Authentication Required for Personal Library
-          </h3>
-          <p className="text-xs sm:text-sm text-zinc-400 max-w-md mb-6 leading-relaxed">
-            Personal library entries and watch history endpoints (<code className="text-xs bg-zinc-800 px-1.5 py-0.5 rounded text-violet-300 font-mono">/v1/me/*</code>) require authenticated Bearer tokens.
-          </p>
+        </div>
 
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-950/20 border border-violet-800/30 text-xs text-violet-300">
-            <ShieldAlert className="w-4 h-4 shrink-0 text-violet-400" />
-            <span>Session integration active for authorized profiles.</span>
-          </div>
+        {/* Media Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {displayed.map((item) => (
+            <Link
+              key={item.id}
+              href={`/movies/${item.id}`}
+              className="group relative flex flex-col rounded-2xl overflow-hidden bg-zinc-900/40 hover:bg-zinc-900/70 border border-zinc-900 hover:border-zinc-800 transition-all p-3"
+            >
+              <div className="relative aspect-[2/3] w-full bg-zinc-950 rounded-xl overflow-hidden mb-2.5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={item.poster_url || ""}
+                  alt={item.canonical_title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-zinc-950/80 backdrop-blur-md text-zinc-300 border border-zinc-800">
+                    {item.content_type === "MOVIE" ? "Movie" : "Series"}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-mono bg-violet-600/30 text-violet-300 border border-violet-500/40">
+                    4K
+                  </span>
+                </div>
+              </div>
+
+              <h4 className="text-xs font-bold text-zinc-100 group-hover:text-violet-400 transition-colors line-clamp-1">
+                {item.canonical_title}
+              </h4>
+              <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-1">
+                <span>{item.production_year}</span>
+                <span className="text-emerald-400 text-[10px]">Vault Verified</span>
+              </div>
+            </Link>
+          ))}
         </div>
       </div>
     </PageContainer>

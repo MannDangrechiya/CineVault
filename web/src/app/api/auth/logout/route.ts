@@ -1,6 +1,6 @@
 // CineVault OS — Next.js BFF Logout Route Handler
 // Invalidates the CineVault web session, clears HttpOnly cookies,
-// and redirects user to public home page or Keycloak end-session endpoint.
+// and redirects user to login page or public home.
 
 import { NextResponse } from "next/server";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
@@ -15,15 +15,9 @@ export async function POST() {
 
 function performLogout() {
   const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const keycloakHost = process.env.KEYCLOAK_HOST || "http://localhost:8080";
-  const realm = process.env.KEYCLOAK_REALM || "cinevault-dev";
+  const response = NextResponse.redirect(`${appBaseUrl}/login?logged_out=1`);
 
-  // Keycloak OIDC end-session endpoint
-  const logoutUrl = `${keycloakHost}/realms/${realm}/protocol/openid-connect/logout?post_logout_redirect_uri=${encodeURIComponent(appBaseUrl)}`;
-
-  const response = NextResponse.redirect(logoutUrl);
-
-  // Destroy session cookie
+  // Destroy session cookie and any OAuth state cookies
   response.cookies.delete(SESSION_COOKIE_NAME);
   response.cookies.delete("cv_pkce_verifier");
   response.cookies.delete("cv_oauth_state");
