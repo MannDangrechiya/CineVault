@@ -27,13 +27,84 @@ class ConflictResolutionRequest(BaseModel):
     winning_value: str
     resolution_notes: str
 
+class DataSourceUpdateRequest(BaseModel):
+    activation_status: Optional[str] = None
+    access_status: Optional[str] = None
+    rate_limit_per_min: Optional[int] = None
+    reliability_score: Optional[float] = None
+    authority_role: Optional[str] = None
+    description: Optional[str] = None
+
 @router.get("/ingestion/sources", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def list_data_sources(
-    claims: SecurityTokenClaims = Depends(require_curator)
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Returns Data Source Registry metadata, licensing statuses, and rate limits."""
     from ..ingestion.licensing import licensing_gate
-    return licensing_gate.get_source_registry()
+    return await licensing_gate.get_source_registry_async(db=db)
+
+@router.get("/ingestion/sources/{source_id}", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
+async def get_data_source(
+    source_id: str,
+    claims: SecurityTokenClaims = Depends(require_curator),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Retrieves a single data source registry record."""
+    from ..ingestion.licensing import licensing_gate
+    registry = await licensing_gate.get_source_registry_async(db=db)
+    match = next((v for k, v in registry.items() if v.get("source_id") == source_id or k.lower() == source_id.lower()), None)
+    if not match:
+        raise HTTPException(status_code=404, detail=f"Data source '{source_id}' not found")
+    return match
+
+@router.patch("/ingestion/sources/{source_id}", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
+async def update_data_source(
+    source_id: str,
+    body: DataSourceUpdateRequest,
+    claims: SecurityTokenClaims = Depends(require_system_admin),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Updates data source registry governance fields (requires SystemAdmin)."""
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database connection required for registry updates")
+
+    from ..models.ingestion import DataSourceRegistryModel
+    from sqlalchemy import select
+
+    stmt = select(DataSourceRegistryModel).where(
+        (DataSourceRegistryModel.source_id == source_id) |
+        (DataSourceRegistryModel.provider_name.ilike(source_id))
+    )
+    res = await db.execute(stmt)
+    source = res.scalars().first()
+    if not source:
+        raise HTTPException(status_code=404, detail=f"Data source '{source_id}' not found")
+
+    if body.activation_status is not None:
+        source.activation_status = body.activation_status
+    if body.access_status is not None:
+        source.access_status = body.access_status
+    if body.rate_limit_per_min is not None:
+        source.rate_limit_per_min = body.rate_limit_per_min
+    if body.reliability_score is not None:
+        source.reliability_score = body.reliability_score
+    if body.authority_role is not None:
+        source.authority_role = body.authority_role
+    if body.description is not None:
+        source.description = body.description
+
+    source.updated_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    return {
+        "status": "UPDATED",
+        "source_id": source.source_id,
+        "provider_name": source.provider_name,
+        "activation_status": source.activation_status,
+        "access_status": source.access_status,
+        "rate_limit_per_min": source.rate_limit_per_min
+    }
 
 @router.post("/ingestion/trigger", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def trigger_ingestion_pipeline(

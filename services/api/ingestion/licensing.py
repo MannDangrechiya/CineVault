@@ -364,4 +364,86 @@ class LicensingGateManager:
             for k, v in self.PROVIDER_RULES.items()
         }
 
+    async def get_source_registry_async(self, db: Optional[Any] = None) -> Dict[str, Dict[str, Any]]:
+        """Returns full data source registry metadata dict, loading dynamically from database if available."""
+        if db is not None:
+            try:
+                from ..models.ingestion import DataSourceRegistryModel
+                from sqlalchemy import select
+                res = await db.execute(select(DataSourceRegistryModel))
+                rows = res.scalars().all()
+                if rows:
+                    return {
+                        r.provider_name.upper(): {
+                            "source_id": r.source_id,
+                            "provider": r.provider_name.upper(),
+                            "provider_name": r.provider_name.upper(),
+                            "dataset_api": r.dataset_api,
+                            "source_type": r.source_type,
+                            "official_url": r.official_url,
+                            "license": r.license_info,
+                            "attribution_requirement": r.attribution_requirement,
+                            "commercial_use": r.commercial_use_status,
+                            "commercial_use_status": r.commercial_use_status,
+                            "redistribution": r.redistribution_restrictions,
+                            "redistribution_restrictions": r.redistribution_restrictions,
+                            "rate_limit": f"{r.rate_limit_per_min} req/min",
+                            "rate_limit_per_min": r.rate_limit_per_min,
+                            "update_frequency": r.update_frequency,
+                            "authentication_requirements": r.authentication_requirements,
+                            "regions": r.regions,
+                            "available_fields": r.available_fields,
+                            "reliability": float(r.reliability_score),
+                            "reliability_score": float(r.reliability_score),
+                            "activation_status": r.activation_status,
+                            "authority_role": r.authority_role,
+                            "access_status": r.access_status,
+                            "requires_api_key": r.requires_api_key,
+                            "scraping_permitted": r.scraping_permitted,
+                            "description": r.description
+                        }
+                        for r in rows
+                    }
+            except Exception as e:
+                logger.warning(f"Could not load data source registry from DB, falling back to static config: {e}")
+        return self.get_source_registry()
+
+    async def evaluate_source_authorization_async(
+        self,
+        provider_name: str,
+        is_scraping_attempt: bool = False,
+        db: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """Evaluates source authorization dynamically against the DB registry."""
+        registry = await self.get_source_registry_async(db=db)
+        provider = provider_name.upper()
+        rule = registry.get(provider)
+        if not rule:
+            raise PermissionError(f"Provider '{provider_name}' is not registered in Data Source Registry.")
+
+        if is_scraping_attempt or not rule.get("scraping_permitted", False):
+            if is_scraping_attempt:
+                logger.error(f"Licensing Gate: Web scraping attempt detected for '{provider}'. Access DENIED.")
+                raise PermissionError(f"Web scraping is strictly prohibited for provider '{provider}'.")
+
+        access_status = rule["access_status"]
+        if access_status in ("PROHIBITED", SourceAccessStatus.PROHIBITED, "NEEDS_REVIEW", SourceAccessStatus.NEEDS_REVIEW):
+            logger.error(f"Licensing Gate: Access to provider '{provider}' is {access_status}. {rule.get('description', '')}")
+            raise PermissionError(f"Access to provider '{provider}' is blocked ({access_status}) by CineVault governance.")
+
+        activation_status = rule.get("activation_status")
+        if activation_status in ("REVIEW_REQUIRED", ActivationStatus.REVIEW_REQUIRED, "SUSPENDED", ActivationStatus.SUSPENDED, "RETIRED", ActivationStatus.RETIRED):
+            logger.error(f"Licensing Gate: Activation status for provider '{provider}' is {activation_status}.")
+            raise PermissionError(f"Provider '{provider}' activation status is {activation_status}. Ingestion blocked.")
+
+        return {
+            "provider_name": provider,
+            "authority_role": rule["authority_role"].value if isinstance(rule["authority_role"], Enum) else rule["authority_role"],
+            "access_status": rule["access_status"].value if isinstance(rule["access_status"], Enum) else rule["access_status"],
+            "activation_status": rule["activation_status"].value if isinstance(rule["activation_status"], Enum) else rule["activation_status"],
+            "requires_api_key": rule["requires_api_key"],
+            "rate_limit_per_min": rule.get("rate_limit_per_min", 60),
+            "gate_passed": True
+        }
+
 licensing_gate = LicensingGateManager()

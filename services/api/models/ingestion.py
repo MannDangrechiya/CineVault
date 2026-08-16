@@ -117,3 +117,31 @@ class FieldProvenanceModel(Base):
     verification_status: Mapped[str] = mapped_column(String(32), default="UNVERIFIED", nullable=False)
     retrieved_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
 
+class DataSourceRegistryModel(Base):
+    __tablename__ = "data_source_registry"
+    __table_args__ = {"schema": "ingestion"}
+
+    source_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    provider_name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    dataset_api: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    official_url: Mapped[str] = mapped_column(String(256), nullable=False)
+    license_info: Mapped[str] = mapped_column(String(256), nullable=False)
+    attribution_requirement: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    commercial_use_status: Mapped[str] = mapped_column(String(64), nullable=False)
+    redistribution_restrictions: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    rate_limit_per_min: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    update_frequency: Mapped[str] = mapped_column(String(64), default="DAILY", nullable=False)
+    authentication_requirements: Mapped[str] = mapped_column(String(64), nullable=False)
+    regions: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    available_fields: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    reliability_score: Mapped[float] = mapped_column(Numeric(3, 2), default=0.50, nullable=False)
+    activation_status: Mapped[str] = mapped_column(String(32), default="ACTIVE", nullable=False)
+    authority_role: Mapped[str] = mapped_column(String(64), nullable=False)
+    access_status: Mapped[str] = mapped_column(String(32), default="PERMITTED", nullable=False)
+    requires_api_key: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    scraping_permitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+
