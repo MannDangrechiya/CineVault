@@ -28,7 +28,8 @@ from .routers import (
     jobs,
     performance,
     social,
-    ai
+    ai,
+    automation
 )
 
 @asynccontextmanager
@@ -100,6 +101,7 @@ app.include_router(jobs.router)
 app.include_router(performance.router)
 app.include_router(social.router)
 app.include_router(ai.router)
+app.include_router(automation.router)
 
 if __name__ == "__main__":
     import os
