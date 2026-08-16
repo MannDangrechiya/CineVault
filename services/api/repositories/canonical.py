@@ -12,12 +12,19 @@ from sqlalchemy.orm import selectinload
 
 from ..models.canonical import (
     TitleModel, EditionModel, ReleaseModel, PlatformModel, PlatformOfferModel,
-    GenreModel, TitleGenreModel, TitleCountryModel, TitleExternalIdModel
+    GenreModel, TitleGenreModel, TitleCountryModel, TitleExternalIdModel,
+    SeasonModel, EpisodeModel, CreditModel, CreditRoleModel, PersonModel, PersonNameModel,
+    TitleAliasModel, TitleCertificationModel, CertificationModel, TitleCompanyModel, ProductionCompanyModel,
+    AwardModel, AwardEventModel, AwardCategoryModel, AwardResultModel,
+    FestivalModel, FestivalEditionModel, FestivalParticipationModel,
+    ThemeModel, KeywordModel, TitleLanguageModel
 )
 from ..schemas.titles import (
     TitleSummary, TitleDetail, EditionSummary, TitleLookupResponse,
     ProvenanceRecord, ReleaseSummary, PlatformSummary, PlatformOfferSummary,
-    AvailabilityDiscoveryResponse
+    AvailabilityDiscoveryResponse, TitleAliasSummary, ThemeSummary, KeywordSummary,
+    CertificationSummary, CreditSummary, CompanySummary, AwardResultSummary,
+    FestivalParticipationSummary, EpisodeSummary, SeasonSummary, ExternalIdSummary
 )
 
 logger = logging.getLogger("cinevault.repositories.canonical")
@@ -308,9 +315,22 @@ class CanonicalRepository:
                 stmt = (
                     select(TitleModel)
                     .options(
-                        selectinload(TitleModel.editions),
+                        selectinload(TitleModel.aliases),
+                        selectinload(TitleModel.genres),
+                        selectinload(TitleModel.themes),
+                        selectinload(TitleModel.keywords),
+                        selectinload(TitleModel.languages),
+                        selectinload(TitleModel.countries),
+                        selectinload(TitleModel.certifications).selectinload(TitleCertificationModel.certification),
+                        selectinload(TitleModel.credits).selectinload(CreditModel.person),
+                        selectinload(TitleModel.credits).selectinload(CreditModel.role),
+                        selectinload(TitleModel.companies).selectinload(TitleCompanyModel.company),
+                        selectinload(TitleModel.awards).selectinload(AwardResultModel.event).selectinload(AwardEventModel.award),
+                        selectinload(TitleModel.awards).selectinload(AwardResultModel.category),
+                        selectinload(TitleModel.festival_participations).selectinload(FestivalParticipationModel.festival_edition).selectinload(FestivalEditionModel.festival),
+                        selectinload(TitleModel.editions).selectinload(EditionModel.releases),
+                        selectinload(TitleModel.seasons).selectinload(SeasonModel.episodes),
                         selectinload(TitleModel.external_ids),
-                        selectinload(TitleModel.genres)
                     )
                     .where(TitleModel.title_id == parsed_uuid)
                 )
@@ -319,17 +339,139 @@ class CanonicalRepository:
 
                 if title_orm:
                     primary_ed = None
+                    edition_summaries = []
                     for ed in title_orm.editions:
-                        if ed.is_primary or primary_ed is None:
-                            primary_ed = EditionSummary(
-                                id=str(ed.edition_id),
-                                title_id=str(ed.title_id),
-                                edition_name=ed.edition_name,
-                                runtime_minutes=ed.runtime_minutes,
-                                format="FEATURE"
+                        rel_summaries = [
+                            ReleaseSummary(
+                                release_id=str(r.release_id),
+                                edition_id=str(r.edition_id),
+                                release_name=r.release_name,
+                                release_type=r.release_type,
+                                release_date=r.release_date.isoformat() if r.release_date else None,
+                                country_code=r.country_code
                             )
+                            for r in ed.releases
+                        ]
+                        ed_sum = EditionSummary(
+                            id=str(ed.edition_id),
+                            title_id=str(ed.title_id),
+                            edition_name=ed.edition_name,
+                            is_primary=ed.is_primary,
+                            runtime_minutes=ed.runtime_minutes,
+                            aspect_ratio=ed.aspect_ratio,
+                            color_format=ed.color_format,
+                            sound_mix=ed.sound_mix,
+                            releases=rel_summaries
+                        )
+                        edition_summaries.append(ed_sum)
+                        if ed.is_primary or primary_ed is None:
+                            primary_ed = ed_sum
 
-                    genre_names = [g.name for g in title_orm.genres] if title_orm.genres else ["Drama"]
+                    season_summaries = []
+                    for s in title_orm.seasons:
+                        ep_summaries = [
+                            EpisodeSummary(
+                                id=str(ep.episode_id),
+                                season_id=str(ep.season_id),
+                                episode_number=ep.episode_number,
+                                episode_name=ep.episode_name,
+                                air_date=ep.air_date.isoformat() if ep.air_date else None,
+                                runtime_minutes=ep.runtime_minutes,
+                                overview=ep.overview
+                            )
+                            for ep in s.episodes
+                        ]
+                        season_summaries.append(
+                            SeasonSummary(
+                                id=str(s.season_id),
+                                title_id=str(s.title_id),
+                                season_number=s.season_number,
+                                season_name=s.season_name,
+                                overview=s.overview,
+                                episodes=ep_summaries
+                            )
+                        )
+
+                    alias_summaries = [
+                        TitleAliasSummary(
+                            alias_name=a.alias_name,
+                            alias_type=a.alias_type,
+                            language_code=a.language_code,
+                            country_code=a.country_code
+                        )
+                        for a in title_orm.aliases
+                    ]
+
+                    cert_summaries = [
+                        CertificationSummary(
+                            country_code=tc.certification.country_code,
+                            certification_code=tc.certification.certification_code,
+                            rating_body=tc.certification.rating_body,
+                            meaning=tc.certification.meaning,
+                            min_age=tc.certification.min_age,
+                            note=tc.note
+                        )
+                        for tc in title_orm.certifications if tc.certification
+                    ]
+
+                    credit_summaries = [
+                        CreditSummary(
+                            credit_id=str(c.credit_id),
+                            person_id=str(c.person_id),
+                            person_name=c.person.canonical_name if c.person else "Unknown",
+                            role_name=c.role.role_name if c.role else "Crew",
+                            role_category=c.role.category if c.role else "PRODUCTION",
+                            character_name=c.character_name,
+                            billing_order=c.billing_order
+                        )
+                        for c in title_orm.credits
+                    ]
+
+                    company_summaries = [
+                        CompanySummary(
+                            company_id=str(tc.company_id),
+                            company_name=tc.company.company_name if tc.company else "Unknown",
+                            role=tc.role,
+                            country_code=tc.company.country_code if tc.company else None
+                        )
+                        for tc in title_orm.companies if tc.company
+                    ]
+
+                    award_summaries = [
+                        AwardResultSummary(
+                            award_name=ar.event.award.award_name if (ar.event and ar.event.award) else "Award",
+                            organization=ar.event.award.organization if (ar.event and ar.event.award) else "Academy",
+                            category_name=ar.category.category_name if ar.category else "Best Feature",
+                            year=ar.event.year if ar.event else 2020,
+                            is_winner=ar.is_winner
+                        )
+                        for ar in title_orm.awards
+                    ]
+
+                    fest_summaries = [
+                        FestivalParticipationSummary(
+                            festival_name=fp.festival_edition.festival.festival_name if (fp.festival_edition and fp.festival_edition.festival) else "Festival",
+                            year=fp.festival_edition.year if fp.festival_edition else 2020,
+                            section_name=fp.section_name
+                        )
+                        for fp in title_orm.festival_participations
+                    ]
+
+                    ext_summaries = [
+                        ExternalIdSummary(
+                            provider_name=e.provider_name,
+                            external_id=e.external_id,
+                            external_url=e.external_url
+                        )
+                        for e in title_orm.external_ids
+                    ]
+
+                    genre_names = [g.name for g in title_orm.genres] if title_orm.genres else []
+                    theme_summaries = [ThemeSummary(theme_id=th.theme_id, name=th.name) for th in title_orm.themes]
+                    keyword_summaries = [KeywordSummary(keyword_id=kw.keyword_id, name=kw.name) for kw in title_orm.keywords]
+                    lang_codes = [l.language_code for l in title_orm.languages]
+                    country_codes = [c.country_code for c in title_orm.countries]
+                    origin_c = country_codes[0] if country_codes else "US"
 
                     return TitleDetail(
                         id=str(title_orm.title_id),
@@ -338,13 +480,27 @@ class CanonicalRepository:
                         original_title=title_orm.original_title,
                         content_type=title_orm.content_type_id,
                         production_year=title_orm.production_year,
-                        origin_country="KR",
+                        origin_country=origin_c,
+                        tagline=title_orm.tagline,
                         synopsis=title_orm.synopsis,
                         genres=genre_names,
+                        themes=theme_summaries,
+                        keywords=keyword_summaries,
+                        aliases=alias_summaries,
+                        languages=lang_codes,
+                        countries=country_codes,
+                        certifications=cert_summaries,
+                        credits=credit_summaries,
+                        companies=company_summaries,
+                        awards=award_summaries,
+                        festival_participations=fest_summaries,
                         has_licensed_artwork=True,
                         poster_url=f"https://cdn.cinevault.org/artwork/posters/{title_orm.display_id.lower()}.jpg",
                         backdrop_url=f"https://cdn.cinevault.org/artwork/backdrops/{title_orm.display_id.lower()}.jpg",
-                        primary_edition=primary_ed
+                        primary_edition=primary_ed,
+                        editions=edition_summaries,
+                        seasons=season_summaries,
+                        external_ids=ext_summaries
                     )
             except Exception as e:
                 logger.error(f"Database query for title_id={title_id} failed: {e}", exc_info=True)
