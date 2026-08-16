@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 8 Complete_
+_Last updated: 2026-08-16 — Phase 9 Complete_
 
 ## Current Phase
-- Phase: 9 — Release Calendar
+- Phase: 10 — Dashboard & Personal Analytics
 - Status: NOT STARTED
-- Branch: feature/phase-08-streaming-availability
+- Branch: feature/phase-09-release-calendar
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 8 gate passed: multi-offer types (subscription, rent, buy, free, ad_supported), regional pricing and currencies, temporal validity window filters (active vs expired), and source evidence with confidence score gates verified, all 3 tests passing)
+READY FOR NEXT PHASE (Phase 9 gate passed: release-date tracking across theatrical, streaming, regional, TV broadcast, digital, physical, festival releases, future & historical calendar queries, and strict Title vs Edition vs Release architectural separation verified, all 3 tests passing)
 
 ## Notes for next session
-- What was done: Phase 8 Streaming Availability complete. Implemented & verified temporal and regional streaming offers, subscription/rent/buy/free/ad_supported types, validity window filtering, and source evidence gates.
+- What was done: Phase 9 Release Calendar complete. Implemented & verified full release date tracking, all release types, future/historical calendar queries, regional calendar filtering, and Title-Edition-Release separation.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -26,8 +26,8 @@ READY FOR NEXT PHASE (Phase 8 gate passed: multi-offer types (subscription, rent
 | 6 | Watch History Engine | COMPLETE | feature/phase-06-watch-history-engine | 2026-08-16 |
 | 7 | Collections / Franchises / Lists | COMPLETE | feature/phase-07-collections-franchises | 2026-08-16 |
 | 8 | Streaming Availability | COMPLETE | feature/phase-08-streaming-availability | 2026-08-16 |
-| 9 | Release Calendar | NOT STARTED | | |
-| 10 | Dashboard & Personal Analytics | | | |
+| 9 | Release Calendar | COMPLETE | feature/phase-09-release-calendar | 2026-08-16 |
+| 10 | Dashboard & Personal Analytics | NOT STARTED | | |
 | 11 | Taste Profile | | | |
 | 12 | Recommendation Engine Foundation | | | |
 | 13 | Recommendation Quality | | | |
