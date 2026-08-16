@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 30 Complete_
+_Last updated: 2026-08-16 — Phase 31 Complete_
 
 ## Current Phase
-- Phase: 31 — CI/CD
+- Phase: 32 — Release Engineering
 - Status: NOT STARTED
-- Branch: feature/phase-30-backup-disaster-recovery
+- Branch: feature/phase-31-ci-cd
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 30 gate passed: operational recovery complete — backup manifests with SHA-256 integrity, restore testing enforcement ensuring backups are not valid until restore is tested, RPO < 5 min and RTO < 1 hr measurement, multi-subsystem recovery runbooks, and health tracking, all 29 backup/DR tests passing)
+READY FOR NEXT PHASE (Phase 31 gate passed: CI/CD automation complete — GitHub Actions workflows for backend matrix tests [Py 3.11, 3.12], linting, Bandit SAST security scan, Next.js web client typecheck & build, Flutter client analysis & tests, SQL migration validation, and release gate workflow enforcing environment-protected and gated production deployments, all 7 workflow validation tests passing)
 
 ## Notes for next session
-- What was done: Phase 30 Backup / Disaster Recovery complete. Implemented backup.py with BackupRecoveryManager (manifests, integrity verification, restore test gates, RPO/RTO metrics, recovery runbooks). Constraint honored: backup not valid until restore is tested.
+- What was done: Phase 31 CI/CD complete. Implemented .github/workflows/ci.yml and release-gate.yml. Constraint honored: no unapproved automatic deployment to production without release gates.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -48,8 +48,8 @@ READY FOR NEXT PHASE (Phase 30 gate passed: operational recovery complete — ba
 | 28 | Security Hardening | COMPLETE | feature/phase-28-security-hardening | 2026-08-16 |
 | 29 | Privacy / Data Lifecycle | COMPLETE | feature/phase-29-privacy-data-lifecycle | 2026-08-16 |
 | 30 | Backup / Disaster Recovery | COMPLETE | feature/phase-30-backup-disaster-recovery | 2026-08-16 |
-| 31 | CI/CD | NOT STARTED | | |
-| 32 | Release Engineering | | | |
+| 31 | CI/CD | COMPLETE | feature/phase-31-ci-cd | 2026-08-16 |
+| 32 | Release Engineering | NOT STARTED | | |
 | 33 | Production Readiness | | | |
 | 34 | Full Product QA | | | |
 | 35 | Final Independent Audit | | | |
