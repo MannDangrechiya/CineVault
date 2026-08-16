@@ -1,7 +1,7 @@
 # CineVault OS — Personal Data Schemas (CAT-2)
 # User personal logs, watch events (append-only), ratings, notes, reviews & conflicts (ADR-003)
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 
 class WatchEventCreate(BaseModel):
@@ -85,3 +85,22 @@ class PersonalDataConflictResponse(BaseModel):
 class PersonalDataConflictResolveRequest(BaseModel):
     chosen_option_id: str
     resolution_note: Optional[str] = None
+
+class UserDashboardMetricsResponse(BaseModel):
+    total_titles: int
+    watched_count: int
+    unwatched_count: int
+    watching_count: int
+    completed_count: int
+    dropped_count: int
+    favorites_count: int
+    total_watch_hours: float
+    movies_watched: int
+    series_completed: int
+    anime_completed: int
+    countries_explored: List[str]
+    languages_explored: List[str]
+    watch_streak_days: int
+    monthly_watch_count: int
+    annual_watch_count: int
+    average_personal_rating: Optional[float]

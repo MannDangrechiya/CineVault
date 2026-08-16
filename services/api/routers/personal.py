@@ -13,7 +13,8 @@ from ..schemas.personal import (
     RatingCreate, RatingResponse,
     NoteCreate, NoteResponse,
     ReviewCreate, ReviewResponse,
-    PersonalDataConflictResponse, PersonalDataConflictResolveRequest
+    PersonalDataConflictResponse, PersonalDataConflictResolveRequest,
+    UserDashboardMetricsResponse
 )
 from ..auth.dependencies import require_authenticated_user
 from ..auth.jwt_validator import SecurityTokenClaims
@@ -22,6 +23,14 @@ from ..database import get_db
 from ..repositories.personal import personal_repository
 
 router = APIRouter(prefix="/v1/me", tags=["Personal Data (CAT-2)"])
+
+@router.get("/dashboard", response_model=UserDashboardMetricsResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+async def get_dashboard_metrics(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Retrieves comprehensive personal media metrics and analytics dynamically for authenticated user."""
+    return await personal_repository.get_user_dashboard_metrics(db=db, user_id=claims.sub)
 
 @router.get("/watch-events", response_model=PaginatedResponse[WatchEventResponse], dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 async def list_watch_events(

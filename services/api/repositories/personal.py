@@ -10,14 +10,18 @@
 from ..config import config
 import uuid
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, and_, update
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.personal import (
     LibraryEntryModel, WatchEventModel, UserTitleStateModel,
     RatingModel, NoteModel, ReviewModel, PersonalDataConflictModel
+)
+from ..models.canonical import (
+    TitleModel, EditionModel, TitleCountryModel, TitleLanguageModel
 )
 from ..schemas.personal import (
     WatchEventCreate, WatchEventResponse,
@@ -25,7 +29,8 @@ from ..schemas.personal import (
     RatingCreate, RatingResponse,
     NoteCreate, NoteResponse,
     ReviewCreate, ReviewResponse,
-    PersonalDataConflictResponse
+    PersonalDataConflictResponse,
+    UserDashboardMetricsResponse
 )
 
 logger = logging.getLogger("cinevault.repositories.personal")
@@ -696,5 +701,177 @@ class PersonalRepository:
 
         return []
 
+    async def get_user_dashboard_metrics(
+        self, db: Optional[AsyncSession], user_id: str
+    ) -> UserDashboardMetricsResponse:
+        """Derives comprehensive dashboard analytics dynamically from canonical & user personal relational data."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                now = datetime.now(timezone.utc)
+                current_year = now.year
+                current_month = now.month
+
+                # 1. Title States breakdown
+                stmt_st = select(UserTitleStateModel).where(UserTitleStateModel.user_id == user_uuid)
+                title_states = (await db.execute(stmt_st)).scalars().all()
+
+                total_titles = len(title_states)
+                watching_count = sum(1 for s in title_states if s.manual_status_override == "WATCHING")
+                completed_count = sum(1 for s in title_states if s.manual_status_override == "COMPLETED")
+                dropped_count = sum(1 for s in title_states if s.manual_status_override == "DROPPED")
+                unwatched_count = sum(1 for s in title_states if s.manual_status_override in ("PLAN_TO_WATCH", "WATCHLIST", None))
+                favorites_count = sum(1 for s in title_states if s.is_favorite)
+
+                # 2. Watch Events
+                stmt_ev = (
+                    select(WatchEventModel)
+                    .where(
+                        and_(
+                            WatchEventModel.user_id == user_uuid,
+                            WatchEventModel.is_tombstoned == False,
+                        )
+                    )
+                    .order_by(WatchEventModel.watched_at.desc())
+                )
+                watch_events = (await db.execute(stmt_ev)).scalars().all()
+                watched_count = len(watch_events)
+
+                # Monthly and Annual counts
+                monthly_watch_count = sum(
+                    1 for e in watch_events
+                    if e.watched_at and e.watched_at.year == current_year and e.watched_at.month == current_month
+                )
+                annual_watch_count = sum(
+                    1 for e in watch_events
+                    if e.watched_at and e.watched_at.year == current_year
+                )
+
+                # Watch streak calculation
+                watch_dates = sorted(
+                    {e.watched_at.date() for e in watch_events if e.watched_at},
+                    reverse=True
+                )
+                watch_streak_days = 0
+                if watch_dates:
+                    today = now.date()
+                    if watch_dates[0] == today or watch_dates[0] == today - timedelta(days=1):
+                        expected = watch_dates[0]
+                        for d in watch_dates:
+                            if d == expected:
+                                watch_streak_days += 1
+                                expected -= timedelta(days=1)
+                            else:
+                                break
+
+                # 3. Content Type & Hours Aggregation
+                watched_title_ids = list({e.title_id for e in watch_events if e.title_id})
+                movies_watched = 0
+                series_completed = 0
+                anime_completed = 0
+                total_watch_minutes = 0
+
+                if watched_title_ids:
+                    stmt_titles = (
+                        select(TitleModel)
+                        .options(
+                            selectinload(TitleModel.editions),
+                            selectinload(TitleModel.countries),
+                            selectinload(TitleModel.languages)
+                        )
+                        .where(TitleModel.title_id.in_(watched_title_ids))
+                    )
+                    titles_data = (await db.execute(stmt_titles)).scalars().all()
+                    title_map = {t.title_id: t for t in titles_data}
+
+                    for ev in watch_events:
+                        t = title_map.get(ev.title_id)
+                        if t:
+                            runtime = 120
+                            if t.editions:
+                                primary_ed = next((ed for ed in t.editions if ed.is_primary), t.editions[0])
+                                if primary_ed.runtime_minutes:
+                                    runtime = primary_ed.runtime_minutes
+                            total_watch_minutes += runtime
+
+                    for s in title_states:
+                        t = title_map.get(s.title_id)
+                        if t and s.manual_status_override == "COMPLETED":
+                            if t.content_type_id == "movie":
+                                movies_watched += 1
+                            elif t.content_type_id == "tv_series":
+                                series_completed += 1
+                            elif t.content_type_id == "anime":
+                                anime_completed += 1
+
+                    countries_set = set()
+                    languages_set = set()
+                    for t in titles_data:
+                        for c in t.countries:
+                            countries_set.add(c.country_code)
+                        for l in t.languages:
+                            languages_set.add(l.language_code)
+                    countries_explored = sorted(list(countries_set))
+                    languages_explored = sorted(list(languages_set))
+                else:
+                    countries_explored = []
+                    languages_explored = []
+
+                total_watch_hours = round(total_watch_minutes / 60.0, 1)
+
+                # 4. Ratings
+                stmt_r = select(RatingModel).where(RatingModel.user_id == user_uuid)
+                ratings = (await db.execute(stmt_r)).scalars().all()
+                avg_rating = round(sum(r.rating_value for r in ratings) / len(ratings), 2) if ratings else None
+
+                return UserDashboardMetricsResponse(
+                    total_titles=total_titles,
+                    watched_count=watched_count,
+                    unwatched_count=unwatched_count,
+                    watching_count=watching_count,
+                    completed_count=completed_count,
+                    dropped_count=dropped_count,
+                    favorites_count=favorites_count,
+                    total_watch_hours=total_watch_hours,
+                    movies_watched=movies_watched,
+                    series_completed=series_completed,
+                    anime_completed=anime_completed,
+                    countries_explored=countries_explored,
+                    languages_explored=languages_explored,
+                    watch_streak_days=watch_streak_days,
+                    monthly_watch_count=monthly_watch_count,
+                    annual_watch_count=annual_watch_count,
+                    average_personal_rating=avg_rating
+                )
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("get_user_dashboard_metrics failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        # Seed fallback
+        return UserDashboardMetricsResponse(
+            total_titles=0,
+            watched_count=0,
+            unwatched_count=0,
+            watching_count=0,
+            completed_count=0,
+            dropped_count=0,
+            favorites_count=0,
+            total_watch_hours=0.0,
+            movies_watched=0,
+            series_completed=0,
+            anime_completed=0,
+            countries_explored=[],
+            languages_explored=[],
+            watch_streak_days=0,
+            monthly_watch_count=0,
+            annual_watch_count=0,
+            average_personal_rating=None
+        )
+
 
 personal_repository = PersonalRepository()
+
