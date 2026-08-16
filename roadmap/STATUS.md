@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 21 Complete_
+_Last updated: 2026-08-16 — Phase 22 Complete_
 
 ## Current Phase
-- Phase: 22 — Data Curation
+- Phase: 23 — Data Quality Control Room
 - Status: NOT STARTED
-- Branch: feature/phase-21-web-ui
+- Branch: feature/phase-22-data-curation
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 21 gate passed: polished Next.js App Router web client with Home discovery, Movies & Series catalogs, Watchlist, Watch history timeline, Custom collections, Dashboard analytics, Data import/export portability, AI assistant integration, and dark theme accessibility verified, build succeeded across all 20 routes)
+READY FOR NEXT PHASE (Phase 22 gate passed: regional catalog prioritization across Indian, East Asian, European, Hollywood, and Documentaries, deduplication provenance and non-authoritative community rating labeling constraints enforced, curator-governed promotion with SHA-256 audit integrity verified, all 39 curation and catalog expansion tests passing)
 
 ## Notes for next session
-- What was done: Phase 21 Web UI Completion complete. Enhanced Next.js web application with full discovery hub, movies/series browsing, watchlist, history, collections, dashboard analytics, data portability, and verified clean production build across all 20 routes.
+- What was done: Phase 22 Data Curation complete. Implemented & verified systematic global catalog expansion across Indian, East Asian, European cinema and TV, multi-provider identity resolution and deduplication (`Accuracy -> Provenance -> Deduplication -> Consistency -> Coverage`), non-authoritative community ratings, and curator promotion audit tracking.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -39,8 +39,8 @@ READY FOR NEXT PHASE (Phase 21 gate passed: polished Next.js App Router web clie
 | 19 | Offline Sync | COMPLETE | feature/phase-19-offline-sync | 2026-08-16 |
 | 20 | Flutter Client | COMPLETE | feature/phase-20-flutter-client | 2026-08-16 |
 | 21 | Web UI Completion | COMPLETE | feature/phase-21-web-ui | 2026-08-16 |
-| 22 | Data Curation | NOT STARTED | | |
-| 23 | Data Quality Control Room | | | |
+| 22 | Data Curation | COMPLETE | feature/phase-22-data-curation | 2026-08-16 |
+| 23 | Data Quality Control Room | NOT STARTED | | |
 | 24 | Metadata Update History | | | |
 | 25 | Observability | | | |
 | 26 | Background Jobs / Queue | | | |
