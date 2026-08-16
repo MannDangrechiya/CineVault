@@ -10,7 +10,8 @@ from ..schemas.recommendations import (
     ColdStartPreferenceInput,
     RecommendationListResponse,
     RecommendationExplainRequest,
-    RecommendationExplainResponse
+    RecommendationExplainResponse,
+    TasteProfileResponse
 )
 from ..auth.dependencies import require_authenticated_user
 from ..auth.jwt_validator import SecurityTokenClaims
@@ -19,6 +20,14 @@ from ..database import get_db
 from ..repositories.recommendations import recommendation_repository
 
 router = APIRouter(prefix="/v1/recommendations", tags=["Recommendation Foundation (8.7)"])
+
+@router.get("/taste-profile", response_model=TasteProfileResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+async def get_user_taste_profile(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Retrieves user's learned cinematic taste profile (genre affinities, directors, actors, decades, runtime preferences)."""
+    return await recommendation_repository.get_taste_profile(db=db, user_id=claims.sub)
 
 @router.get("", response_model=RecommendationListResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 @router.get("/", response_model=RecommendationListResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])

@@ -7,6 +7,7 @@
 #         SEED_CATALOG retained for local_development fallback only.
 
 import math
+import uuid
 import logging
 from typing import List, Optional, Dict, Any, Set
 from uuid import UUID
@@ -16,7 +17,10 @@ from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.orm import selectinload
 
 from ..config import config
-from ..models.canonical import TitleModel, EditionModel, ReleaseModel, GenreModel, PersonModel, CreditModel, TitleGenreModel
+from ..models.canonical import (
+    TitleModel, EditionModel, ReleaseModel, GenreModel, PersonModel, CreditModel,
+    TitleGenreModel, TitleCountryModel, TitleLanguageModel, TitleThemeModel, ThemeModel
+)
 from ..models.personal import WatchEventModel, RatingModel, UserTitleStateModel
 from ..schemas.recommendations import (
     RecommendationModeEnum,
@@ -25,6 +29,10 @@ from ..schemas.recommendations import (
     RecommendationItemResponse,
     RecommendationListResponse,
     RecommendationExplainResponse,
+    GenreAffinity,
+    ThemeAffinity,
+    CreatorAffinity,
+    TasteProfileResponse,
 )
 
 logger = logging.getLogger("cinevault.repositories.recommendations")
@@ -712,5 +720,185 @@ class RecommendationRepository:
             },
         )
 
+    async def get_taste_profile(
+        self, db: Optional[AsyncSession], user_id: str
+    ) -> TasteProfileResponse:
+        """Analyzes user viewing history, ratings, and completion behavior to construct a non-invasive taste model."""
+        if db is not None:
+            try:
+                try:
+                    user_uuid = UUID(user_id)
+                except (ValueError, AttributeError):
+                    user_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"cinevault:user_id:{user_id}")
+
+                # 1. Fetch user title states
+                stmt_st = select(UserTitleStateModel).where(UserTitleStateModel.user_id == user_uuid)
+                states = (await db.execute(stmt_st)).scalars().all()
+
+                completed_count = sum(1 for s in states if s.manual_status_override == "COMPLETED")
+                dropped_count = sum(1 for s in states if s.manual_status_override == "DROPPED")
+                total_terminal = completed_count + dropped_count
+                completion_rate = round(completed_count / total_terminal, 2) if total_terminal > 0 else 1.0
+                abandon_rate = round(dropped_count / total_terminal, 2) if total_terminal > 0 else 0.0
+
+                # 2. Fetch user ratings
+                stmt_r = select(RatingModel).where(RatingModel.user_id == user_uuid)
+                ratings = (await db.execute(stmt_r)).scalars().all()
+                rating_map = {r.title_id: r.rating_value for r in ratings}
+
+                # 3. Fetch watch events
+                stmt_ev = select(WatchEventModel).where(
+                    and_(
+                        WatchEventModel.user_id == user_uuid,
+                        WatchEventModel.is_tombstoned == False,
+                    )
+                )
+                events = (await db.execute(stmt_ev)).scalars().all()
+                watched_title_ids = list({e.title_id for e in events if e.title_id})
+
+                if not watched_title_ids:
+                    return TasteProfileResponse(
+                        top_genres=[],
+                        top_themes=[],
+                        top_directors=[],
+                        top_actors=[],
+                        favorite_decades=[],
+                        preferred_languages=[],
+                        preferred_countries=[],
+                        average_preferred_runtime=None,
+                        completion_rate=completion_rate,
+                        abandon_rate=abandon_rate,
+                        total_rated_count=len(ratings),
+                        taste_diversity_score=0.0
+                    )
+
+                # 4. Fetch Canonical Work Entities with all attributes
+                stmt_titles = (
+                    select(TitleModel)
+                    .options(
+                        selectinload(TitleModel.genres),
+                        selectinload(TitleModel.themes),
+                        selectinload(TitleModel.countries),
+                        selectinload(TitleModel.languages),
+                        selectinload(TitleModel.editions),
+                        selectinload(TitleModel.credits).selectinload(CreditModel.person),
+                        selectinload(TitleModel.credits).selectinload(CreditModel.role),
+                    )
+                    .where(TitleModel.title_id.in_(watched_title_ids))
+                )
+                titles = (await db.execute(stmt_titles)).scalars().all()
+
+                # Genre Aggregation
+                genre_counts: Dict[str, int] = {}
+                genre_ratings: Dict[str, List[int]] = {}
+                for t in titles:
+                    u_rating = rating_map.get(t.title_id)
+                    for g in t.genres:
+                        g_name = g.name
+                        genre_counts[g_name] = genre_counts.get(g_name, 0) + 1
+                        if u_rating is not None:
+                            genre_ratings.setdefault(g_name, []).append(u_rating)
+
+                top_genres = []
+                for g_name, count in sorted(genre_counts.items(), key=lambda x: x[1], reverse=True):
+                    r_list = genre_ratings.get(g_name, [])
+                    avg_r = round(sum(r_list) / len(r_list), 2) if r_list else None
+                    weight = round(min(1.0, count * 0.2 + (avg_r / 10.0 * 0.5 if avg_r else 0.2)), 2)
+                    top_genres.append(GenreAffinity(genre=g_name, weight=weight, watched_count=count, avg_rating=avg_r))
+
+                # Theme Aggregation
+                theme_counts: Dict[str, int] = {}
+                for t in titles:
+                    for th in t.themes:
+                        theme_counts[th.name] = theme_counts.get(th.name, 0) + 1
+                top_themes = [
+                    ThemeAffinity(theme=name, weight=round(min(1.0, count * 0.25), 2), watched_count=count)
+                    for name, count in sorted(theme_counts.items(), key=lambda x: x[1], reverse=True)
+                ]
+
+                # Director and Actor Affinities
+                director_counts: Dict[str, int] = {}
+                actor_counts: Dict[str, int] = {}
+                for t in titles:
+                    for c in t.credits:
+                        p_name = c.person.canonical_name if c.person else "Unknown"
+                        role_id = c.credit_role_id.upper() if c.credit_role_id else ""
+                        if "DIRECTOR" in role_id:
+                            director_counts[p_name] = director_counts.get(p_name, 0) + 1
+                        elif "ACTOR" in role_id or "CAST" in role_id:
+                            actor_counts[p_name] = actor_counts.get(p_name, 0) + 1
+
+                top_directors = [
+                    CreatorAffinity(person_name=name, role="Director", weight=round(min(1.0, count * 0.3), 2), titles_watched=count)
+                    for name, count in sorted(director_counts.items(), key=lambda x: x[1], reverse=True)
+                ]
+                top_actors = [
+                    CreatorAffinity(person_name=name, role="Actor", weight=round(min(1.0, count * 0.3), 2), titles_watched=count)
+                    for name, count in sorted(actor_counts.items(), key=lambda x: x[1], reverse=True)
+                ]
+
+                # Decades, Languages, Countries, Runtimes
+                decade_counts: Dict[str, int] = {}
+                lang_set: Set[str] = set()
+                country_set: Set[str] = set()
+                runtimes: List[int] = []
+
+                for t in titles:
+                    if t.production_year:
+                        dec = f"{(t.production_year // 10) * 10}s"
+                        decade_counts[dec] = decade_counts.get(dec, 0) + 1
+                    for l in t.languages:
+                        lang_set.add(l.language_code)
+                    for c in t.countries:
+                        country_set.add(c.country_code)
+                    if t.editions:
+                        primary_ed = next((ed for ed in t.editions if ed.is_primary), t.editions[0])
+                        if primary_ed.runtime_minutes:
+                            runtimes.append(primary_ed.runtime_minutes)
+
+                fav_decades = [dec for dec, _ in sorted(decade_counts.items(), key=lambda x: x[1], reverse=True)]
+                avg_runtime = int(sum(runtimes) / len(runtimes)) if runtimes else None
+
+                # Diversity score: entropy based on distinct countries and genres
+                diversity = round(min(1.0, (len(genre_counts) * 0.1) + (len(country_set) * 0.15)), 2)
+
+                return TasteProfileResponse(
+                    top_genres=top_genres,
+                    top_themes=top_themes,
+                    top_directors=top_directors,
+                    top_actors=top_actors,
+                    favorite_decades=fav_decades,
+                    preferred_languages=sorted(list(lang_set)),
+                    preferred_countries=sorted(list(country_set)),
+                    average_preferred_runtime=avg_runtime,
+                    completion_rate=completion_rate,
+                    abandon_rate=abandon_rate,
+                    total_rated_count=len(ratings),
+                    taste_diversity_score=diversity
+                )
+            except ValueError:
+                raise
+            except Exception as exc:
+                logger.error("get_taste_profile failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        # Seed fallback
+        return TasteProfileResponse(
+            top_genres=[],
+            top_themes=[],
+            top_directors=[],
+            top_actors=[],
+            favorite_decades=[],
+            preferred_languages=[],
+            preferred_countries=[],
+            average_preferred_runtime=None,
+            completion_rate=1.0,
+            abandon_rate=0.0,
+            total_rated_count=0,
+            taste_diversity_score=0.0
+        )
+
 
 recommendation_repository = RecommendationRepository()
+

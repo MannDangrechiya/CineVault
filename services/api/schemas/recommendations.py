@@ -60,3 +60,34 @@ class RecommendationExplainResponse(BaseModel):
     canonical_title: str = Field(..., description="Target title name")
     explanation: GroundedExplanation = Field(..., description="Grounded rationale")
     score_breakdown: Dict[str, float] = Field(..., description="Transparent breakdown of scoring factors")
+
+class GenreAffinity(BaseModel):
+    genre: str
+    weight: float
+    watched_count: int
+    avg_rating: Optional[float] = None
+
+class ThemeAffinity(BaseModel):
+    theme: str
+    weight: float
+    watched_count: int
+
+class CreatorAffinity(BaseModel):
+    person_name: str
+    role: str
+    weight: float
+    titles_watched: int
+
+class TasteProfileResponse(BaseModel):
+    top_genres: List[GenreAffinity]
+    top_themes: List[ThemeAffinity]
+    top_directors: List[CreatorAffinity]
+    top_actors: List[CreatorAffinity]
+    favorite_decades: List[str]
+    preferred_languages: List[str]
+    preferred_countries: List[str]
+    average_preferred_runtime: Optional[int]
+    completion_rate: float
+    abandon_rate: float
+    total_rated_count: int
+    taste_diversity_score: float
