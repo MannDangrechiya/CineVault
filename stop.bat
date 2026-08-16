@@ -1,2 +1,4 @@
 @echo off
-powershell -ExecutionPolicy Bypass -File "%~dp0scripts\stop-dev.ps1"
+title CineVault OS v2.0 Shutdown
+cls
+powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0scripts\stop-dev.ps1" %*
