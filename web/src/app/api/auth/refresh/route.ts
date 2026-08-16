@@ -25,7 +25,7 @@ export async function POST() {
 
   // Use the expiry-agnostic decrypt: the whole point of this route is to
   // renew a session whose access_token has already (or is about to) expire.
-  const existingSession = decryptSessionUnchecked(sessionCookie.value);
+  const existingSession = await decryptSessionUnchecked(sessionCookie.value);
 
   if (!existingSession?.refresh_token) {
     cookieStore.delete(SESSION_COOKIE_NAME);
@@ -59,7 +59,7 @@ export async function POST() {
     expires_at: expiresAt,
   };
 
-  const encrypted = encryptSession(newSession);
+  const encrypted = await encryptSession(newSession);
   cookieStore.set(SESSION_COOKIE_NAME, encrypted, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

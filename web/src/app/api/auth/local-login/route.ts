@@ -103,7 +103,7 @@ export async function POST(request: Request) {
       expires_at: expiresAt,
     };
 
-    const encryptedSession = encryptSession(session);
+    const encryptedSession = await encryptSession(session);
     const cookieStore = await cookies();
 
     cookieStore.set(SESSION_COOKIE_NAME, encryptedSession, {

@@ -138,7 +138,7 @@ export async function GET(request: Request) {
     expires_at: expiresAt,
   };
 
-  const encryptedSession = encryptSession(session);
+  const encryptedSession = await encryptSession(session);
 
   const redirectResponse = NextResponse.redirect(`${appBaseUrl}${returnTo}`);
 

@@ -33,7 +33,7 @@ export async function middleware(request: NextRequest) {
 
   if (isProtectedRoute) {
     const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
-    const session = sessionCookie ? decryptSession(sessionCookie.value) : null;
+    const session = sessionCookie ? await decryptSession(sessionCookie.value) : null;
 
     if (session) {
       return NextResponse.next();
@@ -42,7 +42,7 @@ export async function middleware(request: NextRequest) {
     // Session is missing, corrupt, or its access token has expired. Before
     // forcing a full re-login, attempt a server-side refresh using the
     // (still potentially valid) refresh_token — P0 fix, Day 1-7 remediation.
-    const expiredSession = sessionCookie ? decryptSessionUnchecked(sessionCookie.value) : null;
+    const expiredSession = sessionCookie ? await decryptSessionUnchecked(sessionCookie.value) : null;
 
     if (expiredSession?.refresh_token) {
       const refreshed = await exchangeRefreshToken(expiredSession.refresh_token);
@@ -58,7 +58,8 @@ export async function middleware(request: NextRequest) {
         };
 
         const response = NextResponse.next();
-        response.cookies.set(SESSION_COOKIE_NAME, encryptSession(newSession), {
+        const encrypted = await encryptSession(newSession);
+        response.cookies.set(SESSION_COOKIE_NAME, encrypted, {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           sameSite: "lax",

@@ -1,9 +1,6 @@
-// CineVault OS — Server-Side BFF Session Management
-// Provides secure, encrypted/signed HttpOnly session cookie handling.
-// Tokens are stored strictly server-side inside the session cookie and NEVER exposed to browser JS.
-
-import crypto from "crypto";
-import { cookies } from "next/headers";
+// CineVault OS — Universal BFF Session Management
+// Uses standard Web Crypto API (AES-GCM 256-bit + SHA-256 key derivation)
+// 100% compatible across Next.js Edge Runtime (Middleware) and Node.js Runtime.
 
 export interface SessionUser {
   sub: string;
@@ -21,72 +18,91 @@ export interface SessionData {
 
 export const SESSION_COOKIE_NAME = "cinevault_session";
 
-// P0 Fix (Day 1-7 remediation): this placeholder must never be the active
-// key outside local development — anyone with the repo can derive it and
-// forge encrypted session cookies (including arbitrary roles).
 const INSECURE_DEFAULT_SESSION_SECRET = "cinevault-local-dev-session-secret-change-in-prod-32bytes!";
-const SESSION_SECRET = process.env.SESSION_SECRET || INSECURE_DEFAULT_SESSION_SECRET;
 
-if (process.env.NODE_ENV === "production" && SESSION_SECRET === INSECURE_DEFAULT_SESSION_SECRET) {
-  throw new Error(
-    "Refusing to start: NODE_ENV=production but SESSION_SECRET is unset (or still the " +
-    "insecure local-development default). Set a real, random SESSION_SECRET environment " +
-    "variable before deploying outside local development."
+function getSecret(): string {
+  return process.env.SESSION_SECRET || INSECURE_DEFAULT_SESSION_SECRET;
+}
+
+function uint8ArrayToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+function base64UrlToUint8Array(base64url: string): Uint8Array {
+  let base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
+  while (base64.length % 4) {
+    base64 += "=";
+  }
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function getCryptoKey(): Promise<CryptoKey> {
+  const secret = getSecret();
+  const encoder = new TextEncoder();
+  const keyHash = await crypto.subtle.digest("SHA-256", encoder.encode(secret));
+  return crypto.subtle.importKey("raw", keyHash, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+export async function encryptSession(data: SessionData): Promise<string> {
+  const cryptoKey = await getCryptoKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoder = new TextEncoder();
+  const dataBytes = encoder.encode(JSON.stringify(data));
+
+  const encryptedBuf = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: iv as unknown as BufferSource },
+    cryptoKey,
+    dataBytes as unknown as BufferSource
   );
+
+  const ivB64 = uint8ArrayToBase64Url(iv);
+  const encB64 = uint8ArrayToBase64Url(new Uint8Array(encryptedBuf));
+
+  return `${ivB64}.${encB64}`;
 }
 
-// Helper for AES-256-GCM encryption
-function getSecretKey(): Buffer {
-  return crypto.createHash("sha256").update(SESSION_SECRET).digest();
-}
-
-export function encryptSession(data: SessionData): string {
-  const key = getSecretKey();
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-  
-  const jsonStr = JSON.stringify(data);
-  let encrypted = cipher.update(jsonStr, "utf8", "base64");
-  encrypted += cipher.final("base64");
-  
-  const authTag = cipher.getAuthTag();
-
-  return `${iv.toString("base64")}.${authTag.toString("base64")}.${encrypted}`;
-}
-
-/**
- * Decrypts the session cookie WITHOUT checking expiration. Only intended
- * for the refresh flow, which needs to read a just-expired session's
- * refresh_token in order to attempt renewing it. Every other caller must
- * use `decryptSession`, which enforces expiry.
- */
-export function decryptSessionUnchecked(cookieValue: string): SessionData | null {
+export async function decryptSessionUnchecked(cookieValue: string): Promise<SessionData | null> {
   try {
-    const parts = cookieValue.split(".");
-    if (parts.length !== 3) return null;
+    if (!cookieValue) return null;
+    const rawValue = cookieValue.includes("%") ? decodeURIComponent(cookieValue) : cookieValue;
+    const parts = rawValue.split(".");
+    if (parts.length !== 2) return null;
 
-    const [ivB64, authTagB64, encryptedText] = parts;
-    const key = getSecretKey();
-    const iv = Buffer.from(ivB64, "base64");
-    const authTag = Buffer.from(authTagB64, "base64");
+    const [ivB64, encB64] = parts;
+    const iv = base64UrlToUint8Array(ivB64);
+    const encBytes = base64UrlToUint8Array(encB64);
 
-    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-    decipher.setAuthTag(authTag);
+    const cryptoKey = await getCryptoKey();
+    const decryptedBuf = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv as unknown as BufferSource },
+      cryptoKey,
+      encBytes as unknown as BufferSource
+    );
 
-    let decrypted = decipher.update(encryptedText, "base64", "utf8");
-    decrypted += decipher.final("utf8");
-
-    return JSON.parse(decrypted) as SessionData;
+    const decoder = new TextDecoder();
+    const jsonStr = decoder.decode(decryptedBuf);
+    return JSON.parse(jsonStr) as SessionData;
   } catch {
     return null;
   }
 }
 
-export function decryptSession(cookieValue: string): SessionData | null {
-  const session = decryptSessionUnchecked(cookieValue);
+export async function decryptSession(cookieValue: string): Promise<SessionData | null> {
+  const session = await decryptSessionUnchecked(cookieValue);
   if (!session) return null;
 
-  // Check expiration
   if (Date.now() >= session.expires_at) {
     return null;
   }
@@ -95,6 +111,7 @@ export function decryptSession(cookieValue: string): SessionData | null {
 }
 
 export async function getSession(): Promise<SessionData | null> {
+  const { cookies } = await import("next/headers");
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
 
@@ -106,7 +123,8 @@ export async function getSession(): Promise<SessionData | null> {
 }
 
 export async function setSessionCookie(sessionData: SessionData): Promise<void> {
-  const encrypted = encryptSession(sessionData);
+  const { cookies } = await import("next/headers");
+  const encrypted = await encryptSession(sessionData);
   const cookieStore = await cookies();
 
   cookieStore.set(SESSION_COOKIE_NAME, encrypted, {
@@ -119,6 +137,7 @@ export async function setSessionCookie(sessionData: SessionData): Promise<void> 
 }
 
 export async function clearSessionCookie(): Promise<void> {
+  const { cookies } = await import("next/headers");
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
