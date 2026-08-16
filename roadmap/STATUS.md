@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 3 Complete_
+_Last updated: 2026-08-16 — Phase 4 Complete_
 
 ## Current Phase
-- Phase: 4 — Search & Discovery
+- Phase: 5 — Personal User Foundation
 - Status: NOT STARTED
-- Branch: feature/phase-03-catalog-refresh
+- Branch: feature/phase-04-search-discovery
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 3 gate passed: change detection, conflict creation, domain reconciliation, human review, canonical promotion, incremental alias/release/credit/availability refresh, and 100% personal data preservation verified, all 4 Phase 3 tests passing)
+READY FOR NEXT PHASE (Phase 4 gate passed: PostgreSQL-first multilingual search across Parasite/기생충/Gisaengchung and Your Name/君の名は。/Kimi no Na wa, people, aliases, franchises, themes, genres, and faceted filters verified, all 10 search tests passing)
 
 ## Notes for next session
-- What was done: Phase 3 Catalog Refresh complete. Implemented & verified change detection, conflict lifecycle, domain authority resolution, no silent overwrite, and non-negotiable personal user data preservation across multiple catalog update cycles.
+- What was done: Phase 4 Search & Discovery complete. Implemented & verified PostgreSQL-first search with multilingual alias/transliteration matching, person and franchise discovery, and multi-facet filtering (genre, theme, country, year, content_type).
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -21,8 +21,8 @@ READY FOR NEXT PHASE (Phase 3 gate passed: change detection, conflict creation, 
 | 1 | Canonical Data Foundation | COMPLETE | feature/phase-01-canonical-data-foundation | 2026-08-16 |
 | 2 | Real Catalog Ingestion | COMPLETE | feature/phase-02-real-catalog-ingestion | 2026-08-16 |
 | 3 | Catalog Refresh / Update System | COMPLETE | feature/phase-03-catalog-refresh | 2026-08-16 |
-| 4 | Search & Discovery | NOT STARTED | | |
-| 5 | Personal User Foundation | | | |
+| 4 | Search & Discovery | COMPLETE | feature/phase-04-search-discovery | 2026-08-16 |
+| 5 | Personal User Foundation | NOT STARTED | | |
 | 6 | Watch History Engine | | | |
 | 7 | Collections / Franchises / Lists | | | |
 | 8 | Streaming Availability | | | |
