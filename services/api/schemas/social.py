@@ -152,3 +152,14 @@ class UserTasteProfileResponse(BaseModel):
     last_computed_at: datetime
     dimension: Optional[int] = 384
 
+
+class TasteProfileComputeRequest(BaseModel):
+    """Schema for requesting real vector computation for taste profile via Ollama."""
+    taste_summary: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="Natural language summary of user preferences (e.g. 'I love sci-fi and action')",
+    )
+
+

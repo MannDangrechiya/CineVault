@@ -21,12 +21,15 @@ from ..schemas.social import (
     TasteMatchResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
+    TasteProfileComputeRequest,
 )
 from ..auth.dependencies import require_authenticated_user, get_optional_claims
 from ..auth.jwt_validator import SecurityTokenClaims
 from ..rate_limiter import enforce_rate_limit
 from ..database import get_db
 from ..repositories.social import social_repository, _resolve_uuid
+from ..ai.ollama_client import OllamaClient
+
 
 logger = logging.getLogger("cinevault.routers.social")
 
@@ -309,3 +312,44 @@ async def update_taste_profile(
         "dimension": len(body.taste_vector),
         "last_computed_at": result.get("last_computed_at"),
     }
+
+
+@router.post(
+    "/taste-profile/compute",
+    dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))],
+)
+async def compute_taste_profile_from_summary(
+    body: TasteProfileComputeRequest,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """
+    Generates a 384-dimensional dense vector embedding from natural language preferences
+    via the Ollama AI Brain (all-minilm) and persists it to the user's taste profile.
+    """
+    user_id = _extract_user_id(claims)
+
+    try:
+        ollama = OllamaClient()
+        embedding = await ollama.generate_embedding(body.taste_summary)
+    except Exception as exc:
+        logger.error(f"Failed to generate embedding from Ollama: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Ollama embedding computation failed: {str(exc)}",
+        ) from exc
+
+    result = await social_repository.upsert_taste_profile(
+        db=db,
+        user_id=user_id,
+        taste_vector=embedding,
+    )
+
+    return {
+        "status": "success",
+        "user_id": str(user_id),
+        "dimension": len(embedding),
+        "message": "Taste profile computed and persisted successfully via Ollama AI Brain",
+        "last_computed_at": result.get("last_computed_at"),
+    }
+

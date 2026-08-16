@@ -527,6 +527,30 @@ class SocialRepository:
             SEED_TASTE_PROFILES[u_uuid] = profile_data
             return profile_data
 
+    async def get_taste_profile(
+        self,
+        db: Optional[AsyncSession],
+        user_id: uuid.UUID,
+    ) -> Optional[Dict[str, Any]]:
+        """Retrieves a user's taste profile including taste_vector and metadata."""
+        u_uuid = _resolve_uuid(user_id, "user_id")
+
+        if db is not None:
+            stmt = select(UserTasteProfileModel).where(UserTasteProfileModel.user_id == u_uuid)
+            res = await db.execute(stmt)
+            profile = res.scalars().first()
+            if profile and profile.taste_vector is not None:
+                return {
+                    "user_id": profile.user_id,
+                    "taste_vector": list(profile.taste_vector),
+                    "last_computed_at": profile.last_computed_at,
+                    "dimension": len(profile.taste_vector),
+                }
+            return None
+        else:
+            return SEED_TASTE_PROFILES.get(u_uuid)
+
+
     async def get_taste_compatibility(
         self,
         db_or_user_id: Any = None,
