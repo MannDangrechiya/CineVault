@@ -28,24 +28,30 @@ except ImportError:
 logger = logging.getLogger("cinevault.ai.provider")
 
 class PromptSanitizer:
-    """Sanitizes untrusted input text payloads to prevent prompt-injection attacks and data leakage."""
+    """Sanitizes untrusted input text payloads to prevent prompt-injection attacks, data exfiltration, and data leakage."""
 
     # Dangerous prompt injection instruction-override patterns
     INJECTION_PATTERNS = [
         re.compile(r"ignore\s+previous\s+instructions", re.IGNORECASE),
         re.compile(r"forget\s+all\s+rules", re.IGNORECASE),
         re.compile(r"system:\s*", re.IGNORECASE),
+        re.compile(r"<system>.*?</system>", re.IGNORECASE | re.DOTALL),
         re.compile(r"\[inst\].*?\[/inst\]", re.IGNORECASE | re.DOTALL),
         re.compile(r"<\|im_start\|>.*?<\|im_end\|>", re.IGNORECASE | re.DOTALL),
+        re.compile(r"<\s*script.*?>.*?</\s*script\s*>", re.IGNORECASE | re.DOTALL),
         re.compile(r"execute\s+sql", re.IGNORECASE),
         re.compile(r"drop\s+table", re.IGNORECASE),
+        re.compile(r"delete\s+from\s+canonical", re.IGNORECASE),
         re.compile(r"reveal\s+(secret|password|key|token)", re.IGNORECASE),
         re.compile(r"override\s+governance", re.IGNORECASE),
+        re.compile(r"exfiltrate", re.IGNORECASE),
     ]
 
     # CAT-2 PII / Sensitive Token redaction regexes
     EMAIL_REGEX = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
     BEARER_TOKEN_REGEX = re.compile(r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+")
+    API_KEY_REGEX = re.compile(r"\b(?:sk-[a-zA-Z0-9]{20,}|key-[a-zA-Z0-9]{20,})\b", re.IGNORECASE)
+    PASSWORD_HASH_REGEX = re.compile(r"\$2[aby]?\$\d{1,2}\$[./A-Za-z0-9]{53}")
 
     @classmethod
     def sanitize(cls, text: str) -> str:
@@ -58,11 +64,19 @@ class PromptSanitizer:
         for pattern in cls.INJECTION_PATTERNS:
             clean_text = pattern.sub("[REDACTED_INSTRUCTION]", clean_text)
 
-        # 2. Redact sensitive auth tokens & emails
+        # 2. Redact sensitive auth tokens, passwords, keys, & emails
         clean_text = cls.BEARER_TOKEN_REGEX.sub("[REDACTED_JWT_TOKEN]", clean_text)
+        clean_text = cls.API_KEY_REGEX.sub("[REDACTED_API_KEY]", clean_text)
+        clean_text = cls.PASSWORD_HASH_REGEX.sub("[REDACTED_HASH]", clean_text)
         clean_text = cls.EMAIL_REGEX.sub("[REDACTED_EMAIL]", clean_text)
 
         return clean_text.strip()
+
+    @classmethod
+    def wrap_as_data_payload(cls, untrusted_content: str, content_type: str = "untrusted_text") -> str:
+        """Wraps untrusted external data (reviews, imported metadata, web scrapes) in strict passive data boundaries."""
+        sanitized = cls.sanitize(untrusted_content)
+        return f"<untrusted_data type='{content_type}'>\n{sanitized}\n</untrusted_data>"
 
 class AIProviderAdapter(ABC):
     """Abstract base class for all CineVault OS AI Provider Integrations."""

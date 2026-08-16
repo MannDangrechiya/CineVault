@@ -1,16 +1,16 @@
 # CineVault OS — Roadmap Status
-_Last updated: 2026-08-16 — Phase 15 Complete_
+_Last updated: 2026-08-16 — Phase 16 Complete_
 
 ## Current Phase
-- Phase: 16 — AI Security
+- Phase: 17 — Import / Export
 - Status: NOT STARTED
-- Branch: feature/phase-15-ai-assistant-capabilities
+- Branch: feature/phase-16-ai-security
 
 ## Phase Gate Result
-READY FOR NEXT PHASE (Phase 15 gate passed: conversational catalog queries, cinematic comparison engine, structured marathon viewing plan builder, privacy-preserving personal viewing statistics explainer, and cross-user isolation verified, all 14 tests passing)
+READY FOR NEXT PHASE (Phase 16 gate passed: treat all untrusted text as DATA via passive boundary wrapping, prompt-injection/tag-smuggling/script defenses, PII and API-key exfiltration redaction, and non-authoritative boundary constraints with RBAC verified, all 17 tests passing)
 
 ## Notes for next session
-- What was done: Phase 15 AI Assistant Capabilities complete. Implemented & verified conversational search, side-by-side title comparison (`/v1/ai/assistant/compare`), franchise marathon viewing plan builder (`/v1/ai/assistant/viewing-plan`), and private personal viewing statistics explainer (`/v1/ai/assistant/personal-stats`) with strict cross-user privacy isolation.
+- What was done: Phase 16 AI Security complete. Implemented & verified passive data payload encapsulation (`<untrusted_data>`), prompt injection/smuggling defense, PII / API token / password hash exfiltration redaction, and non-authoritative boundary governance prohibiting direct unvalidated canonical mutations.
 - What's blocking (if anything): None.
 - Any deviations from the plan and why: None.
 
@@ -33,8 +33,8 @@ READY FOR NEXT PHASE (Phase 15 gate passed: conversational catalog queries, cine
 | 13 | Recommendation Quality | COMPLETE | feature/phase-13-recommendation-quality | 2026-08-16 |
 | 14 | AI Assistant Foundation | COMPLETE | feature/phase-14-ai-assistant-foundation | 2026-08-16 |
 | 15 | AI Assistant Capabilities | COMPLETE | feature/phase-15-ai-assistant-capabilities | 2026-08-16 |
-| 16 | AI Security | NOT STARTED | | |
-| 17 | Import / Export | | | |
+| 16 | AI Security | COMPLETE | feature/phase-16-ai-security | 2026-08-16 |
+| 17 | Import / Export | NOT STARTED | | |
 | 18 | Offline Personal Library | | | |
 | 19 | Offline Sync | | | |
 | 20 | Flutter Client | | | |
