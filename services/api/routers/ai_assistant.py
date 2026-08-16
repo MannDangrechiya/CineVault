@@ -11,7 +11,10 @@ from ..schemas.ai_assistant import (
     AssistantQueryResponse,
     AIProposalCreateRequest,
     AIProposalResponse,
-    AIProposalReviewRequest
+    AIProposalReviewRequest,
+    TitleComparisonResponse,
+    ViewingPlanResponse,
+    PersonalStatsExplanationResponse,
 )
 from ..auth.dependencies import require_authenticated_user, require_curator
 from ..auth.jwt_validator import SecurityTokenClaims
@@ -52,6 +55,45 @@ async def extract_query_intent(
     sanitized = PromptSanitizer.sanitize(query_text)
     provider_adapter = AIProviderFactory.get_provider(provider)
     return await provider_adapter.extract_intent(sanitized)
+
+@public_router.get("/compare", response_model=TitleComparisonResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+async def compare_titles_endpoint(
+    title_id_1: str = Query(..., description="First title UUID"),
+    title_id_2: str = Query(..., description="Second title UUID"),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Compares two canonical titles with shared genres, crew/cast, and comparative summary."""
+    return await ai_assistant_repository.compare_titles(
+        db=db,
+        title_id_1=title_id_1,
+        title_id_2=title_id_2
+    )
+
+@public_router.get("/viewing-plan", response_model=ViewingPlanResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+async def generate_viewing_plan_endpoint(
+    franchise_id: str = Query(..., description="Franchise UUID or keyword"),
+    order_mode: str = Query("RELEASE_ORDER", description="RELEASE_ORDER or CHRONOLOGICAL"),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Builds a structured marathon viewing plan for a franchise or cinematic series."""
+    return await ai_assistant_repository.build_viewing_plan(
+        db=db,
+        franchise_id_or_keyword=franchise_id,
+        order_mode=order_mode
+    )
+
+@public_router.get("/personal-stats", response_model=PersonalStatsExplanationResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+async def explain_personal_stats_endpoint(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Summarizes and explains the authenticated user's private viewing statistics."""
+    return await ai_assistant_repository.explain_personal_statistics(
+        db=db,
+        user_id=claims.sub
+    )
 
 # ------------------------------------------------------------------------
 # 2. Internal Curator AI Proposal Endpoints (CAT-6 Boundary)

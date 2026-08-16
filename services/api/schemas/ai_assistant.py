@@ -72,3 +72,36 @@ class AIProposalReviewRequest(BaseModel):
     decision: str = Field(..., description="APPROVE or REJECT")
     rationale: str = Field(..., min_length=3, description="Curator decision rationale for audit trail")
     override_value: Optional[str] = Field(None, description="Optional curator value override during approval")
+
+class TitleComparisonResponse(BaseModel):
+    title_1: Dict[str, Any]
+    title_2: Dict[str, Any]
+    shared_genres: List[str]
+    shared_directors: List[str]
+    shared_actors: List[str]
+    comparison_summary: str
+
+class ViewingPlanItem(BaseModel):
+    step: int
+    title_id: str
+    canonical_title: str
+    production_year: Optional[int] = None
+    runtime_minutes: Optional[int] = None
+    reason_for_order: str
+
+class ViewingPlanResponse(BaseModel):
+    plan_title: str
+    viewing_order: str
+    total_titles: int
+    total_runtime_minutes: int
+    items: List[ViewingPlanItem]
+    grounded_notes: str
+
+class PersonalStatsExplanationResponse(BaseModel):
+    user_id: str
+    summary_text: str
+    total_titles: int
+    total_watch_hours: float
+    top_genres: List[str]
+    watch_streak_days: int
+    grounded_insights: List[str]
