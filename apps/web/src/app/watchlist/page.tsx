@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
 import {
   Bookmark,
@@ -12,73 +13,55 @@ import {
   Sparkles,
   ArrowRight,
 } from "lucide-react";
-
-interface WatchlistItem {
-  id: string;
-  movieId: string;
-  title: string;
-  year: number;
-  type: "MOVIE" | "TV_SERIES";
-  posterUrl: string;
-  matchScore: number;
-  addedAt: string;
-}
-
-const initialWatchlist: WatchlistItem[] = [
-  {
-    id: "wl-1",
-    movieId: "dune-part-two-2024",
-    title: "Dune: Part Two",
-    year: 2024,
-    type: "MOVIE",
-    posterUrl: "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
-    matchScore: 99,
-    addedAt: "Added today",
-  },
-  {
-    id: "wl-2",
-    movieId: "oppenheimer-2023",
-    title: "Oppenheimer",
-    year: 2023,
-    type: "MOVIE",
-    posterUrl: "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=600&q=80",
-    matchScore: 94,
-    addedAt: "Added 2 days ago",
-  },
-  {
-    id: "wl-3",
-    movieId: "severance-2022",
-    title: "Severance",
-    year: 2022,
-    type: "TV_SERIES",
-    posterUrl: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
-    matchScore: 96,
-    addedAt: "Added last week",
-  },
-  {
-    id: "wl-4",
-    movieId: "blade-runner-2049",
-    title: "Blade Runner 2049",
-    year: 2017,
-    type: "MOVIE",
-    posterUrl: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80",
-    matchScore: 98,
-    addedAt: "Added last week",
-  },
-];
+import { getWatchlist, removeFromWatchlist } from "@/lib/api/personal";
+import { LoadingState } from "@/components/ui/States";
 
 export default function WatchlistPage() {
-  const [items, setItems] = useState<WatchlistItem[]>(initialWatchlist);
   const [filter, setFilter] = useState<"ALL" | "MOVIE" | "TV_SERIES">("ALL");
+  const queryClient = useQueryClient();
 
-  const removeItem = (id: string) => {
-    setItems((prev) => prev.filter((i) => i.id !== id));
+  const { data: rawItems = [], isLoading } = useQuery({
+    queryKey: ["watchlist"],
+    queryFn: getWatchlist,
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: removeFromWatchlist,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+    },
+  });
+
+  // Map API data to UI format
+  const items = rawItems.map((item) => ({
+    id: item.id,
+    titleId: item.title_id,
+    title: item.title?.canonical_title || "Unknown Title",
+    year: item.title?.production_year || 2024,
+    type: item.title?.content_type || "MOVIE",
+    posterUrl: item.title?.poster_url || "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
+    matchScore: 98,
+    addedAt: new Date(item.added_at).toLocaleDateString() || "Recently",
+  }));
+
+  const removeItem = (titleId: string) => {
+    removeMutation.mutate(titleId);
   };
 
   const filteredItems = items.filter((item) => {
     if (filter === "ALL") return true;
     return item.type === filter;
   });
+
+  if (isLoading) {
+    return (
+      <PageContainer title="Personal Watchlist" subtitle="Loading your watchlist...">
+        <div className="p-8">
+          <LoadingState message="Fetching watchlist..." />
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer
@@ -154,12 +137,12 @@ export default function WatchlistPage() {
             {filteredItems.map((item) => (
               <div
                 key={item.id}
-                className="group relative p-3 rounded-2xl bg-zinc-900/40 hover:bg-zinc-900/70 border border-zinc-900 hover:border-zinc-800 transition-all duration-300 flex flex-col justify-between"
+                className={`group relative p-3 rounded-2xl bg-zinc-900/40 hover:bg-zinc-900/70 border border-zinc-900 hover:border-zinc-800 transition-all duration-300 flex flex-col justify-between ${removeMutation.isPending && removeMutation.variables === item.titleId ? 'opacity-50' : ''}`}
               >
                 <div>
                   {/* Poster Link */}
                   <Link
-                    href={`/movies/${item.movieId}`}
+                    href={`/movies/${item.titleId}`}
                     className="relative aspect-[2/3] w-full bg-zinc-950 rounded-xl overflow-hidden block mb-3"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -184,7 +167,7 @@ export default function WatchlistPage() {
 
                   {/* Title & Year */}
                   <Link
-                    href={`/movies/${item.movieId}`}
+                    href={`/movies/${item.titleId}`}
                     className="text-xs font-bold text-zinc-100 hover:text-violet-400 transition-colors line-clamp-1 block"
                   >
                     {item.title}
@@ -202,7 +185,7 @@ export default function WatchlistPage() {
                 {/* Actions */}
                 <div className="flex items-center justify-between pt-3 mt-3 border-t border-zinc-900/80">
                   <Link
-                    href={`/movies/${item.movieId}`}
+                    href={`/movies/${item.titleId}`}
                     className="text-[11px] text-violet-400 hover:text-violet-300 font-medium inline-flex items-center gap-1"
                   >
                     <span>View Details</span>
@@ -210,7 +193,8 @@ export default function WatchlistPage() {
                   </Link>
 
                   <button
-                    onClick={() => removeItem(item.id)}
+                    onClick={() => removeItem(item.titleId)}
+                    disabled={removeMutation.isPending}
                     title="Remove from Watchlist"
                     className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
                   >

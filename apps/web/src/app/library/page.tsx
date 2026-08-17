@@ -2,22 +2,44 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Plus } from "lucide-react";
-import { MOCK_MOVIES, MOCK_SERIES } from "@/lib/api/titles";
+import { getTitles } from "@/lib/api/titles";
+import { LoadingState } from "@/components/ui/States";
 
 export default function LibraryPage() {
-  const [tab, setTab] = useState<"ALL" | "MOVIES" | "SERIES">("ALL");
+  const [tab, setTab] = useState<"ALL" | "MOVIE" | "TV_SERIES">("ALL");
 
-  const libraryMovies = MOCK_MOVIES.slice(0, 6);
-  const librarySeries = MOCK_SERIES.slice(0, 4);
+  const { data: moviesRes, isLoading: isLoadingMovies } = useQuery({
+    queryKey: ["library", "movies"],
+    queryFn: () => getTitles({ content_type: "MOVIE", limit: 6 }),
+  });
+
+  const { data: seriesRes, isLoading: isLoadingSeries } = useQuery({
+    queryKey: ["library", "series"],
+    queryFn: () => getTitles({ content_type: "TV_SERIES", limit: 4 }),
+  });
+
+  const libraryMovies = moviesRes?.data || [];
+  const librarySeries = seriesRes?.data || [];
 
   const displayed =
-    tab === "MOVIES"
+    tab === "MOVIE"
       ? libraryMovies
-      : tab === "SERIES"
+      : tab === "TV_SERIES"
       ? librarySeries
       : [...libraryMovies, ...librarySeries];
+
+  if (isLoadingMovies || isLoadingSeries) {
+    return (
+      <PageContainer title="Personal Media Library" subtitle="Loading your vault...">
+        <div className="p-8">
+          <LoadingState message="Fetching library media..." />
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer
@@ -48,9 +70,9 @@ export default function LibraryPage() {
               All Media ({libraryMovies.length + librarySeries.length})
             </button>
             <button
-              onClick={() => setTab("MOVIES")}
+              onClick={() => setTab("MOVIE")}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                tab === "MOVIES"
+                tab === "MOVIE"
                   ? "bg-violet-600/15 text-violet-300 font-semibold border border-violet-500/30 shadow-sm"
                   : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
               }`}
@@ -58,9 +80,9 @@ export default function LibraryPage() {
               Feature Films ({libraryMovies.length})
             </button>
             <button
-              onClick={() => setTab("SERIES")}
+              onClick={() => setTab("TV_SERIES")}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                tab === "SERIES"
+                tab === "TV_SERIES"
                   ? "bg-violet-600/15 text-violet-300 font-semibold border border-violet-500/30 shadow-sm"
                   : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
               }`}

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
 import {
   Sparkles,
@@ -15,138 +16,50 @@ import {
   SlidersHorizontal,
   Bot,
 } from "lucide-react";
-
-interface RecommendationItem {
-  id: string;
-  movieTitle: string;
-  movieId: string;
-  posterUrl: string;
-  year: number;
-  sender: {
-    name: string;
-    username: string;
-    avatarBg: string;
-    isAI?: boolean;
-  };
-  note: string;
-  tasteMatch: number;
-  timestamp: string;
-  status: "pending" | "accepted" | "rejected";
-}
-
-const initialRecommendations: RecommendationItem[] = [
-  {
-    id: "rec-1",
-    movieTitle: "Dune: Part Two",
-    movieId: "dune-part-two-2024",
-    posterUrl: "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
-    year: 2024,
-    sender: {
-      name: "CineAI Taste Engine",
-      username: "@cinevault-vector-ai",
-      avatarBg: "from-emerald-600 to-teal-500",
-      isAI: true,
-    },
-    note: "High 99.1% semantic alignment with your interest in Denis Villeneuve filmography, Hans Zimmer score dynamics, and desert cinematography.",
-    tasteMatch: 99,
-    timestamp: "10m ago",
-    status: "pending",
-  },
-  {
-    id: "rec-2",
-    movieTitle: "Interstellar",
-    movieId: "interstellar-2014",
-    posterUrl: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=600&q=80",
-    year: 2014,
-    sender: {
-      name: "Marcus Vance",
-      username: "@marcus_v",
-      avatarBg: "from-violet-600 to-indigo-500",
-    },
-    note: "You said you loved Arrival's time concepts — you have to rewatch this in 4K HDR Atmos tonight!",
-    tasteMatch: 96,
-    timestamp: "2h ago",
-    status: "pending",
-  },
-  {
-    id: "rec-3",
-    movieTitle: "Blade Runner 2049",
-    movieId: "blade-runner-2049",
-    posterUrl: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80",
-    year: 2017,
-    sender: {
-      name: "Elena Rostova",
-      username: "@elena_cinema",
-      avatarBg: "from-purple-600 to-pink-500",
-    },
-    note: "The lighting and Deakins cinematography in this is unmatched. Added notes on the color palette for you.",
-    tasteMatch: 98,
-    timestamp: "Yesterday",
-    status: "pending",
-  },
-  {
-    id: "rec-4",
-    movieTitle: "Oppenheimer",
-    movieId: "oppenheimer-2023",
-    posterUrl: "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=600&q=80",
-    year: 2023,
-    sender: {
-      name: "CineAI Taste Engine",
-      username: "@cinevault-vector-ai",
-      avatarBg: "from-emerald-600 to-teal-500",
-      isAI: true,
-    },
-    note: "Matches your historical ratings for Nolan non-linear editing structures and Ludwig Göransson orchestration.",
-    tasteMatch: 94,
-    timestamp: "2 days ago",
-    status: "accepted",
-  },
-  {
-    id: "rec-5",
-    movieTitle: "Arrival",
-    movieId: "arrival-2016",
-    posterUrl: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
-    year: 2016,
-    sender: {
-      name: "David Kim",
-      username: "@dkim",
-      avatarBg: "from-blue-600 to-cyan-500",
-    },
-    note: "One of the best linguistic sci-fi scripts ever written. Perfect match for your taste profile.",
-    tasteMatch: 97,
-    timestamp: "3 days ago",
-    status: "pending",
-  },
-  {
-    id: "rec-6",
-    movieTitle: "Poor Things",
-    movieId: "poor-things-2023",
-    posterUrl: "https://images.unsplash.com/photo-1478720568477-152d9b164e26?auto=format&fit=crop&w=600&q=80",
-    year: 2023,
-    sender: {
-      name: "Sarah Chen",
-      username: "@schen",
-      avatarBg: "from-amber-600 to-orange-500",
-    },
-    note: "Wildly inventive production design and lenses. Thought you might find the 16mm aesthetics fascinating.",
-    tasteMatch: 91,
-    timestamp: "4 days ago",
-    status: "pending",
-  },
-];
+import { getRecommendations, updateRecommendationStatus } from "@/lib/api/personal";
+import { LoadingState } from "@/components/ui/States";
 
 export default function SocialRecommendationsPage() {
-  const [recommendations, setRecommendations] = useState<RecommendationItem[]>(
-    initialRecommendations
-  );
   const [activeTab, setActiveTab] = useState<"inbox" | "ai" | "sent">("inbox");
   const [filterScore, setFilterScore] = useState<number>(0);
+  const queryClient = useQueryClient();
 
-  const handleAction = (id: string, newStatus: "pending" | "accepted" | "rejected") => {
-    setRecommendations((prev) =>
-      prev.map((rec) => (rec.id === id ? { ...rec, status: newStatus } : rec))
-    );
+  const { data: rawRecommendations = [], isLoading } = useQuery({
+    queryKey: ["recommendations"],
+    queryFn: getRecommendations,
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: "accepted" | "dismissed" }) =>
+      updateRecommendationStatus(id, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recommendations"] });
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] }); // Accepting adds to watchlist
+    },
+  });
+
+  const handleAction = (id: string, newStatus: "accepted" | "dismissed") => {
+    updateStatusMutation.mutate({ id, status: newStatus });
   };
+
+  // Map API models to UI models
+  const recommendations = rawRecommendations.map((rec) => ({
+    id: rec.id,
+    movieTitle: rec.title?.canonical_title || "Unknown Title",
+    movieId: rec.title_id,
+    posterUrl: rec.title?.poster_url || "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
+    year: rec.title?.production_year || 2024,
+    sender: {
+      name: rec.sender_name || "Anonymous",
+      username: `@${rec.sender_name?.toLowerCase().replace(/\s/g, "_") || "user"}`,
+      avatarBg: rec.sender_id === "ai" ? "from-emerald-600 to-teal-500" : "from-violet-600 to-indigo-500",
+      isAI: rec.sender_id === "ai",
+    },
+    note: rec.message || "No message attached.",
+    tasteMatch: 95, // hardcoded match score fallback
+    timestamp: new Date(rec.sent_at).toLocaleString(),
+    status: rec.status,
+  }));
 
   const filteredItems = recommendations.filter((rec) => {
     if (rec.tasteMatch < filterScore) return false;
@@ -156,6 +69,16 @@ export default function SocialRecommendationsPage() {
   });
 
   const pendingCount = recommendations.filter((r) => r.status === "pending").length;
+
+  if (isLoading) {
+    return (
+      <PageContainer title="Social Inbox & AI Taste Match" subtitle="Loading your network insights...">
+        <div className="p-8">
+          <LoadingState message="Fetching recommendations..." />
+        </div>
+      </PageContainer>
+    );
+  }
 
   return (
     <PageContainer
@@ -246,7 +169,7 @@ export default function SocialRecommendationsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {filteredItems.map((rec) => {
               const isAccepted = rec.status === "accepted";
-              const isRejected = rec.status === "rejected";
+              const isRejected = rec.status === "dismissed";
 
               return (
                 <div
@@ -257,7 +180,7 @@ export default function SocialRecommendationsPage() {
                       : isRejected
                       ? "border-zinc-900 opacity-50 bg-zinc-950/50"
                       : "border-zinc-800/80 hover:border-zinc-700 hover:shadow-xl hover:shadow-violet-950/20"
-                  }`}
+                  } ${updateStatusMutation.isPending && updateStatusMutation.variables?.id === rec.id ? 'opacity-50' : ''}`}
                 >
                   {/* Sender Header + AI Taste Match Badge */}
                   <div className="flex items-start justify-between gap-3 mb-4">
@@ -284,7 +207,7 @@ export default function SocialRecommendationsPage() {
                       </div>
                     </div>
 
-                    {/* GLOWING AI TASTE MATCH BADGE */}
+                    {/* GLOWING AI TASTE Match Badge */}
                     <div className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-semibold shadow-sm">
                       <Sparkles className="w-3 h-3 text-emerald-400" />
                       <span>{rec.tasteMatch}% Match</span>
@@ -332,7 +255,7 @@ export default function SocialRecommendationsPage() {
                     </div>
                   </div>
 
-                  {/* ACTION BUTTONS (ACCEPT / REJECT) */}
+                  {/* ACTION BUTTONS (ACCEPT / DISMISS) */}
                   <div className="flex items-center justify-between pt-1">
                     {isAccepted ? (
                       <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
@@ -346,33 +269,24 @@ export default function SocialRecommendationsPage() {
                       </div>
                     ) : (
                       <div className="w-full flex items-center justify-end gap-2.5">
-                        {/* REJECT BUTTON (Subtle Red/Zinc) */}
                         <button
-                          onClick={() => handleAction(rec.id, "rejected")}
+                          onClick={() => handleAction(rec.id, "dismissed")}
+                          disabled={updateStatusMutation.isPending}
                           className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium text-zinc-400 hover:text-red-400 bg-zinc-900/80 hover:bg-red-950/30 border border-zinc-800 hover:border-red-900/50 transition-all cursor-pointer"
                         >
                           <X className="w-3.5 h-3.5" />
                           <span>Dismiss</span>
                         </button>
 
-                        {/* ACCEPT BUTTON (Green/Violet Accent) */}
                         <button
                           onClick={() => handleAction(rec.id, "accepted")}
+                          disabled={updateStatusMutation.isPending}
                           className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 border border-violet-500 shadow-md shadow-violet-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
                         >
                           <BookmarkPlus className="w-3.5 h-3.5" />
                           <span>Accept & Watchlist</span>
                         </button>
                       </div>
-                    )}
-
-                    {(isAccepted || isRejected) && (
-                      <button
-                        onClick={() => handleAction(rec.id, "pending")}
-                        className="text-[11px] text-zinc-500 hover:text-zinc-300 underline"
-                      >
-                        Undo
-                      </button>
                     )}
                   </div>
                 </div>

@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Sparkles,
   Calendar,
@@ -20,6 +20,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { getTitleById } from "@/lib/api/titles";
+import { toggleWatchlistState, sendRecommendation } from "@/lib/api/personal";
 import { LoadingState } from "@/components/ui/States";
 
 export default function MovieDetailPage() {
@@ -38,6 +39,23 @@ export default function MovieDetailPage() {
     queryKey: ["title", titleId],
     queryFn: () => getTitleById(titleId),
     retry: 1,
+  });
+
+  const queryClient = useQueryClient();
+
+  const watchlistMutation = useMutation({
+    mutationFn: (newStatus: boolean) => toggleWatchlistState(titleId, newStatus),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
+      // In a real app we might also invalidate personal title state
+    },
+  });
+
+  const recommendMutation = useMutation({
+    mutationFn: (msg: string) => sendRecommendation(titleId, recipient, msg),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recommendations"] });
+    },
   });
 
   // Fallback cinematic metadata if direct API backend isn't populated for this ID
@@ -61,13 +79,18 @@ export default function MovieDetailPage() {
   const handleSendRecommendation = (e: React.FormEvent) => {
     e.preventDefault();
     if (!recipient) return;
-    setRecommendSent(true);
-    setTimeout(() => {
-      setRecommendSent(false);
-      setIsRecommendModalOpen(false);
-      setRecipient("");
-      setPersonalNote("");
-    }, 1800);
+    
+    recommendMutation.mutate(personalNote, {
+      onSuccess: () => {
+        setRecommendSent(true);
+        setTimeout(() => {
+          setRecommendSent(false);
+          setIsRecommendModalOpen(false);
+          setRecipient("");
+          setPersonalNote("");
+        }, 1800);
+      },
+    });
   };
 
   if (isLoading) {
@@ -172,12 +195,17 @@ export default function MovieDetailPage() {
 
               {/* Watchlist Toggle Button */}
               <button
-                onClick={() => setIsSavedToWatchlist(!isSavedToWatchlist)}
+                onClick={() => {
+                  const newStatus = !isSavedToWatchlist;
+                  setIsSavedToWatchlist(newStatus);
+                  watchlistMutation.mutate(newStatus);
+                }}
+                disabled={watchlistMutation.isPending}
                 className={`inline-flex items-center gap-2 px-5 py-3 text-xs sm:text-sm font-medium rounded-full border backdrop-blur-md transition-all cursor-pointer ${
                   isSavedToWatchlist
                     ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
                     : "bg-zinc-900/80 hover:bg-zinc-800 border-zinc-800 text-zinc-200"
-                }`}
+                } ${watchlistMutation.isPending ? "opacity-50 cursor-not-allowed" : ""}`}
               >
                 {isSavedToWatchlist ? (
                   <>
@@ -414,10 +442,11 @@ export default function MovieDetailPage() {
                   </button>
                   <button
                     type="submit"
-                    className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 rounded-xl shadow-lg shadow-violet-600/30 transition-all cursor-pointer"
+                    disabled={recommendMutation.isPending}
+                    className={`inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 rounded-xl shadow-lg shadow-violet-600/30 transition-all cursor-pointer ${recommendMutation.isPending ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Send Recommendation</span>
+                    <span>{recommendMutation.isPending ? "Sending..." : "Send Recommendation"}</span>
                   </button>
                 </div>
               </form>
