@@ -110,8 +110,9 @@ export async function decryptSession(cookieValue: string): Promise<SessionData |
   return session;
 }
 
+import { cookies } from "next/headers";
+
 export async function getSession(): Promise<SessionData | null> {
-  const { cookies } = await import("next/headers");
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
 
@@ -123,7 +124,6 @@ export async function getSession(): Promise<SessionData | null> {
 }
 
 export async function setSessionCookie(sessionData: SessionData): Promise<void> {
-  const { cookies } = await import("next/headers");
   const encrypted = await encryptSession(sessionData);
   const cookieStore = await cookies();
 
@@ -137,7 +137,6 @@ export async function setSessionCookie(sessionData: SessionData): Promise<void> 
 }
 
 export async function clearSessionCookie(): Promise<void> {
-  const { cookies } = await import("next/headers");
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
