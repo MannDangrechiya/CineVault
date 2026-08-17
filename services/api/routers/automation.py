@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 import uuid
 
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, HTTPException, status
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -551,3 +551,33 @@ async def get_smart_watchlist(
         quick_watches=quick_watches,
         friend_recommended=friend_recommended,
     )
+
+
+@router.post("/sync-metadata", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_automations_metadata_sync(
+    background_tasks: BackgroundTasks,
+    batch_size: int = Query(500, ge=1, le=5000, description="Batch size per query"),
+    max_batches: Optional[int] = Query(None, ge=1, description="Optional max batch count"),
+    api_key: Optional[str] = Query(None, description="Optional TMDB API key override"),
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+) -> Dict[str, Any]:
+    """Triggers background TMDB metadata and poster synchronization from automations router."""
+    from ..ingestion.tmdb_worker import sync_missing_posters
+    job_id = f"sync-meta-{uuid.uuid4().hex[:12]}"
+
+    background_tasks.add_task(
+        sync_missing_posters,
+        tmdb_api_key=api_key,
+        batch_size=batch_size,
+        max_batches=max_batches,
+    )
+
+    return {
+        "status": "ACCEPTED",
+        "job_id": job_id,
+        "message": "Background TMDB artwork & metadata synchronization dispatched.",
+        "batch_size": batch_size,
+        "max_batches": max_batches,
+        "triggered_at": datetime.now(timezone.utc).isoformat(),
+    }
+
