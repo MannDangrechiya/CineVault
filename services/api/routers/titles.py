@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..schemas.common import PaginatedResponse, CursorPagination
 from ..schemas.titles import (
     TitleSummary, TitleDetail, TitleLookupResponse, ProvenanceRecord,
-    ReleaseSummary, AvailabilityDiscoveryResponse, MetadataChangeHistoryRecord
+    ReleaseSummary, AvailabilityDiscoveryResponse, MetadataChangeHistoryRecord,
+    GenreSummary, CatalogPageResponse
 )
 from ..rate_limiter import enforce_rate_limit
 from ..auth.dependencies import get_optional_claims
@@ -16,8 +17,43 @@ from ..database import get_db
 from ..repositories.canonical import canonical_repository
 
 router = APIRouter(prefix="/v1/titles", tags=["Catalog Titles"])
+catalog_router = APIRouter(prefix="/v1", tags=["Catalog Browsing"])
 
-@router.get("", response_model=PaginatedResponse[TitleSummary], dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+@catalog_router.api_route("/catalog", methods=["GET", "HEAD"], response_model=CatalogPageResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+async def get_catalog(
+    q: Optional[str] = Query(None, description="Search query string"),
+    query: Optional[str] = Query(None, description="Alias for search query string"),
+    genre: Optional[str] = Query(None, description="Genre filter (name or ID)"),
+    production_year: Optional[int] = Query(None, description="Filter by production release year"),
+    year: Optional[int] = Query(None, description="Alias for production year"),
+    content_type: Optional[str] = Query(None, description="Filter by classification: MOVIE, TV_SERIES, ANIME"),
+    sort: Optional[str] = Query("-production_year,canonical_title", description="Sort order"),
+    limit: int = Query(24, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Retrieves offset-paginated canonical entertainment catalog (CAT-1)."""
+    return await canonical_repository.list_catalog(
+        db=db,
+        q=q,
+        query=query,
+        genre=genre,
+        production_year=production_year,
+        year=year,
+        content_type=content_type,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+
+@catalog_router.api_route("/genres", methods=["GET", "HEAD"], response_model=List[GenreSummary], dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+async def list_genres(
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Retrieves distinct genre taxonomy list from canonical metadata."""
+    return await canonical_repository.get_genres(db=db)
+
+@router.api_route("", methods=["GET", "HEAD"], response_model=PaginatedResponse[TitleSummary], dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 async def list_titles(
     content_type: Optional[str] = Query(None, description="Filter by classification: MOVIE, TV_SERIES, ANIME"),
     production_year: Optional[int] = Query(None, description="Filter by release year"),

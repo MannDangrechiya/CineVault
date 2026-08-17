@@ -139,6 +139,17 @@ class ProvenanceRecord(BaseModel):
     applied_rule_id: str
     is_manually_overridden: bool = False
 
+class GenreSummary(BaseModel):
+    genre_id: str
+    name: str
+    description: Optional[str] = None
+
+class CatalogPageResponse(BaseModel):
+    items: List[TitleSummary]
+    total: int
+    limit: int
+    next_offset: Optional[int] = None
+
 class PlatformSummary(BaseModel):
     platform_id: str
     name: str

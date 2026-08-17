@@ -68,5 +68,25 @@ class TestCanonicalRepository(unittest.TestCase):
         self.assertEqual(data[0]["field_name"], "canonical_title")
         self.assertEqual(data[0]["source_provider"], "KOBIS")
 
+    def test_router_catalog_endpoint(self):
+        response = self.client.get("/v1/catalog?limit=24&offset=0")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("items", data)
+        self.assertIn("total", data)
+        self.assertIn("limit", data)
+        self.assertEqual(data["limit"], 24)
+        self.assertGreater(len(data["items"]), 0)
+        self.assertGreater(data["total"], 0)
+
+    def test_router_genres_endpoint(self):
+        response = self.client.get("/v1/genres")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIsInstance(data, list)
+        self.assertGreater(len(data), 0)
+        self.assertIn("genre_id", data[0])
+        self.assertIn("name", data[0])
+
 if __name__ == "__main__":
     unittest.main()

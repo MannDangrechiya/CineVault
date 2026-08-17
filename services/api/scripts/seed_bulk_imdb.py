@@ -264,7 +264,7 @@ async def process_and_import(
                 tagline VARCHAR(512),
                 synopsis TEXT,
                 status_flag VARCHAR(32) DEFAULT 'ACTIVE'
-            ) ON COMMIT DROP;
+            );
             """
         )
         # Clear staging table in case of re-use in same session

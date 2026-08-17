@@ -34,8 +34,8 @@ class APIConfig(BaseModel):
     ).lower() == "true"
 
     # Database Integration (PgBouncer -> PostgreSQL)
-    pgbouncer_host: str = os.getenv("PGBOUNCER_HOST", "localhost")
-    pgbouncer_port: int = int(os.getenv("PGBOUNCER_PORT", "6432"))
+    pgbouncer_host: str = os.getenv("PGBOUNCER_HOST", os.getenv("POSTGRES_HOST", "localhost"))
+    pgbouncer_port: int = int(os.getenv("PGBOUNCER_PORT", os.getenv("POSTGRES_PORT", "5432")))
     postgres_db: str = os.getenv("POSTGRES_DB", "cinevault")
     postgres_user: str = os.getenv("POSTGRES_USER", "cinevault_dev")
     postgres_password: str = os.getenv("POSTGRES_PASSWORD", "dev_postgres_password_change_me")

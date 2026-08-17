@@ -6,7 +6,7 @@ import uuid
 import logging
 from typing import List, Optional, Tuple
 from datetime import datetime, timezone
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,7 +25,7 @@ from ..schemas.titles import (
     AvailabilityDiscoveryResponse, TitleAliasSummary, ThemeSummary, KeywordSummary,
     CertificationSummary, CreditSummary, CompanySummary, AwardResultSummary,
     FestivalParticipationSummary, EpisodeSummary, SeasonSummary, ExternalIdSummary,
-    MetadataChangeHistoryRecord
+    MetadataChangeHistoryRecord, GenreSummary, CatalogPageResponse
 )
 from ..auth.audit import audit_logger
 
@@ -262,7 +262,7 @@ class CanonicalRepository:
             try:
                 stmt = select(TitleModel)
                 if content_type:
-                    stmt = stmt.where(TitleModel.content_type_id == content_type)
+                    stmt = stmt.where(TitleModel.content_type_id.ilike(content_type))
                 if production_year:
                     stmt = stmt.where(TitleModel.production_year == production_year)
                 if cursor:
@@ -284,12 +284,12 @@ class CanonicalRepository:
                             display_id=t.display_id,
                             canonical_title=t.canonical_title,
                             original_title=t.original_title,
-                            content_type=t.content_type_id,
+                            content_type=(t.content_type_id or "MOVIE").upper(),
                             production_year=t.production_year,
                             origin_country="KR",
-                            has_licensed_artwork=True,
-                            poster_url=f"https://cdn.cinevault.org/artwork/posters/{t.display_id.lower()}.jpg",
-                            backdrop_url=f"https://cdn.cinevault.org/artwork/backdrops/{t.display_id.lower()}.jpg"
+                            has_licensed_artwork=bool(t.poster_url),
+                            poster_url=t.poster_url or f"https://cdn.cinevault.org/artwork/posters/{t.display_id.lower()}.jpg",
+                            backdrop_url=t.backdrop_url or f"https://cdn.cinevault.org/artwork/backdrops/{t.display_id.lower()}.jpg"
                         ))
                     return summaries
             except Exception as e:
@@ -308,6 +308,190 @@ class CanonicalRepository:
                 continue
             items.append(TitleSummary(**data))
         return items
+
+    async def list_catalog(
+        self,
+        db: Optional[AsyncSession],
+        q: Optional[str] = None,
+        query: Optional[str] = None,
+        genre: Optional[str] = None,
+        production_year: Optional[int] = None,
+        year: Optional[int] = None,
+        content_type: Optional[str] = None,
+        sort: Optional[str] = "-production_year,canonical_title",
+        limit: int = 24,
+        offset: int = 0,
+    ) -> CatalogPageResponse:
+        """
+        Retrieves offset-paginated catalog of canonical titles with search, genre,
+        year, content_type, and sort filtering.
+        """
+        search_text = (q or query or "").strip()
+        effective_year = production_year if production_year is not None else year
+        sort_field = (sort or "-production_year,canonical_title").strip()
+
+        if db is not None:
+            try:
+                base_stmt = select(TitleModel)
+                conditions = []
+
+                if search_text:
+                    conditions.append(
+                        or_(
+                            TitleModel.canonical_title.ilike(f"%{search_text}%"),
+                            TitleModel.original_title.ilike(f"%{search_text}%"),
+                            TitleModel.display_id.ilike(f"%{search_text}%"),
+                        )
+                    )
+
+                if effective_year is not None:
+                    conditions.append(TitleModel.production_year == effective_year)
+
+                if content_type:
+                    conditions.append(TitleModel.content_type_id.ilike(content_type.strip()))
+
+                if genre and genre.strip():
+                    g_val = genre.strip()
+                    base_stmt = base_stmt.join(
+                        TitleGenreModel, TitleModel.title_id == TitleGenreModel.title_id
+                    ).join(
+                        GenreModel, TitleGenreModel.genre_id == GenreModel.genre_id
+                    )
+                    conditions.append(
+                        or_(
+                            GenreModel.genre_id.ilike(f"%{g_val}%"),
+                            GenreModel.name.ilike(f"%{g_val}%"),
+                        )
+                    )
+
+                if conditions:
+                    base_stmt = base_stmt.where(and_(*conditions))
+
+                # Count query
+                count_stmt = select(func.count(distinct(TitleModel.title_id)))
+                if genre and genre.strip():
+                    count_stmt = count_stmt.join(
+                        TitleGenreModel, TitleModel.title_id == TitleGenreModel.title_id
+                    ).join(
+                        GenreModel, TitleGenreModel.genre_id == GenreModel.genre_id
+                    )
+                if conditions:
+                    count_stmt = count_stmt.where(and_(*conditions))
+
+                total_res = await db.execute(count_stmt)
+                total = total_res.scalar() or 0
+
+                # Sorting
+                if sort_field in ("canonical_title", "+canonical_title"):
+                    order_by = [TitleModel.canonical_title.asc()]
+                elif sort_field == "-canonical_title":
+                    order_by = [TitleModel.canonical_title.desc()]
+                elif sort_field in ("production_year", "+production_year"):
+                    order_by = [TitleModel.production_year.asc().nullslast(), TitleModel.canonical_title.asc()]
+                elif sort_field == "-production_year":
+                    order_by = [TitleModel.production_year.desc().nullslast(), TitleModel.canonical_title.asc()]
+                elif sort_field == "production_year,canonical_title":
+                    order_by = [TitleModel.production_year.asc().nullslast(), TitleModel.canonical_title.asc()]
+                elif sort_field == "-production_year,canonical_title":
+                    order_by = [TitleModel.production_year.desc().nullslast(), TitleModel.canonical_title.asc()]
+                else:
+                    order_by = [TitleModel.production_year.desc().nullslast(), TitleModel.canonical_title.asc()]
+
+                paginated_stmt = base_stmt.order_by(*order_by).offset(offset).limit(limit)
+                res = await db.execute(paginated_stmt)
+                db_titles = res.scalars().all()
+
+                summaries = [
+                    TitleSummary(
+                        id=str(t.title_id),
+                        display_id=t.display_id,
+                        canonical_title=t.canonical_title,
+                        original_title=t.original_title,
+                        content_type=(t.content_type_id or "MOVIE").upper(),
+                        production_year=t.production_year,
+                        origin_country="KR",
+                        has_licensed_artwork=bool(t.poster_url),
+                        poster_url=t.poster_url or f"https://cdn.cinevault.org/artwork/posters/{t.display_id.lower()}.jpg",
+                        backdrop_url=t.backdrop_url or f"https://cdn.cinevault.org/artwork/backdrops/{t.display_id.lower()}.jpg",
+                    )
+                    for t in db_titles
+                ]
+                next_offset = (offset + limit) if (offset + limit) < total else None
+                return CatalogPageResponse(
+                    items=summaries,
+                    total=total,
+                    limit=limit,
+                    next_offset=next_offset,
+                )
+            except Exception as e:
+                logger.error(f"Database query list_catalog failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        # Fallback to seed records
+        filtered = []
+        for data in SEED_FALLBACK_TITLES.values():
+            if search_text and search_text.lower() not in data["canonical_title"].lower() and search_text.lower() not in (data.get("original_title") or "").lower():
+                continue
+            if effective_year and data.get("production_year") != effective_year:
+                continue
+            if content_type and data.get("content_type", "").upper() != content_type.upper():
+                continue
+            if genre and genre.lower() not in [g.lower() for g in data.get("genres", [])]:
+                continue
+            filtered.append(TitleSummary(**data))
+
+        # Sort
+        if sort_field in ("canonical_title", "+canonical_title"):
+            filtered.sort(key=lambda x: x.canonical_title)
+        elif sort_field == "-canonical_title":
+            filtered.sort(key=lambda x: x.canonical_title, reverse=True)
+        elif sort_field == "production_year":
+            filtered.sort(key=lambda x: x.production_year or 0)
+        else:
+            filtered.sort(key=lambda x: (x.production_year or 0), reverse=True)
+
+        total = len(filtered)
+        items = filtered[offset:offset + limit]
+        next_offset = (offset + limit) if (offset + limit) < total else None
+        return CatalogPageResponse(
+            items=items,
+            total=total,
+            limit=limit,
+            next_offset=next_offset,
+        )
+
+    async def get_genres(self, db: Optional[AsyncSession]) -> List[GenreSummary]:
+        """Returns distinct genre taxonomy list from canonical.genre."""
+        if db is not None:
+            try:
+                stmt = select(GenreModel).order_by(GenreModel.name.asc())
+                res = await db.execute(stmt)
+                genres_orm = res.scalars().all()
+                if genres_orm:
+                    return [
+                        GenreSummary(
+                            genre_id=g.genre_id,
+                            name=g.name,
+                            description=g.description
+                        )
+                        for g in genres_orm
+                    ]
+            except Exception as e:
+                logger.error(f"Database query get_genres failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        # Seed fallback
+        return [
+            GenreSummary(genre_id="action", name="Action", description="High-energy sequences, chases, physical feats, and combat."),
+            GenreSummary(genre_id="animation", name="Animation", description="Hand-drawn, computer-generated, or stop-motion animated works."),
+            GenreSummary(genre_id="comedy", name="Comedy", description="Humorous narratives designed to entertain and amuse."),
+            GenreSummary(genre_id="documentary", name="Documentary", description="Non-fictional recording of real-world events, subjects, or stories."),
+            GenreSummary(genre_id="drama", name="Drama", description="Character-driven narratives focusing on emotional themes."),
+            GenreSummary(genre_id="sci_fi", name="Science Fiction", description="Speculative fiction dealing with futuristic concepts, technology, or space."),
+            GenreSummary(genre_id="thriller", name="Thriller", description="High-suspense tension and psychological anticipation.")
+        ]
 
     async def get_title_by_id(self, db: Optional[AsyncSession], title_id: str) -> Optional[TitleDetail]:
         """Retrieves single canonical Title by UUIDv7 primary key (ADR-001)."""
