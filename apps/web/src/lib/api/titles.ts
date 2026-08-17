@@ -2,7 +2,14 @@
 // Fetches canonical titles from FastAPI backend with rich fallback dataset for local preview & offline dev.
 
 import { apiFetch } from "./client";
-import { PaginatedResponse, TitleSummary, TitleDetail } from "./types";
+import {
+  PaginatedResponse,
+  TitleSummary,
+  TitleDetail,
+  CatalogParams,
+  CatalogPageResponse,
+  GenreSummary,
+} from "./types";
 
 export interface ListTitlesParams {
   content_type?: string;
@@ -451,4 +458,119 @@ export async function getTitleById(titleId: string): Promise<TitleDetail> {
 
   // Default fallback if unknown ID requested
   return MOCK_MOVIES[2]; // Blade Runner 2049 default
+}
+
+// ── Catalog Browsing (Offset-based Infinite Scroll) ─────────────────────
+
+const ALL_MOCK_TITLES: TitleDetail[] = [...MOCK_MOVIES, ...MOCK_SERIES];
+
+/**
+ * Hardcoded genre list derived from mock data — used when the backend is offline.
+ */
+const FALLBACK_GENRES: GenreSummary[] = [
+  { genre_id: "action", name: "Action" },
+  { genre_id: "adventure", name: "Adventure" },
+  { genre_id: "animation", name: "Animation" },
+  { genre_id: "biography", name: "Biography" },
+  { genre_id: "comedy", name: "Comedy" },
+  { genre_id: "crime", name: "Crime" },
+  { genre_id: "drama", name: "Drama" },
+  { genre_id: "history", name: "History" },
+  { genre_id: "music", name: "Music" },
+  { genre_id: "mystery", name: "Mystery" },
+  { genre_id: "romance", name: "Romance" },
+  { genre_id: "sci-fi", name: "Sci-Fi" },
+  { genre_id: "thriller", name: "Thriller" },
+];
+
+/**
+ * Offset-based catalog page fetch with search, genre, year and sort filters.
+ * Tries the live FastAPI backend first, then falls back to filtering/paginating
+ * the curated mock dataset client-side.
+ */
+export async function getCatalogPage(
+  params: CatalogParams = {}
+): Promise<CatalogPageResponse> {
+  const { q, genre, production_year, sort, limit = 24, offset = 0 } = params;
+
+  // ── Try live backend ──────────────────────────────────────────────────
+  try {
+    const query = new URLSearchParams();
+    if (q) query.append("q", q);
+    if (genre) query.append("genre", genre);
+    if (production_year) query.append("production_year", production_year.toString());
+    if (sort) query.append("sort", sort);
+    query.append("limit", limit.toString());
+    query.append("offset", offset.toString());
+
+    const endpoint = `/v1/catalog?${query.toString()}`;
+    const res = await apiFetch<CatalogPageResponse>(endpoint);
+    if (res && Array.isArray(res.items)) {
+      return res;
+    }
+  } catch {
+    // Backend offline — fallback to mock data
+  }
+
+  // ── Mock fallback with client-side filtering & pagination ─────────────
+  let filtered = [...ALL_MOCK_TITLES];
+
+  // Text search (case-insensitive substring match)
+  if (q) {
+    const lower = q.toLowerCase();
+    filtered = filtered.filter(
+      (t) =>
+        t.canonical_title.toLowerCase().includes(lower) ||
+        (t.original_title && t.original_title.toLowerCase().includes(lower)) ||
+        (t.synopsis && t.synopsis.toLowerCase().includes(lower))
+    );
+  }
+
+  // Genre filter (case-insensitive match against genres array)
+  if (genre) {
+    const g = genre.toLowerCase();
+    filtered = filtered.filter(
+      (t) => t.genres && t.genres.some((gn) => gn.toLowerCase() === g)
+    );
+  }
+
+  // Year filter
+  if (production_year) {
+    filtered = filtered.filter((t) => t.production_year === production_year);
+  }
+
+  // Sort
+  if (sort === "year" || sort === "-production_year,canonical_title") {
+    filtered.sort((a, b) => (b.production_year ?? 0) - (a.production_year ?? 0));
+  } else if (sort === "title" || sort === "canonical_title") {
+    filtered.sort((a, b) => a.canonical_title.localeCompare(b.canonical_title));
+  }
+
+  const total = filtered.length;
+  const sliced = filtered.slice(offset, offset + limit);
+  const nextOffset = offset + limit < total ? offset + limit : null;
+
+  return {
+    items: sliced,
+    total,
+    limit,
+    next_offset: nextOffset,
+  };
+}
+
+/**
+ * Fetches the genre taxonomy list from the backend.
+ * Falls back to hardcoded genres when the backend is unavailable.
+ */
+export async function getGenres(): Promise<GenreSummary[]> {
+  try {
+    const res = await apiFetch<GenreSummary[]>("/v1/genres");
+    if (res && Array.isArray(res) && res.length > 0) {
+      return res;
+    }
+  } catch {
+    // Backend offline
+  }
+
+  return FALLBACK_GENRES;
 }

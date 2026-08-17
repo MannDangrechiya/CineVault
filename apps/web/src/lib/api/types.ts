@@ -56,6 +56,32 @@ export interface APIErrorResponse {
   error: APIErrorBody;
 }
 
+// ── Catalog Browsing (Offset Pagination) ────────────────────────────────
+
+export interface CatalogParams {
+  q?: string;
+  genre?: string;
+  production_year?: number;
+  sort?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface CatalogPageResponse {
+  items: TitleSummary[];
+  total: number;
+  limit: number;
+  next_offset: number | null;
+}
+
+export interface GenreSummary {
+  genre_id: string;
+  name: string;
+  description?: string | null;
+}
+
+// ── API Error Types ─────────────────────────────────────────────────────
+
 export class APIClientError extends Error {
   public status: number;
   public code?: string;
