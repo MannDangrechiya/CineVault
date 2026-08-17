@@ -2,7 +2,7 @@
 # CineVault OS v2.0 — Development Environment Shutdown Script (Bash / POSIX)
 # Usage: ./scripts/stop-dev.sh
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 echo ""
 echo "================================================================="
@@ -13,7 +13,7 @@ echo ""
 # 1. Stop Docker Infrastructure
 echo "[1/2] Stopping Docker containers..."
 if command -v docker >/dev/null 2>&1; then
-  (cd "${ROOT_DIR}" && docker compose stop) || true
+  (cd "${ROOT_DIR}/infra/docker" && docker compose stop) || true
   echo "      ✓ Docker containers stopped."
 fi
 

@@ -14,7 +14,7 @@ param (
 )
 
 $ErrorActionPreference = "Continue"
-$RootDir = (Resolve-Path "$PSScriptRoot\..").Path
+$RootDir = (Resolve-Path "$PSScriptRoot\..\..").Path
 
 Write-Host ""
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -28,7 +28,7 @@ Write-Host ""
 # 1. Start Docker Infrastructure (PostgreSQL 16 pgvector, Valkey, RabbitMQ, MinIO, PgBouncer)
 if (-not $NoDocker) {
     Write-Host "[1/4] Checking Docker Infrastructure..." -ForegroundColor Yellow
-    Push-Location $RootDir
+    Push-Location "$RootDir\infra\docker"
     try {
         $dockerCheck = docker info 2>&1
         if ($LASTEXITCODE -eq 0) {
@@ -74,7 +74,7 @@ Write-Host "      [OK] Backend process started in dedicated window." -Foreground
 # 4. Launch Next.js Web Client
 Write-Host ""
 Write-Host "[4/4] Launching Next.js OLED Web Client (Port $WebPort)..." -ForegroundColor Yellow
-$WebCmd = "cd '$RootDir\web'; Write-Host '--- CineVault OS v2.0 Web UI (Port $WebPort) ---' -ForegroundColor Magenta; npm run dev"
+$WebCmd = "cd '$RootDir\apps\web'; Write-Host '--- CineVault OS v2.0 Web UI (Port $WebPort) ---' -ForegroundColor Magenta; npm run dev"
 Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $WebCmd
 Write-Host "      [OK] Web client process started in dedicated window." -ForegroundColor Green
 
@@ -82,7 +82,7 @@ Write-Host "      [OK] Web client process started in dedicated window." -Foregro
 if ($WithFlutter) {
     Write-Host ""
     Write-Host "[+] Launching Flutter Client..." -ForegroundColor Yellow
-    $FlutterCmd = "cd '$RootDir\client'; flutter run -d chrome"
+    $FlutterCmd = "cd '$RootDir\apps\mobile'; flutter run -d chrome"
     Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $FlutterCmd
     Write-Host "      [OK] Flutter client launched." -ForegroundColor Green
 }

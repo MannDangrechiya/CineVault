@@ -131,7 +131,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: web
+        working-directory: apps/web
 
     steps:
       - name: Checkout Repository
@@ -142,7 +142,7 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
 
       - name: Install Web Dependencies
         run: npm ci
@@ -164,7 +164,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: client
+        working-directory: apps/mobile
 
     steps:
       - name: Checkout Repository

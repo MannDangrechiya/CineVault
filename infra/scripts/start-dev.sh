@@ -4,7 +4,7 @@
 
 set -e
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 API_PORT="${PORT:-8000}"
 WEB_PORT=3000
 START_DOCKER=true
@@ -36,7 +36,7 @@ echo ""
 if [ "$START_DOCKER" = true ]; then
   echo "[1/4] Checking Docker Infrastructure..."
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-    (cd "${ROOT_DIR}" && docker compose up -d)
+    (cd "${ROOT_DIR}/infra/docker" && docker compose up -d)
     echo "      ✓ Docker containers started."
   else
     echo "      ℹ Docker not running. Continuing in standalone mode."
@@ -63,7 +63,7 @@ echo "      ✓ Backend API launched (PID: ${BACKEND_PID})."
 # 4. Launch Next.js Web Client
 echo ""
 echo "[4/4] Launching Next.js OLED Web Client (Port ${WEB_PORT})..."
-(cd "${ROOT_DIR}/web" && npm run dev) &
+(cd "${ROOT_DIR}/apps/web" && npm run dev) &
 WEB_PID=$!
 echo "${WEB_PID}" > "${ROOT_DIR}/.web.pid"
 echo "      ✓ Web client launched (PID: ${WEB_PID})."

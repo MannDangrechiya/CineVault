@@ -7,7 +7,7 @@ param (
     [switch]$DockerDown
 )
 
-$RootDir = (Resolve-Path "$PSScriptRoot\..").Path
+$RootDir = (Resolve-Path "$PSScriptRoot\..\..").Path
 
 Write-Host ""
 Write-Host "=================================================================" -ForegroundColor Yellow
@@ -17,7 +17,7 @@ Write-Host ""
 
 # 1. Stop Docker Infrastructure
 Write-Host "[1/2] Stopping Docker containers..." -ForegroundColor Yellow
-Push-Location $RootDir
+Push-Location "$RootDir\infra\docker"
 try {
     if ($DockerDown) {
         docker compose down

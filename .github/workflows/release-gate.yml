@@ -77,7 +77,7 @@ jobs:
 
       - name: Build Web App Image
         run: |
-          docker build -t cinevault-web:latest -f Dockerfile.web web/ || echo "Web build simulated"
+          docker build -t cinevault-web:latest -f Dockerfile.web apps/web/ || echo "Web build simulated"
 
   # ---------------------------------------------------------------------------
   # 3. Environment Deployment (Gated)

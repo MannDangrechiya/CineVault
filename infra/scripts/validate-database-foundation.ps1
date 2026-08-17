@@ -4,10 +4,11 @@ Write-Host "=================================================================" -
 Write-Host "  CineVault OS - Phase 1 Database Foundation Validation Suite" -ForegroundColor Cyan
 Write-Host "=================================================================" -ForegroundColor Cyan
 
+$RootDir = (Resolve-Path "$PSScriptRoot\..\..").Path
 $hasError = $false
 
 # 1. Verify Flyway Migration Directory & Files
-Write-Host "`n[Check 1] Auditing Flyway migration files in sql/migrations/..." -ForegroundColor Yellow
+Write-Host "`n[Check 1] Auditing Flyway migration files in db/migrations/..." -ForegroundColor Yellow
 $migrationFiles = @(
     "V1.0__create_extensions_and_functions.sql",
     "V1.1__create_logical_schemas.sql",
@@ -22,7 +23,7 @@ $migrationFiles = @(
 )
 
 foreach ($file in $migrationFiles) {
-    $path = "sql/migrations/$file"
+    $path = "$RootDir/db/migrations/$file"
     if (Test-Path $path) {
         Write-Host "  [OK] Migration file present: $file" -ForegroundColor Green
     } else {
@@ -35,7 +36,7 @@ foreach ($file in $migrationFiles) {
 Write-Host "`n[Check 2] Validating SQL DDL invariants and architecture boundaries..." -ForegroundColor Yellow
 
 # UUIDv7 Check
-$v10Content = Get-Content "sql/migrations/V1.0__create_extensions_and_functions.sql" -Raw
+$v10Content = Get-Content "$RootDir/db/migrations/V1.0__create_extensions_and_functions.sql" -Raw
 if ($v10Content -match "generate_uuid_v7\(\)") {
     Write-Host "  [OK] UUIDv7 generator function defined in V1.0." -ForegroundColor Green
 } else {
@@ -44,7 +45,7 @@ if ($v10Content -match "generate_uuid_v7\(\)") {
 }
 
 # 5 Logical Schemas Check
-$v11Content = Get-Content "sql/migrations/V1.1__create_logical_schemas.sql" -Raw
+$v11Content = Get-Content "$RootDir/db/migrations/V1.1__create_logical_schemas.sql" -Raw
 $schemas = @("canonical", "personal", "ingestion", "quality", "audit")
 foreach ($schema in $schemas) {
     if ($v11Content -match "CREATE SCHEMA IF NOT EXISTS $schema") {
@@ -56,7 +57,7 @@ foreach ($schema in $schemas) {
 }
 
 # Partial Unique Index Check
-$v17Content = Get-Content "sql/migrations/V1.7__create_indexes_and_constraints.sql" -Raw
+$v17Content = Get-Content "$RootDir/db/migrations/V1.7__create_indexes_and_constraints.sql" -Raw
 if ($v17Content -match "unique_primary_edition") {
     Write-Host "  [OK] Partial unique index unique_primary_edition present." -ForegroundColor Green
 } else {
@@ -65,7 +66,7 @@ if ($v17Content -match "unique_primary_edition") {
 }
 
 # Role Permissions Check
-$v18Content = Get-Content "sql/migrations/V1.8__create_database_roles.sql" -Raw
+$v18Content = Get-Content "$RootDir/db/migrations/V1.8__create_database_roles.sql" -Raw
 $roles = @("cinevault_app", "cinevault_ingest", "cinevault_admin", "cinevault_analytics")
 foreach ($role in $roles) {
     if ($v18Content -match $role) {
@@ -77,7 +78,7 @@ foreach ($role in $roles) {
 }
 
 # AI Write Boundary Verification
-$v18Lines = Get-Content "sql/migrations/V1.8__create_database_roles.sql"
+$v18Lines = Get-Content "$RootDir/db/migrations/V1.8__create_database_roles.sql"
 $ingestHasCanonicalWrite = $false
 foreach ($line in $v18Lines) {
     if ($line -match "GRANT.*INSERT.*canonical.*cinevault_ingest" -or $line -match "GRANT.*UPDATE.*canonical.*cinevault_ingest") {
@@ -94,7 +95,7 @@ if (-not $ingestHasCanonicalWrite) {
 
 # 3. Check docker-compose.yml for Flyway & PgBouncer
 Write-Host "`n[Check 3] Auditing docker-compose.yml configuration for Database Foundation..." -ForegroundColor Yellow
-$dcContent = Get-Content "docker-compose.yml" -Raw
+$dcContent = Get-Content "$RootDir/infra/docker/docker-compose.yml" -Raw
 if ($dcContent -match "flyway/flyway:10-alpine" -and $dcContent -match "edoburu/pgbouncer:latest") {
     Write-Host "  [OK] Flyway and PgBouncer services correctly configured in docker-compose.yml." -ForegroundColor Green
 } else {
