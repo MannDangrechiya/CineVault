@@ -45,23 +45,38 @@ export async function getTitleById(titleId: string): Promise<TitleDetail> {
 // ── Catalog Browsing (Offset-based Infinite Scroll) ─────────────────────
 
 /**
- * Offset-based catalog page fetch with search, genre, year and sort filters.
- * Fetches directly from the live FastAPI backend.
+ * Offset-based catalog page fetch with search, genre, year, content_type and sort filters.
+ * Fetches directly from the live FastAPI `/titles` endpoint.
  */
 export async function getCatalogPage(
   params: CatalogParams = {}
 ): Promise<CatalogPageResponse> {
-  const { q, genre, production_year, sort, limit = 24, offset = 0 } = params;
+  const {
+    q,
+    query: queryParam,
+    genre,
+    year,
+    production_year,
+    content_type,
+    sort,
+    limit = 24,
+    offset = 0,
+  } = params;
 
-  const query = new URLSearchParams();
-  if (q) query.append("q", q);
-  if (genre) query.append("genre", genre);
-  if (production_year) query.append("production_year", production_year.toString());
-  if (sort) query.append("sort", sort);
-  query.append("limit", limit.toString());
-  query.append("offset", offset.toString());
+  const searchParams = new URLSearchParams();
+  const searchText = queryParam ?? q;
+  if (searchText) searchParams.append("query", searchText);
+  if (genre) searchParams.append("genre", genre);
+  const releaseYear = year ?? production_year;
+  if (releaseYear !== undefined && releaseYear !== null) {
+    searchParams.append("year", releaseYear.toString());
+  }
+  if (content_type) searchParams.append("content_type", content_type);
+  if (sort) searchParams.append("sort", sort);
+  searchParams.append("limit", limit.toString());
+  searchParams.append("offset", offset.toString());
 
-  const endpoint = `/v1/catalog?${query.toString()}`;
+  const endpoint = `/titles?${searchParams.toString()}`;
   return await apiFetch<CatalogPageResponse>(endpoint);
 }
 
@@ -69,5 +84,6 @@ export async function getCatalogPage(
  * Fetches the genre taxonomy list from the backend.
  */
 export async function getGenres(): Promise<GenreSummary[]> {
-  return await apiFetch<GenreSummary[]>("/v1/genres");
+  return await apiFetch<GenreSummary[]>("/genres");
 }
+

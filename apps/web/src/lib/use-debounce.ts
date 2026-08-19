@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
  * Debounces a rapidly-changing value. Returns the debounced value after
  * the specified delay (ms) of inactivity.
  */
-export function useDebounce<T>(value: T, delay = 500): T {
+export function useDebounce<T>(value: T, delay = 400): T {
   const [debounced, setDebounced] = useState(value);
 
   useEffect(() => {

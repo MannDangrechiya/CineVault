@@ -2,12 +2,11 @@
 
 import React, { useState, useMemo } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useInView } from "react-intersection-observer";
-import { Search, X, SlidersHorizontal, Loader2, Film } from "lucide-react";
+import { Search, X, SlidersHorizontal } from "lucide-react";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { EmptyState, ErrorState } from "@/components/ui/States";
-import { TitleCard } from "@/components/catalog/TitleCard";
 import { CatalogSkeleton } from "@/components/catalog/CatalogSkeleton";
+import { VirtualizedCatalogGrid } from "@/components/catalog/VirtualizedCatalogGrid";
 import { getCatalogPage, getGenres } from "@/lib/api/titles";
 import { useDebounce } from "@/lib/use-debounce";
 import { cn } from "@/lib/utils";
@@ -23,7 +22,9 @@ const YEAR_OPTIONS = Array.from(
 // ── Sort options ────────────────────────────────────────────────────────
 const SORT_OPTIONS = [
   { value: "-production_year,canonical_title", label: "Newest First" },
+  { value: "production_year,canonical_title", label: "Oldest First" },
   { value: "canonical_title", label: "Title A–Z" },
+  { value: "-canonical_title", label: "Title Z–A" },
 ] as const;
 
 export default function MoviesPage() {
@@ -33,7 +34,7 @@ export default function MoviesPage() {
   const [selectedYear, setSelectedYear] = useState<number | undefined>();
   const [selectedSort, setSelectedSort] = useState<string>(SORT_OPTIONS[0].value);
 
-  const debouncedQuery = useDebounce(searchInput, 500);
+  const debouncedQuery = useDebounce(searchInput, 400);
 
   const hasActiveFilters =
     !!debouncedQuery || !!selectedGenre || !!selectedYear;
@@ -58,6 +59,7 @@ export default function MoviesPage() {
   } = useInfiniteQuery<CatalogPageResponse>({
     queryKey: [
       "catalog",
+      "MOVIE",
       debouncedQuery,
       selectedGenre,
       selectedYear,
@@ -65,9 +67,10 @@ export default function MoviesPage() {
     ],
     queryFn: ({ pageParam }) =>
       getCatalogPage({
-        q: debouncedQuery || undefined,
+        content_type: "MOVIE",
+        query: debouncedQuery || undefined,
         genre: selectedGenre || undefined,
-        production_year: selectedYear,
+        year: selectedYear,
         sort: selectedSort,
         limit: 24,
         offset: pageParam as number,
@@ -83,17 +86,6 @@ export default function MoviesPage() {
   );
   const totalCount = data?.pages[0]?.total ?? 0;
 
-  // ── Intersection observer for scroll sentinel ─────────────────────────
-  const { ref: sentinelRef } = useInView({
-    threshold: 0,
-    rootMargin: "400px",
-    onChange: (inView) => {
-      if (inView && hasNextPage && !isFetchingNextPage) {
-        fetchNextPage();
-      }
-    },
-  });
-
   // ── Clear all filters ─────────────────────────────────────────────────
   const clearFilters = () => {
     setSearchInput("");
@@ -108,7 +100,7 @@ export default function MoviesPage() {
       subtitle={
         !isLoading && !isError
           ? `${totalCount.toLocaleString()} title${totalCount !== 1 ? "s" : ""} in catalog`
-          : "Browsing canonical feature films and series"
+          : "Browsing canonical feature films and motion pictures"
       }
     >
       <div className="space-y-6">
@@ -124,7 +116,7 @@ export default function MoviesPage() {
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search titles, synopses, directors..."
+              placeholder="Search titles, synopses, display IDs..."
               className="w-full pl-10 pr-10 py-2.5 text-sm bg-zinc-900/60 border border-zinc-800/80 rounded-xl text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 transition-all"
             />
             {searchInput && (
@@ -170,6 +162,7 @@ export default function MoviesPage() {
             {/* Year dropdown */}
             <select
               id="catalog-year-filter"
+              aria-label="Filter by year"
               value={selectedYear ?? ""}
               onChange={(e) =>
                 setSelectedYear(
@@ -189,6 +182,7 @@ export default function MoviesPage() {
             {/* Sort dropdown */}
             <select
               id="catalog-sort"
+              aria-label="Sort catalog"
               value={selectedSort}
               onChange={(e) => setSelectedSort(e.target.value)}
               className="px-3 py-1.5 text-xs bg-zinc-900/60 border border-zinc-800/60 rounded-lg text-zinc-300 focus:outline-none focus:border-violet-500/50 cursor-pointer appearance-none"
@@ -243,44 +237,18 @@ export default function MoviesPage() {
           />
         )}
 
-        {/* ── Title grid ───────────────────────────────────────────── */}
+        {/* ── Virtualized Title Grid ───────────────────────────────── */}
         {!isLoading && !isError && items.length > 0 && (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {items.map((title, idx) => (
-                <TitleCard key={`${title.id}-${idx}`} title={title} />
-              ))}
-            </div>
-
-            {/* Scroll sentinel — triggers next page fetch */}
-            <div ref={sentinelRef} className="h-px" />
-
-            {/* Loading spinner for next page */}
-            {isFetchingNextPage && (
-              <div className="flex items-center justify-center py-8">
-                <div className="flex items-center gap-3 px-5 py-2.5 rounded-full bg-zinc-900/60 border border-zinc-800/50">
-                  <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
-                  <span className="text-xs text-zinc-400 font-medium">
-                    Loading more titles…
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* End of catalog */}
-            {!hasNextPage && items.length > 0 && (
-              <div className="flex items-center justify-center py-8">
-                <div className="flex items-center gap-2 text-xs text-zinc-600">
-                  <Film className="w-3.5 h-3.5" />
-                  <span>
-                    Showing all {totalCount.toLocaleString()} titles
-                  </span>
-                </div>
-              </div>
-            )}
-          </>
+          <VirtualizedCatalogGrid
+            items={items}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            fetchNextPage={fetchNextPage}
+            totalCount={totalCount}
+          />
         )}
       </div>
     </PageContainer>
   );
 }
+

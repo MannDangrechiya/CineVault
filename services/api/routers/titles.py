@@ -18,7 +18,9 @@ from ..repositories.canonical import canonical_repository
 
 router = APIRouter(prefix="/v1/titles", tags=["Catalog Titles"])
 catalog_router = APIRouter(prefix="/v1", tags=["Catalog Browsing"])
+root_router = APIRouter(prefix="", tags=["Catalog Root"])
 
+@root_router.api_route("/titles", methods=["GET", "HEAD"], response_model=CatalogPageResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 @catalog_router.api_route("/catalog", methods=["GET", "HEAD"], response_model=CatalogPageResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 async def get_catalog(
     q: Optional[str] = Query(None, description="Search query string"),
@@ -46,6 +48,7 @@ async def get_catalog(
         offset=offset,
     )
 
+@root_router.api_route("/genres", methods=["GET", "HEAD"], response_model=List[GenreSummary], dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 @catalog_router.api_route("/genres", methods=["GET", "HEAD"], response_model=List[GenreSummary], dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 async def list_genres(
     db: Optional[AsyncSession] = Depends(get_db)

@@ -59,9 +59,12 @@ export interface APIErrorResponse {
 // ── Catalog Browsing (Offset Pagination) ────────────────────────────────
 
 export interface CatalogParams {
+  query?: string;
   q?: string;
   genre?: string;
+  year?: number;
   production_year?: number;
+  content_type?: string;
   sort?: string;
   limit?: number;
   offset?: number;

@@ -53,6 +53,19 @@ class TestCatalogEndpoints(unittest.TestCase):
         self.assertIn("action", genre_ids)
         self.assertIn("drama", genre_ids)
 
+    def test_titles_root_endpoint_query_params(self):
+        response = self.client.get("/titles?limit=24&offset=0&query=Dark&genre=Action&year=2008&content_type=MOVIE")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("items", data)
+        self.assertIn("total", data)
+        self.assertIn("limit", data)
+        self.assertEqual(data["limit"], 24)
+        if len(data["items"]) > 0:
+            item = data["items"][0]
+            self.assertEqual(item["content_type"], "MOVIE")
+            self.assertEqual(item["production_year"], 2008)
+
     def test_titles_endpoint(self):
         response = self.client.get("/v1/titles?limit=25")
         self.assertEqual(response.status_code, 200)
@@ -62,3 +75,4 @@ class TestCatalogEndpoints(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

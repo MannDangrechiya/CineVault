@@ -1,4 +1,6 @@
-import React from "react";
+"use client";
+
+import React, { useState } from "react";
 import Link from "next/link";
 import { Film, Tv, Calendar, Sparkles } from "lucide-react";
 import { TitleSummary } from "@/lib/api/types";
@@ -9,21 +11,24 @@ interface TitleCardProps {
 }
 
 export const TitleCard: React.FC<TitleCardProps> = ({ title, matchScore }) => {
+  const [imageError, setImageError] = useState(false);
   const isMovie = title.content_type === "MOVIE";
   const detailUrl = isMovie ? `/movies/${title.id}` : `/series/${title.id || title.display_id}`;
+  const showPoster = title.poster_url && !imageError;
 
   return (
     <Link
       href={detailUrl}
-      className="group relative flex flex-col rounded-xl overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-violet-500/20 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+      className="group relative flex flex-col rounded-xl overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-violet-500/20 focus:outline-none focus:ring-2 focus:ring-violet-500/50 bg-zinc-950"
     >
       {/* Artwork / Poster Box */}
       <div className="relative aspect-[2/3] w-full bg-zinc-900 rounded-xl overflow-hidden">
-        {title.poster_url ? (
+        {showPoster ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={title.poster_url}
+            src={title.poster_url!}
             alt={title.canonical_title}
+            onError={() => setImageError(true)}
             className="w-full h-full object-cover rounded-xl transition-transform duration-500 group-hover:scale-105"
             loading="lazy"
           />
@@ -34,7 +39,7 @@ export const TitleCard: React.FC<TitleCardProps> = ({ title, matchScore }) => {
             ) : (
               <Tv className="w-10 h-10 mb-2 opacity-40 group-hover:text-cyan-400 group-hover:opacity-100 transition-all duration-300" />
             )}
-            <span className="text-[11px] font-mono text-zinc-500 opacity-80 line-clamp-1 px-2">
+            <span className="text-[11px] font-mono text-zinc-400 opacity-90 line-clamp-2 px-2">
               {title.canonical_title}
             </span>
           </div>
@@ -78,3 +83,4 @@ export const TitleCard: React.FC<TitleCardProps> = ({ title, matchScore }) => {
     </Link>
   );
 };
+
