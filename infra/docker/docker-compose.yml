@@ -4,9 +4,9 @@
 version: '3.8'
 
 services:
-  # 1. Database: PostgreSQL 16
+  # 1. Database: PostgreSQL 16 with pgvector
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: cinevault-local-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-cinevault}
