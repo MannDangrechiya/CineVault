@@ -16,7 +16,7 @@ from ..schemas.personal import (
     PersonalDataConflictResponse, PersonalDataConflictResolveRequest,
     UserDashboardMetricsResponse,
     PersonalDataExportResponse,
-    ImportPreviewRequest, ImportPreviewResponse,
+    ImportPreviewRequest, ImportPreviewResponse, ImportConflictItem,
     ImportApplyRequest, ImportApplyResponse,
     HistoryItemResponse, HistoryPageResponse,
     CollectionItemResponse, CollectionCreateRequest,
@@ -256,7 +256,93 @@ async def get_personal_analytics(
         ]
     )
 
+# ── /v1/personal/import ────────────────────────────────────────────────────
+
+@personal_router.post("/import/preview", response_model=ImportPreviewResponse)
+async def preview_personal_import(
+    body: ImportPreviewRequest,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Previews personal library import, validating matches and detecting conflicts."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    
+    # If DB is not connected, provide a rich matching preview simulation
+    if db is None:
+        matched = 0
+        unmatched = 0
+        conflicts = []
+        for idx, item in enumerate(body.items):
+            if item.canonical_title:
+                matched += 1
+                # If rating is 5 and title mentions dune or oppenheimer, simulate a possible conflict for demo
+                if item.rating_value and item.rating_value == 5 and "dune" in item.canonical_title.lower():
+                    conflicts.append(
+                        ImportConflictItem(
+                            title_id=f"sim-{idx}",
+                            canonical_title=item.canonical_title,
+                            field_name="rating_value",
+                            existing_value=4,
+                            imported_value=5
+                        )
+                    )
+            else:
+                unmatched += 1
+        return ImportPreviewResponse(
+            total_items=len(body.items),
+            matched_titles=matched,
+            unmatched_titles=unmatched,
+            conflicts_count=len(conflicts),
+            conflicts=conflicts
+        )
+
+    return await personal_repository.preview_user_import(
+        db=db,
+        user_id=user_id,
+        items=body.items
+    )
+
+@personal_router.post("/import/apply", response_model=ImportApplyResponse, status_code=status.HTTP_200_OK)
+async def apply_personal_import(
+    body: ImportApplyRequest,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Applies imported personal library records using chosen conflict resolution strategy."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+
+    if db is None:
+        # Update in-memory seed history
+        for item in body.items:
+            if item.canonical_title:
+                SEED_USER_HISTORY.insert(0, {
+                    "id": f"imp-{len(SEED_USER_HISTORY) + 1}",
+                    "title_id": item.title_id or f"imp-title-{len(SEED_USER_HISTORY) + 1}",
+                    "canonical_title": item.canonical_title,
+                    "production_year": item.production_year or 2024,
+                    "content_type": "MOVIE",
+                    "poster_url": "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80",
+                    "watched_at": item.watched_at or datetime.now(timezone.utc).isoformat(),
+                    "rating_value": float(item.rating_value) if item.rating_value else None,
+                    "device_type": "Imported Record",
+                    "progress_percentage": item.progress_percentage or 100.0
+                })
+        return ImportApplyResponse(
+            applied_count=len(body.items),
+            conflicts_resolved=0,
+            strategy_applied=body.conflict_strategy.value,
+            applied_at=datetime.now(timezone.utc).isoformat()
+        )
+
+    return await personal_repository.apply_user_import(
+        db=db,
+        user_id=user_id,
+        items=body.items,
+        conflict_strategy=body.conflict_strategy.value
+    )
+
 # ── Standard /v1/me Routes ─────────────────────────────────────────────────
+
 
 
 @router.get("/dashboard", response_model=UserDashboardMetricsResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])

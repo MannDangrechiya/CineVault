@@ -16,19 +16,22 @@ import {
   Settings,
   Library,
   Clapperboard,
+  Bot,
+  UploadCloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const mainMobileTabs = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Oracle", href: "/oracle", icon: Bot },
   { name: "Movies", href: "/movies", icon: Film },
-  { name: "Series", href: "/series", icon: Tv },
   { name: "Social", href: "/social", icon: Sparkles },
   { name: "Watchlist", href: "/watchlist", icon: Bookmark },
 ];
 
 const allMobileRoutes = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "AI Oracle", href: "/oracle", icon: Bot },
   { name: "Movies", href: "/movies", icon: Film },
   { name: "Series", href: "/series", icon: Tv },
   { name: "Social & Match", href: "/social", icon: Sparkles },
@@ -36,6 +39,7 @@ const allMobileRoutes = [
   { name: "Watchlist", href: "/watchlist", icon: Bookmark },
   { name: "History", href: "/history", icon: History },
   { name: "Collections", href: "/collections", icon: FolderKanban },
+  { name: "Import", href: "/import", icon: UploadCloud },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
