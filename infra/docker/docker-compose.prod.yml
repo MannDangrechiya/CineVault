@@ -1,0 +1,171 @@
+# CineVault OS — Single-Command Production Deployment Stack (Phase 4)
+# Orchestrates: Postgres (pgvector), PgBouncer, Valkey, RabbitMQ, Flyway,
+# FastAPI Production Backend, Celery AI Worker, Next.js Web Frontend, and Caddy Edge Proxy.
+
+services:
+  # 1. Primary Vector Database: PostgreSQL 16 with native pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: cinevault-prod-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cinevault}
+      POSTGRES_USER: ${POSTGRES_USER:-cinevault_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}
+    volumes:
+      - ../../packages/config/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/01-init-schemas.sql:ro
+      - postgres-prod-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-cinevault_admin} -d $${POSTGRES_DB:-cinevault}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # 2. Automated Schema Migration Runner: Flyway
+  flyway:
+    image: flyway/flyway:10-alpine
+    container_name: cinevault-prod-flyway
+    command: -url=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-cinevault} -user=${POSTGRES_USER:-cinevault_admin} -password=${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass} -connectRetries=10 migrate
+    volumes:
+      - ../../db/migrations:/flyway/sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # 3. Connection Pooler: PgBouncer
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: cinevault-prod-pgbouncer
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-cinevault}
+      DB_USER: ${POSTGRES_USER:-cinevault_admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 25
+      LISTEN_PORT: 6432
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 4. Cache & Results Store: Valkey (Linux Foundation RESP)
+  valkey:
+    image: valkey/valkey:8.0-alpine
+    container_name: cinevault-prod-valkey
+    volumes:
+      - valkey-prod-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # 5. Message & Task Broker: RabbitMQ
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: cinevault-prod-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-cinevault_app}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-change_me_super_secure_rabbitmq_pass}
+    volumes:
+      - rabbitmq-prod-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # 6. Core REST API: FastAPI Production Backend
+  fastapi-backend:
+    container_name: cinevault-prod-backend
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cinevault_admin}:${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}@pgbouncer:6432/${POSTGRES_DB:-cinevault}
+      REDIS_URL: redis://valkey:6379/0
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-cinevault_app}:${RABBITMQ_PASS:-change_me_super_secure_rabbitmq_pass}@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: redis://valkey:6379/1
+      ENVIRONMENT: production
+      PORT: 8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      flyway:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # 7. Background AI Daemon: Celery Worker
+  ai-worker:
+    container_name: cinevault-prod-ai-worker
+    build:
+      context: ../..
+      dockerfile: services/ai_worker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cinevault_admin}:${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}@pgbouncer:6432/${POSTGRES_DB:-cinevault}
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-cinevault_app}:${RABBITMQ_PASS:-change_me_super_secure_rabbitmq_pass}@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: redis://valkey:6379/1
+      ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 8. Web Frontend: Next.js 15 Standalone Runner
+  nextjs-web:
+    container_name: cinevault-prod-web
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: ""
+      PORT: 3000
+    depends_on:
+      - fastapi-backend
+    restart: unless-stopped
+
+  # 9. Edge Gateway: Caddy Reverse Proxy (Ports 80 & 443)
+  caddy:
+    image: caddy:2-alpine
+    container_name: cinevault-prod-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-prod-data:/data
+      - caddy-prod-config:/config
+    depends_on:
+      - fastapi-backend
+      - nextjs-web
+    restart: unless-stopped
+
+volumes:
+  postgres-prod-data:
+    name: cinevault-prod-postgres-data
+  valkey-prod-data:
+    name: cinevault-prod-valkey-data
+  rabbitmq-prod-data:
+    name: cinevault-prod-rabbitmq-data
+  caddy-prod-data:
+    name: cinevault-prod-caddy-data
+  caddy-prod-config:
+    name: cinevault-prod-caddy-config

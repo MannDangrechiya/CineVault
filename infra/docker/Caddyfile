@@ -1,0 +1,100 @@
+# CineVault OS — Production Edge Gateway & Reverse Proxy (Caddy v2)
+# Handles automatic HTTPS, Brotli/Zstandard/Gzip compression, security headers,
+# and routing between FastAPI Backend and Next.js Web Frontend.
+
+{
+    admin off
+    persist_config off
+}
+
+:80 {
+    # Logging
+    log {
+        output stdout
+        format console
+    }
+
+    # Compression
+    encode zstd gzip
+
+    # Hardened Security Headers
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
+    # 1. API & Backend Service Routes -> FastAPI
+    handle /v1/* {
+        reverse_proxy fastapi-backend:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    handle /ai/* {
+        reverse_proxy fastapi-backend:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    handle /social/* {
+        reverse_proxy fastapi-backend:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    handle /automations/* {
+        reverse_proxy fastapi-backend:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    handle /internal/* {
+        reverse_proxy fastapi-backend:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    handle /health* {
+        reverse_proxy fastapi-backend:8000
+    }
+
+    handle /metrics* {
+        reverse_proxy fastapi-backend:8000
+    }
+
+    handle /docs* {
+        reverse_proxy fastapi-backend:8000
+    }
+
+    handle /openapi.json {
+        reverse_proxy fastapi-backend:8000
+    }
+
+    # 2. Web Application Frontend -> Next.js Standalone Runner
+    handle /* {
+        reverse_proxy nextjs-web:3000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}
