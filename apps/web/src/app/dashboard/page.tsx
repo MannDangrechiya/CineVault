@@ -20,6 +20,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { getPersonalAnalytics, getTopRecommendations } from "@/lib/api/personal";
+import { EmptyState, ErrorState } from "@/components/ui/States";
 
 function MetricSkeleton() {
   return (
@@ -42,7 +43,12 @@ function MetricSkeleton() {
 }
 
 export default function DashboardPage() {
-  const { data: analytics, isLoading: isAnalyticsLoading } = useQuery({
+  const {
+    data: analytics,
+    isLoading: isAnalyticsLoading,
+    isError: isAnalyticsError,
+    refetch: refetchAnalytics,
+  } = useQuery({
     queryKey: ["personalAnalytics"],
     queryFn: getPersonalAnalytics,
   });
@@ -54,49 +60,20 @@ export default function DashboardPage() {
 
   const recommendations = recsData?.data || [];
 
-  // Fallback / default data values
-  const totalTitles = analytics?.total_titles ?? 1420;
-  const tasteMatchScore = analytics?.taste_match_score ?? 98.4;
-  const pendingInbox = analytics?.pending_recommendations_count ?? 5;
-  const totalWatchHours = analytics?.total_watch_hours ?? 348.5;
-  const watchedCount = analytics?.watched_count ?? 142;
-  const monthlyCount = analytics?.monthly_watch_count ?? 18;
-  const streakDays = analytics?.watch_streak_days ?? 7;
+  const totalTitles = analytics?.total_titles ?? 0;
+  const tasteMatchScore = analytics?.taste_match_score ?? 0;
+  const pendingInbox = analytics?.pending_recommendations_count ?? 0;
+  const totalWatchHours = analytics?.total_watch_hours ?? 0;
+  const watchedCount = analytics?.watched_count ?? 0;
+  const monthlyCount = analytics?.monthly_watch_count ?? 0;
+  const streakDays = analytics?.watch_streak_days ?? 0;
 
-  const topGenres = analytics?.top_genres || [
-    { genre: "Sci-Fi", count: 48, percentage: 33.8 },
-    { genre: "Cyberpunk / Neo-Noir", count: 32, percentage: 22.5 },
-    { genre: "Drama / Psychological", count: 28, percentage: 19.7 },
-    { genre: "Thriller", count: 20, percentage: 14.1 },
-    { genre: "Anime / Animation", count: 14, percentage: 9.9 },
-  ];
+  const topGenres = analytics?.top_genres ?? [];
+  const topDirectors = analytics?.top_directors ?? [];
+  const topActors = analytics?.top_actors ?? [];
+  const monthlyTrend = analytics?.monthly_trend ?? [];
 
-  const topDirectors = analytics?.top_directors || [
-    { name: "Denis Villeneuve", role: "Director", count: 9 },
-    { name: "Christopher Nolan", role: "Director", count: 8 },
-    { name: "Ridley Scott", role: "Director", count: 7 },
-    { name: "David Fincher", role: "Director", count: 6 },
-    { name: "Hayao Miyazaki", role: "Director", count: 5 },
-  ];
-
-  const topActors = analytics?.top_actors || [
-    { name: "Timothée Chalamet", role: "Actor", count: 6 },
-    { name: "Ryan Gosling", role: "Actor", count: 5 },
-    { name: "Cillian Murphy", role: "Actor", count: 5 },
-    { name: "Rebecca Ferguson", role: "Actor", count: 4 },
-    { name: "Christian Bale", role: "Actor", count: 4 },
-  ];
-
-  const monthlyTrend = analytics?.monthly_trend || [
-    { month: "Mar", count: 12, hours: 28.0 },
-    { month: "Apr", count: 15, hours: 34.5 },
-    { month: "May", count: 19, hours: 42.0 },
-    { month: "Jun", count: 14, hours: 31.0 },
-    { month: "Jul", count: 22, hours: 51.5 },
-    { month: "Aug", count: 18, hours: 41.0 },
-  ];
-
-  const maxTrendHours = Math.max(...monthlyTrend.map((m) => m.hours), 60);
+  const maxTrendHours = Math.max(...monthlyTrend.map((m) => m.hours), 1);
 
   return (
     <PageContainer
@@ -116,6 +93,12 @@ export default function DashboardPage() {
         {/* Metric Cards Grid */}
         {isAnalyticsLoading ? (
           <MetricSkeleton />
+        ) : isAnalyticsError ? (
+          <ErrorState
+            title="Failed to Load Analytics"
+            description="Unable to reach the CineVault analytics service. Please try again."
+            onAction={() => refetchAnalytics()}
+          />
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-900 flex items-center justify-between">
@@ -266,50 +249,14 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <div className="space-y-3">
-                {[
-                  {
-                    title: "Dune: Part Two",
-                    genre: "Sci-Fi • Denis Villeneuve",
-                    match: 99,
-                    note: "Desert cinematography and complex narrative alignment.",
-                  },
-                  {
-                    title: "Blade Runner 2049",
-                    genre: "Cyberpunk • Roger Deakins",
-                    match: 98,
-                    note: "Atmospheric neon color palettes and pacing.",
-                  },
-                  {
-                    title: "Arrival",
-                    genre: "Sci-Fi • Ted Chiang adaptation",
-                    match: 97,
-                    note: "Non-linear linguistic exploration.",
-                  },
-                ].map((item) => (
-                  <div
-                    key={item.title}
-                    className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-900 flex items-center justify-between gap-4 hover:border-zinc-800 transition-colors"
-                  >
-                    <div className="space-y-1">
-                      <h4 className="text-xs font-bold text-zinc-100">
-                        {item.title}
-                      </h4>
-                      <p className="text-[11px] text-zinc-400">{item.genre}</p>
-                      <p className="text-[11px] text-zinc-500 italic">
-                        &ldquo;{item.note}&rdquo;
-                      </p>
-                    </div>
-
-                    <div className="shrink-0 flex items-center gap-3">
-                      <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full text-xs font-semibold">
-                        <Sparkles className="w-3 h-3" />
-                        {item.match}%
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <EmptyState
+                title="No Recommendations Yet"
+                description="Watch and rate a few titles to let the AI build your taste profile."
+                actionLabel="Browse Movies Catalog"
+                onAction={() => {
+                  window.location.href = "/movies";
+                }}
+              />
             )}
           </div>
 
@@ -393,6 +340,9 @@ export default function DashboardPage() {
             </div>
 
             <div className="space-y-3.5">
+              {topGenres.length === 0 && (
+                <p className="text-xs text-zinc-500">No genre data yet — watch a few titles first.</p>
+              )}
               {topGenres.map((g, index) => {
                 const colors = [
                   "bg-violet-500",
@@ -441,6 +391,9 @@ export default function DashboardPage() {
                   Directors
                 </p>
                 <div className="flex flex-wrap gap-2">
+                  {topDirectors.length === 0 && (
+                    <p className="text-xs text-zinc-500">No director data yet.</p>
+                  )}
                   {topDirectors.map((d) => (
                     <span
                       key={d.name}
@@ -461,6 +414,9 @@ export default function DashboardPage() {
                   Actors
                 </p>
                 <div className="flex flex-wrap gap-2">
+                  {topActors.length === 0 && (
+                    <p className="text-xs text-zinc-500">No cast data yet.</p>
+                  )}
                   {topActors.map((a) => (
                     <span
                       key={a.name}
@@ -491,6 +447,9 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex items-end justify-between gap-2 h-44 pt-6">
+              {monthlyTrend.length === 0 && (
+                <p className="text-xs text-zinc-500 m-auto">No watch activity logged yet.</p>
+              )}
               {monthlyTrend.map((m) => {
                 const heightPercent = Math.max(
                   Math.round((m.hours / maxTrendHours) * 100),

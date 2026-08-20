@@ -507,9 +507,6 @@ export default function OraclePage() {
                     <span className="px-3 py-1 rounded-full text-xs font-semibold bg-violet-600/20 text-violet-300 border border-violet-500/30">
                       {groupResult.group_size} Group Members
                     </span>
-                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                      96.8% Agreement
-                    </span>
                   </div>
                 </div>
 

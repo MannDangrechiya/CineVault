@@ -373,7 +373,11 @@ export default function ImportPage() {
                 </div>
                 <div>
                   <p className="text-[11px] text-zinc-400">Canonical Matches</p>
-                  <h4 className="text-xl font-bold text-emerald-400">{previewResult.matched_titles} Matched (98%)</h4>
+                  <h4 className="text-xl font-bold text-emerald-400">
+                    {previewResult.matched_titles} Matched
+                    {previewResult.total_items > 0 &&
+                      ` (${Math.round((previewResult.matched_titles / previewResult.total_items) * 100)}%)`}
+                  </h4>
                 </div>
               </div>
 
@@ -476,6 +480,8 @@ export default function ImportPage() {
                         Disambiguate
                       </button>
 
+                      {/* ponytail: backend's preview response only returns aggregate
+                          counts, not a per-item match verdict — upgrade when it does */}
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                         Matched
                       </span>

@@ -26,14 +26,27 @@ export interface RecommendationItem {
 
 // ── Watchlist ─────────────────────────────────────────────────────────────
 
+// ponytail: backend only exposes title-states (manual_status_override), not a
+// dedicated watchlist toggle, and can't clear an override back to "none" (it
+// falls back to the existing value when null is sent) — so "add" maps to
+// PLAN_TO_WATCH but "remove" is a no-op until the backend adds that capability.
 export async function toggleWatchlistState(
   titleId: string,
   inWatchlist: boolean
 ): Promise<WatchlistStateResponse> {
-  return await apiFetch<WatchlistStateResponse>(`/v1/personal/titles/${encodeURIComponent(titleId)}/state`, {
-    method: "PATCH", // or POST depending on backend
-    body: JSON.stringify({ in_watchlist: inWatchlist }),
-  });
+  const state = await apiFetch<{ manual_status_override: string | null }>(
+    `/v1/me/title-states/${encodeURIComponent(titleId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        manual_status_override: inWatchlist ? "PLAN_TO_WATCH" : null,
+      }),
+    }
+  );
+  return {
+    in_watchlist: state.manual_status_override === "PLAN_TO_WATCH",
+    status: state.manual_status_override ?? "NONE",
+  };
 }
 
 export async function getWatchlist(): Promise<WatchlistItem[]> {
@@ -41,10 +54,7 @@ export async function getWatchlist(): Promise<WatchlistItem[]> {
 }
 
 export async function removeFromWatchlist(titleId: string): Promise<void> {
-  await apiFetch(`/v1/personal/titles/${encodeURIComponent(titleId)}/state`, {
-    method: "PATCH",
-    body: JSON.stringify({ in_watchlist: false }),
-  });
+  await toggleWatchlistState(titleId, false);
 }
 
 // ── Social Recommendations ────────────────────────────────────────────────
@@ -54,7 +64,7 @@ export async function sendRecommendation(
   recipientId: string,
   message?: string
 ): Promise<void> {
-  await apiFetch("/v1/social/recommendations", {
+  await apiFetch("/social/recommendations", {
     method: "POST",
     body: JSON.stringify({
       title_id: titleId,
@@ -65,14 +75,14 @@ export async function sendRecommendation(
 }
 
 export async function getRecommendations(): Promise<RecommendationItem[]> {
-  return await apiFetch<RecommendationItem[]>("/v1/social/recommendations");
+  return await apiFetch<RecommendationItem[]>("/social/recommendations");
 }
 
 export async function updateRecommendationStatus(
   id: string,
   status: "accepted" | "dismissed"
 ): Promise<RecommendationItem> {
-  return await apiFetch<RecommendationItem>(`/v1/social/recommendations/${encodeURIComponent(id)}`, {
+  return await apiFetch<RecommendationItem>(`/social/recommendations/${encodeURIComponent(id)}`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
