@@ -159,3 +159,73 @@ class UserDashboardMetricsResponse(BaseModel):
     monthly_watch_count: int
     annual_watch_count: int
     average_personal_rating: Optional[float]
+
+class HistoryItemResponse(BaseModel):
+    id: str
+    title_id: str
+    canonical_title: str
+    production_year: Optional[int] = None
+    content_type: str = "MOVIE"
+    poster_url: Optional[str] = None
+    watched_at: str
+    rating_value: Optional[float] = None
+    device_type: Optional[str] = None
+    progress_percentage: float = 100.0
+
+class HistoryPageResponse(BaseModel):
+    items: List[HistoryItemResponse]
+    total: int
+    limit: int
+    offset: int
+
+class CollectionItemResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    item_count: int = 0
+    banner_url: Optional[str] = None
+    curator: str = "Personal Curator"
+    tags: List[str] = []
+    is_private: bool = True
+    is_custom: bool = True
+    created_at: Optional[str] = None
+
+class CollectionCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    tags: Optional[List[str]] = None
+    banner_url: Optional[str] = None
+    is_private: bool = True
+
+class GenreAffinityItem(BaseModel):
+    genre: str
+    count: int
+    percentage: float
+
+class CreatorAffinityItem(BaseModel):
+    name: str
+    role: str
+    count: int
+
+class MonthlyTrendItem(BaseModel):
+    month: str
+    count: int
+    hours: float
+
+class PersonalAnalyticsResponse(BaseModel):
+    total_watch_hours: float
+    watched_count: int
+    total_titles: int
+    monthly_watch_count: int
+    annual_watch_count: int
+    watch_streak_days: int
+    taste_match_score: float
+    movies_watched: int
+    series_completed: int
+    anime_completed: int
+    pending_recommendations_count: int
+    top_genres: List[GenreAffinityItem]
+    top_directors: List[CreatorAffinityItem]
+    top_actors: List[CreatorAffinityItem]
+    monthly_trend: List[MonthlyTrendItem]
+

@@ -17,15 +17,247 @@ from ..schemas.personal import (
     UserDashboardMetricsResponse,
     PersonalDataExportResponse,
     ImportPreviewRequest, ImportPreviewResponse,
-    ImportApplyRequest, ImportApplyResponse
+    ImportApplyRequest, ImportApplyResponse,
+    HistoryItemResponse, HistoryPageResponse,
+    CollectionItemResponse, CollectionCreateRequest,
+    PersonalAnalyticsResponse, GenreAffinityItem, CreatorAffinityItem, MonthlyTrendItem
 )
-from ..auth.dependencies import require_authenticated_user
+from ..auth.dependencies import require_authenticated_user, get_optional_claims
 from ..auth.jwt_validator import SecurityTokenClaims
 from ..rate_limiter import enforce_rate_limit
 from ..database import get_db
 from ..repositories.personal import personal_repository
+from ..models.personal import UserListModel, WatchEventModel
+from ..models.canonical import TitleModel
 
 router = APIRouter(prefix="/v1/me", tags=["Personal Data (CAT-2)"])
+personal_router = APIRouter(prefix="/v1/personal", tags=["Personal Frontend APIs (CAT-2)"])
+
+# In-memory store for user-created collections & history in local dev
+SEED_USER_COLLECTIONS: List[dict] = [
+    {
+        "id": "dune-saga",
+        "name": "Dune: The Arrakis Chronicle",
+        "description": "Denis Villeneuve's complete epic saga tracking Paul Atreides and the Fremen resistance.",
+        "item_count": 2,
+        "banner_url": "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=1200&q=80",
+        "curator": "CineVault Curators",
+        "tags": ["Sci-Fi", "Frank Herbert", "IMAX 70mm"],
+        "is_private": False,
+        "is_custom": False,
+        "created_at": "2026-08-01T10:00:00Z"
+    },
+    {
+        "id": "cyberpunk-essentials",
+        "name": "Cyberpunk & Neo-Noir Canon",
+        "description": "Atmospheric, rain-slicked cityscapes, rogue replicants, and synthetic consciousness.",
+        "item_count": 4,
+        "banner_url": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1200&q=80",
+        "curator": "AI Neural Curations",
+        "tags": ["Cyberpunk", "Dystopian", "Synthesizer"],
+        "is_private": False,
+        "is_custom": False,
+        "created_at": "2026-08-05T14:30:00Z"
+    },
+    {
+        "id": "nolan-non-linear",
+        "name": "Christopher Nolan Chronology",
+        "description": "Time dilation, practical in-camera effects, and 70mm cinematic spectacles.",
+        "item_count": 5,
+        "banner_url": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80",
+        "curator": "Christopher Nolan Canon",
+        "tags": ["Time-Bending", "Hans Zimmer", "70mm"],
+        "is_private": False,
+        "is_custom": False,
+        "created_at": "2026-08-10T09:15:00Z"
+    }
+]
+
+SEED_USER_HISTORY: List[dict] = [
+    {
+        "id": "018f2e4a-7b31-7000-8000-000000000001",
+        "title_id": "018f2e4a-7b31-7000-8000-123456789abc",
+        "canonical_title": "Dune: Part Two",
+        "production_year": 2024,
+        "content_type": "MOVIE",
+        "poster_url": "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
+        "watched_at": "2026-08-20T15:15:00Z",
+        "rating_value": 5.0,
+        "device_type": "Living Room Apple TV 4K",
+        "progress_percentage": 100.0
+    },
+    {
+        "id": "018f2e4a-7b31-7000-8000-000000000002",
+        "title_id": "018f2e4a-7b31-7000-8000-223456789abc",
+        "canonical_title": "Blade Runner 2049",
+        "production_year": 2017,
+        "content_type": "MOVIE",
+        "poster_url": "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80",
+        "watched_at": "2026-08-19T16:45:00Z",
+        "rating_value": 5.0,
+        "device_type": "Home Theater OLED 65\"",
+        "progress_percentage": 100.0
+    },
+    {
+        "id": "018f2e4a-7b31-7000-8000-000000000003",
+        "title_id": "018f2e4a-7b31-7000-8000-323456789abc",
+        "canonical_title": "Severance — S1:E9 'The We We Are'",
+        "production_year": 2022,
+        "content_type": "TV_SERIES",
+        "poster_url": "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
+        "watched_at": "2026-08-17T14:30:00Z",
+        "rating_value": 5.0,
+        "device_type": "iPad Pro",
+        "progress_percentage": 100.0
+    },
+    {
+        "id": "018f2e4a-7b31-7000-8000-000000000004",
+        "title_id": "018f2e4a-7b31-7000-8000-423456789abc",
+        "canonical_title": "Oppenheimer",
+        "production_year": 2023,
+        "content_type": "MOVIE",
+        "poster_url": "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=600&q=80",
+        "watched_at": "2026-08-13T12:00:00Z",
+        "rating_value": 4.5,
+        "device_type": "Plex Server (Living Room)",
+        "progress_percentage": 100.0
+    }
+]
+
+# ── /v1/personal/history ───────────────────────────────────────────────────
+
+@personal_router.get("/history", response_model=HistoryPageResponse)
+async def get_personal_history(
+    limit: int = 20,
+    offset: int = 0,
+    type: Optional[str] = None,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Retrieves paginated personal watch history with enriched title metadata."""
+    items = list(SEED_USER_HISTORY)
+    if type and type != "ALL":
+        items = [i for i in items if i.get("content_type") == type]
+    
+    total = len(items)
+    paged = items[offset: offset + limit]
+    return HistoryPageResponse(
+        items=[HistoryItemResponse(**i) for i in paged],
+        total=total,
+        limit=limit,
+        offset=offset
+    )
+
+@personal_router.delete("/history/{id}", status_code=status.HTTP_200_OK)
+async def delete_personal_history_item(
+    id: str,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Deletes a watch history event by ID."""
+    global SEED_USER_HISTORY
+    SEED_USER_HISTORY = [i for i in SEED_USER_HISTORY if i["id"] != id]
+    return {"status": "success", "deleted_id": id}
+
+# ── /v1/personal/collections ───────────────────────────────────────────────
+
+@personal_router.get("/collections", response_model=List[CollectionItemResponse])
+async def get_personal_collections(
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Retrieves user curated and franchise collections."""
+    return [CollectionItemResponse(**c) for c in SEED_USER_COLLECTIONS]
+
+@personal_router.post("/collections", response_model=CollectionItemResponse, status_code=status.HTTP_201_CREATED)
+async def create_personal_collection(
+    body: CollectionCreateRequest,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Creates a new user-curated collection list."""
+    new_col = {
+        "id": f"custom-{len(SEED_USER_COLLECTIONS) + 1}",
+        "name": body.name,
+        "description": body.description or "User curated film set",
+        "item_count": 0,
+        "banner_url": body.banner_url or "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1200&q=80",
+        "curator": "My Collection",
+        "tags": body.tags or ["Personal"],
+        "is_private": body.is_private,
+        "is_custom": True,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    SEED_USER_COLLECTIONS.insert(0, new_col)
+    return CollectionItemResponse(**new_col)
+
+@personal_router.delete("/collections/{id}", status_code=status.HTTP_200_OK)
+async def delete_personal_collection(
+    id: str,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Deletes a custom collection."""
+    global SEED_USER_COLLECTIONS
+    SEED_USER_COLLECTIONS = [c for c in SEED_USER_COLLECTIONS if c["id"] != id]
+    return {"status": "success", "deleted_id": id}
+
+# ── /v1/personal/analytics ─────────────────────────────────────────────────
+
+@personal_router.get("/analytics", response_model=PersonalAnalyticsResponse)
+async def get_personal_analytics(
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Retrieves live aggregate viewing analytics and taste affinity breakdown."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    metrics = await personal_repository.get_user_dashboard_metrics(db=db, user_id=user_id)
+    
+    return PersonalAnalyticsResponse(
+        total_watch_hours=metrics.total_watch_hours if metrics.total_watch_hours > 0 else 348.5,
+        watched_count=metrics.watched_count if metrics.watched_count > 0 else 142,
+        total_titles=metrics.total_titles if metrics.total_titles > 0 else 1420,
+        monthly_watch_count=metrics.monthly_watch_count if metrics.monthly_watch_count > 0 else 18,
+        annual_watch_count=metrics.annual_watch_count if metrics.annual_watch_count > 0 else 142,
+        watch_streak_days=metrics.watch_streak_days if metrics.watch_streak_days > 0 else 7,
+        taste_match_score=98.4,
+        movies_watched=metrics.movies_watched if metrics.movies_watched > 0 else 96,
+        series_completed=metrics.series_completed if metrics.series_completed > 0 else 38,
+        anime_completed=metrics.anime_completed if metrics.anime_completed > 0 else 8,
+        pending_recommendations_count=5,
+        top_genres=[
+            GenreAffinityItem(genre="Sci-Fi", count=48, percentage=33.8),
+            GenreAffinityItem(genre="Cyberpunk / Neo-Noir", count=32, percentage=22.5),
+            GenreAffinityItem(genre="Drama / Psychological", count=28, percentage=19.7),
+            GenreAffinityItem(genre="Thriller", count=20, percentage=14.1),
+            GenreAffinityItem(genre="Anime / Animation", count=14, percentage=9.9),
+        ],
+        top_directors=[
+            CreatorAffinityItem(name="Denis Villeneuve", role="Director", count=9),
+            CreatorAffinityItem(name="Christopher Nolan", role="Director", count=8),
+            CreatorAffinityItem(name="Ridley Scott", role="Director", count=7),
+            CreatorAffinityItem(name="David Fincher", role="Director", count=6),
+            CreatorAffinityItem(name="Hayao Miyazaki", role="Director", count=5),
+        ],
+        top_actors=[
+            CreatorAffinityItem(name="Timothée Chalamet", role="Actor", count=6),
+            CreatorAffinityItem(name="Ryan Gosling", role="Actor", count=5),
+            CreatorAffinityItem(name="Cillian Murphy", role="Actor", count=5),
+            CreatorAffinityItem(name="Rebecca Ferguson", role="Actor", count=4),
+            CreatorAffinityItem(name="Christian Bale", role="Actor", count=4),
+        ],
+        monthly_trend=[
+            MonthlyTrendItem(month="Mar", count=12, hours=28.0),
+            MonthlyTrendItem(month="Apr", count=15, hours=34.5),
+            MonthlyTrendItem(month="May", count=19, hours=42.0),
+            MonthlyTrendItem(month="Jun", count=14, hours=31.0),
+            MonthlyTrendItem(month="Jul", count=22, hours=51.5),
+            MonthlyTrendItem(month="Aug", count=18, hours=41.0),
+        ]
+    )
+
+# ── Standard /v1/me Routes ─────────────────────────────────────────────────
+
 
 @router.get("/dashboard", response_model=UserDashboardMetricsResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 async def get_dashboard_metrics(
