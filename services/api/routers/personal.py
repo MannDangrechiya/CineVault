@@ -20,7 +20,8 @@ from ..schemas.personal import (
     ImportApplyRequest, ImportApplyResponse,
     HistoryItemResponse, HistoryPageResponse,
     CollectionItemResponse, CollectionCreateRequest,
-    PersonalAnalyticsResponse, GenreAffinityItem, CreatorAffinityItem, MonthlyTrendItem
+    PersonalAnalyticsResponse, GenreAffinityItem, CreatorAffinityItem, MonthlyTrendItem,
+    WatchlistPageResponse
 )
 from ..auth.dependencies import require_authenticated_user, get_optional_claims
 from ..auth.jwt_validator import SecurityTokenClaims
@@ -158,6 +159,22 @@ async def delete_personal_history_item(
     global SEED_USER_HISTORY
     SEED_USER_HISTORY = [i for i in SEED_USER_HISTORY if i["id"] != id]
     return {"status": "success", "deleted_id": id}
+
+# ── /v1/personal/watchlist ─────────────────────────────────────────────────
+
+@personal_router.get("/watchlist", response_model=WatchlistPageResponse)
+async def get_personal_watchlist(
+    limit: int = 20,
+    offset: int = 0,
+    sort: str = "added_at_desc",
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Lists titles the user has marked plan-to-watch, enriched with canonical title metadata."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    return await personal_repository.list_watchlist(
+        db=db, user_id=user_id, limit=limit, offset=offset, sort=sort
+    )
 
 # ── /v1/personal/collections ───────────────────────────────────────────────
 

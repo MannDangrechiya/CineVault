@@ -10,7 +10,6 @@ import {
   Tv,
   Trash2,
   Calendar,
-  Sparkles,
   ArrowRight,
 } from "lucide-react";
 import { getWatchlist, removeFromWatchlist } from "@/lib/api/personal";
@@ -36,12 +35,11 @@ export default function WatchlistPage() {
   const items = rawItems.map((item) => ({
     id: item.id,
     titleId: item.title_id,
-    title: item.title?.canonical_title || "Unknown Title",
-    year: item.title?.production_year || 2024,
-    type: item.title?.content_type || "MOVIE",
-    posterUrl: item.title?.poster_url || "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
-    matchScore: 98,
-    addedAt: new Date(item.added_at).toLocaleDateString() || "Recently",
+    title: item.canonical_title || "Unknown Title",
+    year: item.production_year || undefined,
+    type: item.content_type || "MOVIE",
+    posterUrl: item.poster_url || "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
+    addedAt: new Date(item.added_at).toLocaleDateString(),
   }));
 
   const removeItem = (titleId: string) => {
@@ -158,10 +156,6 @@ export default function WatchlistPage() {
                         {item.type === "MOVIE" ? <Film className="w-2.5 h-2.5" /> : <Tv className="w-2.5 h-2.5" />}
                         {item.type === "MOVIE" ? "Movie" : "Series"}
                       </span>
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 backdrop-blur-md">
-                        <Sparkles className="w-2.5 h-2.5" />
-                        {item.matchScore}%
-                      </span>
                     </div>
                   </Link>
 
@@ -176,7 +170,7 @@ export default function WatchlistPage() {
                   <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-1">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-zinc-600" />
-                      {item.year}
+                      {item.year ?? "—"}
                     </span>
                     <span>{item.addedAt}</span>
                   </div>

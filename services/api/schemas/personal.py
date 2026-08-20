@@ -178,6 +178,21 @@ class HistoryPageResponse(BaseModel):
     limit: int
     offset: int
 
+class WatchlistItemResponse(BaseModel):
+    id: str
+    title_id: str
+    canonical_title: str
+    production_year: Optional[int] = None
+    content_type: str = "MOVIE"
+    poster_url: Optional[str] = None
+    added_at: str
+
+class WatchlistPageResponse(BaseModel):
+    items: List[WatchlistItemResponse]
+    total: int
+    limit: int
+    offset: int
+
 class CollectionItemResponse(BaseModel):
     id: str
     name: str

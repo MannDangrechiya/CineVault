@@ -9,8 +9,18 @@ export interface WatchlistStateResponse {
 export interface WatchlistItem {
   id: string;
   title_id: string;
+  canonical_title: string;
+  production_year?: number | null;
+  content_type: string;
+  poster_url?: string | null;
   added_at: string;
-  title: TitleDetail; // assuming populated by backend
+}
+
+export interface WatchlistPageResponse {
+  items: WatchlistItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface RecommendationItem {
@@ -25,11 +35,11 @@ export interface RecommendationItem {
 }
 
 // ── Watchlist ─────────────────────────────────────────────────────────────
+// Maps onto the backend's title-state system: "add" sets manual_status_override
+// to PLAN_TO_WATCH, "remove" sends it as explicit null, which the backend now
+// clears back to unset (PATCH /v1/me/title-states/{id} treats an explicitly
+// null field as "clear this", distinct from an omitted field).
 
-// ponytail: backend only exposes title-states (manual_status_override), not a
-// dedicated watchlist toggle, and can't clear an override back to "none" (it
-// falls back to the existing value when null is sent) — so "add" maps to
-// PLAN_TO_WATCH but "remove" is a no-op until the backend adds that capability.
 export async function toggleWatchlistState(
   titleId: string,
   inWatchlist: boolean
@@ -50,7 +60,8 @@ export async function toggleWatchlistState(
 }
 
 export async function getWatchlist(): Promise<WatchlistItem[]> {
-  return await apiFetch<WatchlistItem[]>("/v1/personal/watchlist");
+  const page = await apiFetch<WatchlistPageResponse>("/v1/personal/watchlist?limit=100");
+  return page.items;
 }
 
 export async function removeFromWatchlist(titleId: string): Promise<void> {

@@ -12,7 +12,7 @@ import uuid
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
-from sqlalchemy import select, and_, update
+from sqlalchemy import select, and_, update, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,8 +39,14 @@ from ..schemas.personal import (
     ImportApplyResponse,
     ImportApplyRequest,
     ImportItemPayload,
-    ImportConflictStrategyEnum
+    ImportConflictStrategyEnum,
+    WatchlistItemResponse,
+    WatchlistPageResponse,
 )
+
+# Both values are treated as "on the watchlist" — some pre-existing rows use
+# the older WATCHLIST label, new writes use PLAN_TO_WATCH (see toggleWatchlistState).
+WATCHLIST_STATUS_VALUES = ("PLAN_TO_WATCH", "WATCHLIST")
 
 logger = logging.getLogger("cinevault.repositories.personal")
 
@@ -364,13 +370,21 @@ class PersonalRepository:
         title_id: str,
         body: UserTitleStateUpdate,
     ) -> UserTitleStateResponse:
-        """Updates user title library state."""
+        """Updates user title library state.
+
+        PATCH semantics: a field omitted from the request body leaves the stored
+        value unchanged; a field explicitly present in the body — including an
+        explicit null — overwrites it. This is what lets a client clear
+        manual_status_override (e.g. remove a title from the watchlist) instead
+        of a null silently falling back to whatever was already stored.
+        """
         updated_iso = datetime.now(timezone.utc).isoformat()
+        fields_set = body.model_fields_set
+
         if db is not None:
             try:
                 user_uuid = _resolve_user_uuid(user_id)
                 title_uuid = _resolve_title_uuid(title_id)
-                pref_ed_uuid = _resolve_edition_uuid(body.preferred_edition_id)
 
                 stmt = select(UserTitleStateModel).where(
                     and_(
@@ -381,8 +395,18 @@ class PersonalRepository:
                 res = await db.execute(stmt)
                 st = res.scalar_one_or_none()
 
-                fav = body.is_favorite if body.is_favorite is not None else (st.is_favorite if st else False)
-                status_override = body.manual_status_override or (st.manual_status_override if st else None)
+                fav = (
+                    body.is_favorite if "is_favorite" in fields_set
+                    else (st.is_favorite if st else False)
+                )
+                status_override = (
+                    body.manual_status_override if "manual_status_override" in fields_set
+                    else (st.manual_status_override if st else None)
+                )
+                pref_ed_uuid = (
+                    _resolve_edition_uuid(body.preferred_edition_id) if "preferred_edition_id" in fields_set
+                    else (st.preferred_edition_id if st else None)
+                )
 
                 if st:
                     st.is_favorite = fav
@@ -406,7 +430,7 @@ class PersonalRepository:
                     derived_status=status_override or "UNWATCHED",
                     manual_status_override=status_override,
                     is_favorite=fav,
-                    preferred_edition_id=body.preferred_edition_id,
+                    preferred_edition_id=str(pref_ed_uuid) if pref_ed_uuid else None,
                     updated_at=updated_iso,
                 )
             except ValueError:
@@ -425,6 +449,70 @@ class PersonalRepository:
             preferred_edition_id=body.preferred_edition_id,
             updated_at=updated_iso,
         )
+
+    async def list_watchlist(
+        self,
+        db: Optional[AsyncSession],
+        user_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        sort: str = "added_at_desc",
+    ) -> WatchlistPageResponse:
+        """Lists titles the user has marked plan-to-watch, joined with canonical title metadata."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                where_clause = and_(
+                    UserTitleStateModel.user_id == user_uuid,
+                    UserTitleStateModel.manual_status_override.in_(WATCHLIST_STATUS_VALUES),
+                )
+
+                total = (
+                    await db.execute(select(func.count()).select_from(UserTitleStateModel).where(where_clause))
+                ).scalar_one()
+
+                order_col = UserTitleStateModel.updated_at
+                order = order_col.asc() if sort == "added_at_asc" else order_col.desc()
+                stmt = (
+                    select(UserTitleStateModel)
+                    .where(where_clause)
+                    .order_by(order)
+                    .limit(limit)
+                    .offset(offset)
+                )
+                states = (await db.execute(stmt)).scalars().all()
+
+                title_map: Dict[uuid.UUID, TitleModel] = {}
+                title_ids = [s.title_id for s in states]
+                if title_ids:
+                    titles = (
+                        await db.execute(select(TitleModel).where(TitleModel.title_id.in_(title_ids)))
+                    ).scalars().all()
+                    title_map = {t.title_id: t for t in titles}
+
+                items = [
+                    WatchlistItemResponse(
+                        id=f"{s.user_id}:{s.title_id}",
+                        title_id=str(s.title_id),
+                        canonical_title=(title_map[s.title_id].canonical_title if s.title_id in title_map else "Unknown Title"),
+                        production_year=(title_map[s.title_id].production_year if s.title_id in title_map else None),
+                        content_type=((title_map[s.title_id].content_type_id if s.title_id in title_map else None) or "MOVIE").upper(),
+                        poster_url=(title_map[s.title_id].poster_url if s.title_id in title_map else None),
+                        added_at=s.updated_at.isoformat() if s.updated_at else datetime.now(timezone.utc).isoformat(),
+                    )
+                    for s in states
+                ]
+
+                return WatchlistPageResponse(items=items, total=total, limit=limit, offset=offset)
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("list_watchlist failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return WatchlistPageResponse(items=[], total=0, limit=limit, offset=offset)
 
     async def list_ratings(
         self, db: Optional[AsyncSession], user_id: str
