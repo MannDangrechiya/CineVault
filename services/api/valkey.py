@@ -150,21 +150,6 @@ class ValkeyManager:
             logger.error(f"Valkey DELETE error key={key}: {e}")
             return False
 
-    def incr_rate_limit(self, key: str, ttl: int = 60) -> int:
-        """Atomic rate-limit counter increment with TTL expiry window."""
-        client = self.get_client()
-        if not client:
-            return 1
-        try:
-            pipeline = client.pipeline()
-            pipeline.incr(key)
-            pipeline.expire(key, ttl)
-            res = pipeline.execute()
-            return int(res[0])
-        except Exception as e:
-            logger.error(f"Valkey INCR rate limit error key={key}: {e}")
-            return 1
-
     def check_and_set_idempotency(self, idempotency_key: str, ttl: int = 86400) -> bool:
         """
         Atomic idempotency check-and-set using SETNX logic.

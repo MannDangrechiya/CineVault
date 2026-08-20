@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Plus } from "lucide-react";
-import { getTitles } from "@/lib/api/titles";
+import { getCatalogPage } from "@/lib/api/titles";
 import { LoadingState } from "@/components/ui/States";
 
 export default function LibraryPage() {
@@ -13,16 +13,16 @@ export default function LibraryPage() {
 
   const { data: moviesRes, isLoading: isLoadingMovies } = useQuery({
     queryKey: ["library", "movies"],
-    queryFn: () => getTitles({ content_type: "MOVIE", limit: 6 }),
+    queryFn: () => getCatalogPage({ content_type: "MOVIE", limit: 6 }),
   });
 
   const { data: seriesRes, isLoading: isLoadingSeries } = useQuery({
     queryKey: ["library", "series"],
-    queryFn: () => getTitles({ content_type: "TV_SERIES", limit: 4 }),
+    queryFn: () => getCatalogPage({ content_type: "TV_SERIES", limit: 4 }),
   });
 
-  const libraryMovies = moviesRes?.data || [];
-  const librarySeries = seriesRes?.data || [];
+  const libraryMovies = moviesRes?.items || [];
+  const librarySeries = seriesRes?.items || [];
 
   const displayed =
     tab === "MOVIE"

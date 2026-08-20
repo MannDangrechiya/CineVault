@@ -621,33 +621,6 @@ export default function ImportPage() {
                 placeholder="Search canonical title..."
                 className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500"
               />
-
-              <div className="space-y-1.5 pt-1">
-                <p className="text-[10px] font-semibold uppercase text-zinc-500">Quick Match Suggestions</p>
-                {[
-                  "Dune: Part Two (2024)",
-                  "Blade Runner 2049 (2017)",
-                  "Oppenheimer (2023)",
-                  "Arrival (2016)",
-                ].map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => {
-                      const match = s.match(/^(.*)\s*\((\d+)\)$/);
-                      if (match) {
-                        handleResolveDisambiguation(match[1].trim(), parseInt(match[2], 10));
-                      } else {
-                        handleResolveDisambiguation(s);
-                      }
-                    }}
-                    className="w-full text-left p-2.5 rounded-xl bg-zinc-950/60 hover:bg-zinc-950 border border-zinc-800 hover:border-violet-500/40 text-xs text-zinc-300 hover:text-white transition-all cursor-pointer flex items-center justify-between"
-                  >
-                    <span>{s}</span>
-                    <ArrowRight className="w-3 h-3 text-zinc-500" />
-                  </button>
-                ))}
-              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">

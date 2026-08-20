@@ -3,40 +3,11 @@
 
 import { apiFetch } from "./client";
 import {
-  PaginatedResponse,
-  TitleSummary,
   TitleDetail,
   CatalogParams,
   CatalogPageResponse,
   GenreSummary,
 } from "./types";
-
-export interface ListTitlesParams {
-  content_type?: string;
-  production_year?: number;
-  origin_country?: string;
-  sort?: string;
-  limit?: number;
-  cursor?: string;
-}
-
-export async function getTitles(
-  params: ListTitlesParams = {}
-): Promise<PaginatedResponse<TitleSummary>> {
-  const query = new URLSearchParams();
-
-  if (params.content_type) query.append("content_type", params.content_type);
-  if (params.production_year) query.append("production_year", params.production_year.toString());
-  if (params.origin_country) query.append("origin_country", params.origin_country);
-  if (params.sort) query.append("sort", params.sort);
-  if (params.limit) query.append("limit", params.limit.toString());
-  if (params.cursor) query.append("cursor", params.cursor);
-
-  const queryString = query.toString();
-  const endpoint = `/v1/titles${queryString ? `?${queryString}` : ""}`;
-
-  return await apiFetch<PaginatedResponse<TitleSummary>>(endpoint);
-}
 
 export async function getTitleById(titleId: string): Promise<TitleDetail> {
   return await apiFetch<TitleDetail>(`/v1/titles/${encodeURIComponent(titleId)}`);
@@ -52,11 +23,9 @@ export async function getCatalogPage(
   params: CatalogParams = {}
 ): Promise<CatalogPageResponse> {
   const {
-    q,
-    query: queryParam,
+    query,
     genre,
     year,
-    production_year,
     content_type,
     sort,
     limit = 24,
@@ -64,12 +33,10 @@ export async function getCatalogPage(
   } = params;
 
   const searchParams = new URLSearchParams();
-  const searchText = queryParam ?? q;
-  if (searchText) searchParams.append("query", searchText);
+  if (query) searchParams.append("query", query);
   if (genre) searchParams.append("genre", genre);
-  const releaseYear = year ?? production_year;
-  if (releaseYear !== undefined && releaseYear !== null) {
-    searchParams.append("year", releaseYear.toString());
+  if (year !== undefined && year !== null) {
+    searchParams.append("year", year.toString());
   }
   if (content_type) searchParams.append("content_type", content_type);
   if (sort) searchParams.append("sort", sort);

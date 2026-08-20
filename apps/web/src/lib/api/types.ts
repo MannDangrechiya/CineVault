@@ -27,17 +27,6 @@ export interface TitleDetail extends TitleSummary {
   primary_edition?: EditionSummary | null;
 }
 
-export interface CursorPagination {
-  next_cursor: string | null;
-  has_more: boolean;
-  limit: number;
-}
-
-export interface PaginatedResponse<T> {
-  data: T[];
-  pagination: CursorPagination;
-}
-
 export interface APIErrorDetail {
   field?: string | null;
   issue: string;
@@ -60,10 +49,8 @@ export interface APIErrorResponse {
 
 export interface CatalogParams {
   query?: string;
-  q?: string;
   genre?: string;
   year?: number;
-  production_year?: number;
   content_type?: string;
   sort?: string;
   limit?: number;

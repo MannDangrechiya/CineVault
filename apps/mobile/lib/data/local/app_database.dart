@@ -42,15 +42,6 @@ class CachedTitles extends Table {
   Set<Column> get primaryKey => {titleId};
 }
 
-@DataClassName('RecentSearchRow')
-class RecentSearches extends Table {
-  TextColumn get query => text()();
-  TextColumn get searchedAt => text()();
-
-  @override
-  Set<Column> get primaryKey => {query};
-}
-
 @DataClassName('OfflineWatchEventRow')
 class OfflineWatchEvents extends Table {
   TextColumn get watchEventId => text()();
@@ -97,29 +88,6 @@ class OfflineNotes extends Table {
   Set<Column> get primaryKey => {noteId};
 }
 
-@DataClassName('OfflineUserListRow')
-class OfflineUserLists extends Table {
-  TextColumn get listId => text()();
-  TextColumn get title => text()();
-  TextColumn get description => text().nullable()();
-  TextColumn get updatedAt => text()();
-
-  @override
-  Set<Column> get primaryKey => {listId};
-}
-
-@DataClassName('OfflineUserListItemRow')
-class OfflineUserListItems extends Table {
-  TextColumn get itemId => text()();
-  TextColumn get listId => text()();
-  TextColumn get titleId => text()();
-  IntColumn get position => integer().withDefault(const Constant(0))();
-  TextColumn get notes => text().nullable()();
-
-  @override
-  Set<Column> get primaryKey => {itemId};
-}
-
 // ------------------------------------------------------------------------
 // App Database Class
 // ------------------------------------------------------------------------
@@ -127,13 +95,10 @@ class OfflineUserListItems extends Table {
 @DriftDatabase(tables: [
   OutboxMutations,
   CachedTitles,
-  RecentSearches,
   OfflineWatchEvents,
   OfflineRatings,
   OfflineUserTitleStates,
   OfflineNotes,
-  OfflineUserLists,
-  OfflineUserListItems,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
@@ -170,20 +135,6 @@ class AppDatabase extends _$AppDatabase {
 
   Future<CachedTitleRow?> getCachedTitleById(String titleId) async {
     return await (select(cachedTitles)..where((tbl) => tbl.titleId.equals(titleId))).getSingleOrNull();
-  }
-
-  // --- Recent Searches Queries ---
-  Future<void> addRecentSearch(String queryText) async {
-    await into(recentSearches).insertOnConflictUpdate(
-      RecentSearchesCompanion.insert(
-        query: queryText,
-        searchedAt: DateTime.now().toIso8601String(),
-      ),
-    );
-  }
-
-  Future<List<RecentSearchRow>> getRecentSearches() async {
-    return await (select(recentSearches)..orderBy([(tbl) => OrderingTerm.desc(tbl.searchedAt)])).get();
   }
 
   // --- Offline Watch Events ---
@@ -231,26 +182,6 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<OfflineNoteRow>> getOfflineNotes() async {
     return await select(offlineNotes).get();
-  }
-
-  // --- Offline Custom Lists ---
-  Future<void> upsertOfflineUserList(OfflineUserListsCompanion list) async {
-    await into(offlineUserLists).insertOnConflictUpdate(list);
-  }
-
-  Future<List<OfflineUserListRow>> getOfflineUserLists() async {
-    return await select(offlineUserLists).get();
-  }
-
-  Future<void> upsertOfflineUserListItem(OfflineUserListItemsCompanion item) async {
-    await into(offlineUserListItems).insertOnConflictUpdate(item);
-  }
-
-  Future<List<OfflineUserListItemRow>> getOfflineListItems(String listId) async {
-    return await (select(offlineUserListItems)
-          ..where((tbl) => tbl.listId.equals(listId))
-          ..orderBy([(tbl) => OrderingTerm.asc(tbl.position)]))
-        .get();
   }
 }
 

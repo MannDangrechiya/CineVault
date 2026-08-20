@@ -5,12 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../providers/auth_provider.dart';
-import '../../data/local/app_database.dart';
+import '../providers/sync_provider.dart' show appDatabaseProvider;
 import '../../data/repositories/personal_offline_repository.dart';
-
-final appDatabaseProvider = Provider<AppDatabase>((ref) {
-  return AppDatabase();
-});
 
 final personalOfflineRepositoryProvider = Provider<PersonalOfflineRepository>((ref) {
   final db = ref.watch(appDatabaseProvider);

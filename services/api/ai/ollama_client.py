@@ -63,11 +63,12 @@ class OllamaClient:
 
         try:
             if self._injected_client is not None:
-                response = await self._injected_client.post(url, json=payload)
+                client = await self._get_client()
+                response = await client.post(url, json=payload)
                 response.raise_for_status()
                 data: Dict[str, Any] = response.json()
             else:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with await self._get_client() as client:
                     response = await client.post(url, json=payload)
                     response.raise_for_status()
                     data = response.json()
@@ -111,11 +112,12 @@ class OllamaClient:
 
         try:
             if self._injected_client is not None:
-                response = await self._injected_client.post(url, json=payload)
+                client = await self._get_client()
+                response = await client.post(url, json=payload)
                 response.raise_for_status()
                 data: Dict[str, Any] = response.json()
             else:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with await self._get_client() as client:
                     response = await client.post(url, json=payload)
                     response.raise_for_status()
                     data = response.json()

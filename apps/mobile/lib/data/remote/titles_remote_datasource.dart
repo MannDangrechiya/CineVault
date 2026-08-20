@@ -1,6 +1,5 @@
 // CineVault OS — Canonical Titles Remote Datasource (8.1, 8.6)
 
-import 'package:dio/dio.dart';
 import '../../core/config/api_config.dart';
 import '../../core/network/api_client.dart';
 import '../../domain/entities/title.dart';
@@ -17,54 +16,38 @@ class TitlesRemoteDatasource {
     int? productionYear,
     String? originCountry,
   }) async {
-    try {
-      final queryParams = <String, dynamic>{
-        'limit': limit,
-        if (cursor != null) 'cursor': cursor,
-        if (contentType != null) 'content_type': contentType,
-        if (productionYear != null) 'production_year': productionYear,
-        if (originCountry != null) 'origin_country': originCountry,
-      };
+    final queryParams = <String, dynamic>{
+      'limit': limit,
+      if (cursor != null) 'cursor': cursor,
+      if (contentType != null) 'content_type': contentType,
+      if (productionYear != null) 'production_year': productionYear,
+      if (originCountry != null) 'origin_country': originCountry,
+    };
 
-      final response = await _apiClient.dio.get(
-        ApiConfig.titlesEndpoint,
-        queryParameters: queryParams,
-      );
+    final response = await _apiClient.dio.get(
+      ApiConfig.titlesEndpoint,
+      queryParameters: queryParams,
+    );
 
-      final List data = response.data['data'] ?? [];
-      return data.map((json) => CanonicalTitleEntity.fromJson(json)).toList();
-    } on DioException catch (e) {
-      throw _apiClient.mapDioErrorToFailure(e);
-    }
+    final List data = response.data['data'] ?? [];
+    return data.map((json) => CanonicalTitleEntity.fromJson(json)).toList();
   }
 
   Future<CanonicalTitleEntity> getTitleDetail(String titleId) async {
-    try {
-      final response = await _apiClient.dio.get('${ApiConfig.titlesEndpoint}/$titleId');
-      return CanonicalTitleEntity.fromJson(response.data);
-    } on DioException catch (e) {
-      throw _apiClient.mapDioErrorToFailure(e);
-    }
+    final response = await _apiClient.dio.get('${ApiConfig.titlesEndpoint}/$titleId');
+    return CanonicalTitleEntity.fromJson(response.data);
   }
 
   Future<List<AvailabilityEntity>> getTitleAvailability(String titleId) async {
-    try {
-      final response = await _apiClient.dio.get('${ApiConfig.titlesEndpoint}/$titleId/availability');
-      final List data = response.data['offers'] ?? [];
-      return data.map((json) => AvailabilityEntity.fromJson(json)).toList();
-    } on DioException catch (e) {
-      throw _apiClient.mapDioErrorToFailure(e);
-    }
+    final response = await _apiClient.dio.get('${ApiConfig.titlesEndpoint}/$titleId/availability');
+    final List data = response.data['offers'] ?? [];
+    return data.map((json) => AvailabilityEntity.fromJson(json)).toList();
   }
 
   Future<List<ReleaseEntity>> getTitleReleases(String titleId) async {
-    try {
-      final response = await _apiClient.dio.get('${ApiConfig.titlesEndpoint}/$titleId/releases');
-      // This endpoint returns a raw JSON array, not an object wrapper.
-      final List data = response.data ?? [];
-      return data.map((json) => ReleaseEntity.fromJson(json)).toList();
-    } on DioException catch (e) {
-      throw _apiClient.mapDioErrorToFailure(e);
-    }
+    final response = await _apiClient.dio.get('${ApiConfig.titlesEndpoint}/$titleId/releases');
+    // This endpoint returns a raw JSON array, not an object wrapper.
+    final List data = response.data ?? [];
+    return data.map((json) => ReleaseEntity.fromJson(json)).toList();
   }
 }

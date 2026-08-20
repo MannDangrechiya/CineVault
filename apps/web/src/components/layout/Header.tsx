@@ -3,27 +3,17 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { SearchPlaceholder } from "@/components/ui/SearchPlaceholder";
 import { Bell, User, LogOut, Sparkles } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 
-interface HeaderProps {
-  onOpenMobileMenu?: () => void;
-}
-
-export const Header: React.FC<HeaderProps> = () => {
+export const Header: React.FC = () => {
   const pathname = usePathname();
   const { user, isAuthenticated, logout } = useAuth();
 
   if (pathname === "/login") return null;
 
   return (
-    <header className="h-16 border-b border-zinc-900 bg-zinc-950/70 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-between gap-4 sticky top-0 z-30">
-      {/* Search Input */}
-      <div className="flex-1 max-w-md">
-        <SearchPlaceholder />
-      </div>
-
+    <header className="h-16 border-b border-zinc-900 bg-zinc-950/70 backdrop-blur-xl px-4 sm:px-6 flex items-center justify-end gap-4 sticky top-0 z-30">
       {/* Action / Status Controls */}
       <div className="flex items-center gap-3">
         {/* AI Vector Match Ready Badge */}

@@ -13,7 +13,7 @@ import uuid
 import time
 import logging
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import Any, Callable, Dict, List, Optional
 from enum import Enum
 
@@ -88,21 +88,11 @@ class JobEnvelope:
     dead_letter_reason: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "job_id": self.job_id,
-            "job_type": self.job_type,
-            "idempotency_key": self.idempotency_key,
-            "correlation_id": self.correlation_id,
-            "status": self.status,
-            "attempt_count": self.attempt_count,
-            "max_attempts": self.max_attempts,
-            "submitted_at": self.submitted_at,
-            "started_at": self.started_at,
-            "completed_at": self.completed_at,
-            "error": self.error,
-            "result": self.result,
-            "dead_letter_reason": self.dead_letter_reason,
-        }
+        data = asdict(self)
+        # `payload` is intentionally excluded from the wire representation (matches
+        # the prior manual field listing, which never surfaced the raw job payload here).
+        data.pop("payload", None)
+        return data
 
 
 # ---------------------------------------------------------------------------

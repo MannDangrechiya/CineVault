@@ -48,7 +48,15 @@ class ApiClient {
             await _secureStorage.clearSession();
             onUnauthorized?.call();
           }
-          return handler.next(error);
+
+          // Map the raw DioException into an application Failure once, here,
+          // so individual datasource methods don't need repetitive try/catch
+          // blocks. The Failure is attached as `error.error` and mirrored in
+          // `toString()` so callers see the same effective error either way.
+          final failure = mapDioErrorToFailure(error);
+          final mapped = error.copyWith(error: failure)
+            ..stringBuilder = (_) => failure.toString();
+          return handler.reject(mapped);
         },
       ),
     );

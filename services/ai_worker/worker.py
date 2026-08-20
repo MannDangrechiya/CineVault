@@ -10,61 +10,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 import uuid
 import math
-try:
-    from celery import Celery
-except ImportError:
-    # Lightweight Celery fallback for test environments without celery dependency installed
-    class CeleryMockConf(dict):
-        def update(self, *args, **kwargs):
-            super().update(*args, **kwargs)
-        def __getattr__(self, name):
-            return self.get(name)
-
-    class CeleryMock:
-        def __init__(self, name="cinevault_ai_worker", broker=None, backend=None):
-            self.name = name
-            self.broker = broker
-            self.backend = backend
-            self.tasks = {}
-            self.conf = CeleryMockConf({
-                "task_serializer": "json",
-                "result_serializer": "json",
-                "timezone": "UTC",
-            })
-
-        def task(self, *args, **kwargs):
-            def decorator(fn):
-                task_name = kwargs.get("name", fn.__name__)
-                class MockTaskInstance:
-                    def retry(self, exc=None, **kw):
-                        if exc:
-                            raise exc
-                        raise RuntimeError("Task retry triggered")
-
-                class TaskWrapper:
-                    def __init__(self, func):
-                        self.func = func
-                        self.__name__ = func.__name__
-                        self.instance = MockTaskInstance()
-                    def __call__(self, *a, **kw):
-                        return self.func(self.instance, *a, **kw)
-                    def apply(self, args=(), kwargs=None):
-                        kwargs = kwargs or {}
-                        class AsyncResult:
-                            def __init__(self, res):
-                                self._res = res
-                            def get(self, *a, **kw):
-                                return self._res
-                        return AsyncResult(self.func(self.instance, *args, **kwargs))
-                wrapped = TaskWrapper(fn)
-                self.tasks[task_name] = wrapped
-                return wrapped
-            return decorator
-
-        def start(self):
-            pass
-
-    Celery = CeleryMock  # type: ignore
+from celery import Celery
 
 # Configure structured worker logging
 logging.basicConfig(

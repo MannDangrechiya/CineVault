@@ -35,13 +35,6 @@ class TestPhase4CacheAndQueueInfrastructure(unittest.TestCase):
             self.assertEqual(get_val, test_val)
             self.valkey.delete(test_key)
 
-    def test_valkey_rate_limit_atomic_counter(self):
-        key = "test:rate_limit:client_123"
-        cnt1 = self.valkey.incr_rate_limit(key, ttl=10)
-        cnt2 = self.valkey.incr_rate_limit(key, ttl=10)
-        self.assertGreaterEqual(cnt2, cnt1)
-        self.valkey.delete(key)
-
     def test_valkey_idempotency_check(self):
         idem_key = "018f2e4a-7b31-7000-8000-000000000099"
         client = self.valkey.get_client()
