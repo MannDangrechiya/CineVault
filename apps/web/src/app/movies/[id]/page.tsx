@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { getTitleById } from "@/lib/api/titles";
 import { toggleWatchlistState, sendRecommendation } from "@/lib/api/personal";
+import { getFriendships, type FriendshipItem } from "@/lib/api/ai";
 import { LoadingState } from "@/components/ui/States";
 
 export default function MovieDetailPage() {
@@ -29,7 +30,7 @@ export default function MovieDetailPage() {
   const titleId = (params?.id as string) || "";
 
   const [isRecommendModalOpen, setIsRecommendModalOpen] = useState(false);
-  const [recipient, setRecipient] = useState("");
+  const [friendId, setFriendId] = useState("");
   const [personalNote, setPersonalNote] = useState("");
   const [recommendSent, setRecommendSent] = useState(false);
   const [isSavedToWatchlist, setIsSavedToWatchlist] = useState(false);
@@ -51,8 +52,19 @@ export default function MovieDetailPage() {
     },
   });
 
+  // Friend picker: the backend requires a real recipient_id UUID, so recommending
+  // to a free-text email/@handle always failed validation. Reuse the same
+  // friendship list the Oracle page's group matchmaker uses.
+  const { data: friendships = [] } = useQuery({
+    queryKey: ["friendships"],
+    queryFn: getFriendships,
+    enabled: isRecommendModalOpen,
+  });
+  const acceptedFriends = friendships.filter((f: FriendshipItem) => f.status === "ACCEPTED");
+  const selectedFriend = acceptedFriends.find((f: FriendshipItem) => f.friend_id === friendId);
+
   const recommendMutation = useMutation({
-    mutationFn: (msg: string) => sendRecommendation(titleId, recipient, msg),
+    mutationFn: (msg: string) => sendRecommendation(titleId, friendId, msg),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["recommendations"] });
     },
@@ -78,15 +90,15 @@ export default function MovieDetailPage() {
 
   const handleSendRecommendation = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!recipient) return;
-    
+    if (!friendId) return;
+
     recommendMutation.mutate(personalNote, {
       onSuccess: () => {
         setRecommendSent(true);
         setTimeout(() => {
           setRecommendSent(false);
           setIsRecommendModalOpen(false);
-          setRecipient("");
+          setFriendId("");
           setPersonalNote("");
         }, 1800);
       },
@@ -400,23 +412,40 @@ export default function MovieDetailPage() {
                 <h4 className="text-sm font-bold text-zinc-100">Recommendation Dispatched!</h4>
                 <p className="text-xs text-zinc-400">
                   Sent <span className="text-violet-300 font-semibold">{displayTitle}</span> to{" "}
-                  <span className="text-zinc-200 font-semibold">{recipient}</span>.
+                  <span className="text-zinc-200 font-semibold">
+                    {selectedFriend?.friend_name || "your friend"}
+                  </span>
+                  .
                 </p>
               </div>
             ) : (
               <form onSubmit={handleSendRecommendation} className="space-y-4 pt-4">
                 <div>
                   <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                    Friend Username or Email
+                    Friend
                   </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. alex@cinevault.local or @alex"
-                    value={recipient}
-                    onChange={(e) => setRecipient(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-xs bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-violet-500 transition-colors"
-                  />
+                  {acceptedFriends.length > 0 ? (
+                    <select
+                      required
+                      value={friendId}
+                      onChange={(e) => setFriendId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-xs bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-violet-500 transition-colors"
+                    >
+                      <option value="" disabled>
+                        Select a friend...
+                      </option>
+                      {acceptedFriends.map((f: FriendshipItem) => (
+                        <option key={f.friend_id} value={f.friend_id}>
+                          {f.friend_name || "Unknown Member"}
+                          {f.friend_username ? ` (@${f.friend_username})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-xs text-zinc-500 px-3.5 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl">
+                      Add a friend first to send them a recommendation.
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -442,8 +471,8 @@ export default function MovieDetailPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={recommendMutation.isPending}
-                    className={`inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 rounded-xl shadow-lg shadow-violet-600/30 transition-all cursor-pointer ${recommendMutation.isPending ? "opacity-50 cursor-not-allowed" : ""}`}
+                    disabled={recommendMutation.isPending || acceptedFriends.length === 0}
+                    className={`inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 rounded-xl shadow-lg shadow-violet-600/30 transition-all cursor-pointer ${recommendMutation.isPending || acceptedFriends.length === 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>{recommendMutation.isPending ? "Sending..." : "Send Recommendation"}</span>
