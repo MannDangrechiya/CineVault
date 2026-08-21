@@ -1,11 +1,13 @@
 # CineVault OS — Personal Data Router (CAT-2)
 # User personal logs, append-only watch events, title state management & conflict resolution (ADR-003, ADR-004)
 
+import logging
 from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import config
 from ..schemas.common import PaginatedResponse, CursorPagination
 from ..schemas.personal import (
     WatchEventCreate, WatchEventResponse,
@@ -28,8 +30,11 @@ from ..auth.jwt_validator import SecurityTokenClaims
 from ..rate_limiter import enforce_rate_limit
 from ..database import get_db
 from ..repositories.personal import personal_repository
+from ..repositories.social import social_repository
 from ..models.personal import UserListModel, WatchEventModel
 from ..models.canonical import TitleModel
+
+logger = logging.getLogger("cinevault.personal")
 
 router = APIRouter(prefix="/v1/me", tags=["Personal Data (CAT-2)"])
 personal_router = APIRouter(prefix="/v1/personal", tags=["Personal Frontend APIs (CAT-2)"])
@@ -229,18 +234,45 @@ async def get_personal_analytics(
     """Retrieves live aggregate viewing analytics and taste affinity breakdown."""
     user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
     metrics = await personal_repository.get_user_dashboard_metrics(db=db, user_id=user_id)
-    
+
+    # Aggregate taste_match_score = mean per-friend compatibility (cosine similarity
+    # over UserTasteProfileModel.taste_vector), reusing the same computation the
+    # social layer's friend-compatibility feature is built on (services/api/repositories/social.py).
+    # No fabricated fallback: 0 friends or no taste vector yet both correctly yield 0.0,
+    # same "genuinely zero vs no data yet" fix as the metrics fields below.
+    # Mirrors the exact fallback style used throughout personal_repository
+    # (e.g. update_user_title_state, list_watchlist): fall back to an empty
+    # result in local dev, but re-raise in production instead of silently
+    # masking a real failure (e.g. a regression of the "social schema not
+    # migrated" bug this session fixed) as taste_match_score=0.0.
+    try:
+        taste_matches = await social_repository.get_taste_compatibility(db=db, user_id=user_id, limit=1000)
+    except Exception as exc:
+        logger.error("get_taste_compatibility failed: %s", exc, exc_info=True)
+        if not config.allow_seed_fallback:
+            raise
+        taste_matches = []
+    taste_match_score = (
+        round(sum(m.compatibility_score for m in taste_matches) / len(taste_matches), 1)
+        if taste_matches else 0.0
+    )
+
     return PersonalAnalyticsResponse(
-        total_watch_hours=metrics.total_watch_hours if metrics.total_watch_hours > 0 else 348.5,
-        watched_count=metrics.watched_count if metrics.watched_count > 0 else 142,
-        total_titles=metrics.total_titles if metrics.total_titles > 0 else 1420,
-        monthly_watch_count=metrics.monthly_watch_count if metrics.monthly_watch_count > 0 else 18,
-        annual_watch_count=metrics.annual_watch_count if metrics.annual_watch_count > 0 else 142,
-        watch_streak_days=metrics.watch_streak_days if metrics.watch_streak_days > 0 else 7,
-        taste_match_score=98.4,
-        movies_watched=metrics.movies_watched if metrics.movies_watched > 0 else 96,
-        series_completed=metrics.series_completed if metrics.series_completed > 0 else 38,
-        anime_completed=metrics.anime_completed if metrics.anime_completed > 0 else 8,
+        total_watch_hours=metrics.total_watch_hours,
+        watched_count=metrics.watched_count,
+        total_titles=metrics.total_titles,
+        monthly_watch_count=metrics.monthly_watch_count,
+        annual_watch_count=metrics.annual_watch_count,
+        watch_streak_days=metrics.watch_streak_days,
+        taste_match_score=taste_match_score,
+        movies_watched=metrics.movies_watched,
+        series_completed=metrics.series_completed,
+        anime_completed=metrics.anime_completed,
+        # TODO(PLAN.md 1.4 follow-up): pending_recommendations_count and the
+        # top_genres/top_directors/top_actors/monthly_trend breakdowns below are
+        # still fully fabricated literals with no backing computation at all (not
+        # even a real-metric-that-happens-to-be-zero) — out of scope for this fix,
+        # flagged separately since it's a bigger lift (genre/credit joins).
         pending_recommendations_count=5,
         top_genres=[
             GenreAffinityItem(genre="Sci-Fi", count=48, percentage=33.8),
