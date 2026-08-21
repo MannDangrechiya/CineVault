@@ -248,6 +248,21 @@ SEED_FALLBACK_TITLES = {
 class CanonicalRepository:
     """Provides async database queries for canonical catalog titles, editions, releases, and availability."""
 
+    async def get_titles_map(
+        self, db: Optional[AsyncSession], title_ids: List[uuid.UUID]
+    ) -> dict:
+        """
+        Batch-loads raw TitleModel rows into a {title_id: TitleModel} map.
+        Shared helper for the "join title_id -> canonical.title for a display
+        badge" pattern used by several callers (personal.list_watchlist,
+        social recommendation enrichment, etc.) instead of each repeating the
+        same select(...).in_(...) + dict-comprehension inline.
+        """
+        if db is None or not title_ids:
+            return {}
+        res = await db.execute(select(TitleModel).where(TitleModel.title_id.in_(title_ids)))
+        return {t.title_id: t for t in res.scalars().all()}
+
     async def list_titles(
         self,
         db: Optional[AsyncSession],

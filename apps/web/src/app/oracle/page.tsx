@@ -428,6 +428,9 @@ export default function OraclePage() {
                     const avatar =
                       f.avatar_url ||
                       "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80";
+                    // Best-effort display name only resolves for the fixed local-dev
+                    // accounts (no user-profile table exists) -- fall back honestly.
+                    const displayName = f.friend_name || "Unknown Member";
 
                     return (
                       <button
@@ -444,12 +447,14 @@ export default function OraclePage() {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={avatar}
-                            alt={f.friend_name}
+                            alt={displayName}
                             className="w-10 h-10 rounded-full object-cover border border-zinc-700"
                           />
                           <div>
-                            <p className="text-xs font-bold text-zinc-100">{f.friend_name}</p>
-                            <p className="text-[10px] text-zinc-400">@{f.friend_username}</p>
+                            <p className="text-xs font-bold text-zinc-100">{displayName}</p>
+                            <p className="text-[10px] text-zinc-400">
+                              {f.friend_username ? `@${f.friend_username}` : ""}
+                            </p>
                           </div>
                         </div>
 

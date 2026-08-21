@@ -41,10 +41,14 @@ export interface AssistantQueryResponse {
 export interface FriendshipItem {
   friendship_id: string;
   friend_id: string;
-  friend_name: string;
-  friend_username: string;
+  // Best-effort only: the backend has no user-profile table, so these
+  // resolve to null for any account outside the fixed local-dev credential
+  // store (see services/api/auth/user_directory.py). Callers must render a
+  // fallback, not assume a name is always present.
+  friend_name: string | null;
+  friend_username: string | null;
   avatar_url?: string | null;
-  status: "PENDING" | "ACCEPTED" | "REJECTED" | "BLOCKED" | string;
+  status: "PENDING" | "ACCEPTED" | "BLOCKED" | string;
   trust_score: number;
   created_at: string;
 }
@@ -84,6 +88,18 @@ export async function queryAssistant(
 
 export async function getFriendships(): Promise<FriendshipItem[]> {
   return await apiFetch<FriendshipItem[]>("/social/friendships");
+}
+
+export interface TasteMatch {
+  friend_id: string;
+  compatibility_score: number;
+}
+
+// Real cosine-similarity compatibility against ACCEPTED friends (pgvector
+// taste_vector). Symmetric, so this also answers "how compatible is friend X
+// with me" from either side of a recommendation.
+export async function getTasteMatches(limit = 50): Promise<TasteMatch[]> {
+  return await apiFetch<TasteMatch[]>(`/social/taste-matches?limit=${limit}`);
 }
 
 // ── Group Matchmaking ──────────────────────────────────────────────────────

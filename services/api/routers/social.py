@@ -14,10 +14,12 @@ from ..schemas.social import (
     FriendshipResponse,
     FriendshipCreate,
     FriendshipUpdate,
+    EnrichedFriendshipResponse,
     RecommendationStatusEnum,
     RecommendationCreate,
     RecommendationStateUpdate,
     RecommendationResponse,
+    EnrichedRecommendationResponse,
     TasteMatchResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
@@ -25,9 +27,11 @@ from ..schemas.social import (
 )
 from ..auth.dependencies import require_authenticated_user, get_optional_claims
 from ..auth.jwt_validator import SecurityTokenClaims
+from ..auth.user_directory import resolve_display_names
 from ..rate_limiter import enforce_rate_limit
 from ..database import get_db
-from ..repositories.social import social_repository, _resolve_uuid
+from ..repositories.social import social_repository, _resolve_uuid, resolve_friend_id
+from ..repositories.canonical import canonical_repository
 from ..ai.ollama_client import OllamaClient
 
 
@@ -145,7 +149,7 @@ async def get_recommendation_by_id(
 
 @router.get(
     "/recommendations",
-    response_model=List[RecommendationResponse],
+    response_model=List[EnrichedRecommendationResponse],
     dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
 )
 async def list_user_recommendations(
@@ -153,9 +157,40 @@ async def list_user_recommendations(
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db),
 ):
-    """Lists social recommendations for the current authenticated user."""
+    """
+    Lists social recommendations for the current authenticated user, enriched
+    with joined canonical.title metadata and best-effort sender/recipient
+    display names (PLAN.md 1.2 — the raw RecommendationResponse only carried
+    UUIDs, which rendered as "Unknown Title" / "Anonymous" on the frontend).
+    """
     user_id = _extract_user_id(claims)
-    return await social_repository.list_recommendations(db=db, user_id=user_id, role=role)
+    recommendations = await social_repository.list_recommendations(db=db, user_id=user_id, role=role)
+    if not recommendations:
+        return []
+
+    title_map = await canonical_repository.get_titles_map(db, list({r.title_id for r in recommendations}))
+    name_map = resolve_display_names(
+        {uid for r in recommendations for uid in (r.sender_id, r.recipient_id)}
+    )
+
+    enriched: List[EnrichedRecommendationResponse] = []
+    for r in recommendations:
+        title = title_map.get(r.title_id)
+        sender_name, sender_username = name_map[str(r.sender_id)]
+        recipient_name, recipient_username = name_map[str(r.recipient_id)]
+        enriched.append(
+            EnrichedRecommendationResponse(
+                **r.model_dump(),
+                canonical_title=title.canonical_title if title else None,
+                poster_url=title.poster_url if title else None,
+                production_year=title.production_year if title else None,
+                sender_name=sender_name,
+                sender_username=sender_username,
+                recipient_name=recipient_name,
+                recipient_username=recipient_username,
+            )
+        )
+    return enriched
 
 
 # =============================================================================
@@ -217,16 +252,50 @@ async def update_friendship_status(
 
 @router.get(
     "/friendships",
-    response_model=List[FriendshipResponse],
+    response_model=List[EnrichedFriendshipResponse],
     dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
 )
 async def list_user_friendships(
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db),
 ):
-    """Lists all friendships associated with the authenticated user."""
+    """
+    Lists all friendships associated with the authenticated user, enriched
+    with the caller-relative `friend_id` and a best-effort display name —
+    the raw FriendshipResponse only carries requester_id/addressee_id, which
+    the frontend's getFriendships() has always assumed came back resolved.
+    """
     user_id = _extract_user_id(claims)
-    return await social_repository.list_friendships(db=db, user_id=user_id)
+    friendships = await social_repository.list_friendships(db=db, user_id=user_id)
+
+    resolved_friend_ids: Dict[uuid.UUID, uuid.UUID] = {}
+    for f in friendships:
+        fid = resolve_friend_id(f.requester_id, f.addressee_id, user_id)
+        if fid is None:
+            # Shouldn't happen -- list_friendships is already scoped to rows
+            # where the caller is one of the two sides -- but skip rather
+            # than emit a row with a nonsensical friend_id.
+            logger.warning("Friendship %s doesn't include caller %s on either side", f.friendship_id, user_id)
+            continue
+        resolved_friend_ids[f.friendship_id] = fid
+    name_map = resolve_display_names(resolved_friend_ids.values())
+
+    enriched: List[EnrichedFriendshipResponse] = []
+    for f in friendships:
+        friend_id = resolved_friend_ids.get(f.friendship_id)
+        if friend_id is None:
+            continue
+        friend_name, friend_username = name_map[str(friend_id)]
+        enriched.append(
+            EnrichedFriendshipResponse(
+                **f.model_dump(),
+                friend_id=friend_id,
+                friend_name=friend_name,
+                friend_username=friend_username,
+                avatar_url=None,
+            )
+        )
+    return enriched
 
 
 # =============================================================================

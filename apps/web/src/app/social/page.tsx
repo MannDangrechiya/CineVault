@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -14,61 +14,93 @@ import {
   BookmarkPlus,
   Share2,
   SlidersHorizontal,
-  Bot,
+  Users,
 } from "lucide-react";
-import { getRecommendations, updateRecommendationStatus } from "@/lib/api/personal";
+import {
+  getRecommendations,
+  updateRecommendationStatus,
+  toggleWatchlistState,
+  type RecommendationItem,
+} from "@/lib/api/personal";
+import { getFriendships, getTasteMatches } from "@/lib/api/ai";
 import { LoadingState } from "@/components/ui/States";
+
+const FALLBACK_POSTER =
+  "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80";
 
 export default function SocialRecommendationsPage() {
   const [activeTab, setActiveTab] = useState<"inbox" | "ai" | "sent">("inbox");
   const [filterScore, setFilterScore] = useState<number>(0);
   const queryClient = useQueryClient();
 
-  const { data: rawRecommendations = [], isLoading } = useQuery({
-    queryKey: ["recommendations"],
-    queryFn: getRecommendations,
+  const { data: received = [], isLoading: isLoadingReceived } = useQuery({
+    queryKey: ["recommendations", "received"],
+    queryFn: () => getRecommendations({ role: "received" }),
   });
+
+  const { data: sent = [], isLoading: isLoadingSent } = useQuery({
+    queryKey: ["recommendations", "sent"],
+    queryFn: () => getRecommendations({ role: "sent" }),
+  });
+
+  const { data: friendships = [] } = useQuery({
+    queryKey: ["friendships"],
+    queryFn: getFriendships,
+  });
+
+  // Real cosine-similarity taste compatibility (services/api/repositories/social.py's
+  // get_taste_compatibility) -- replaces the old hardcoded 95%/98.4% badges.
+  // Symmetric, so "my score with friend X" also answers "sender X's score with me".
+  const { data: tasteMatches = [] } = useQuery({
+    queryKey: ["taste-matches"],
+    queryFn: () => getTasteMatches(50),
+  });
+  const tasteMatchMap = useMemo(() => {
+    const map = new Map<string, number>();
+    tasteMatches.forEach((m) => map.set(m.friend_id, m.compatibility_score));
+    return map;
+  }, [tasteMatches]);
 
   const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: "accepted" | "dismissed" }) =>
+    mutationFn: ({ id, status }: { id: string; status: "ACCEPTED" | "REJECTED"; titleId: string }) =>
       updateRecommendationStatus(id, status),
-    onSuccess: () => {
+    onSuccess: async (_result, variables) => {
+      // Backend doesn't add accepted recommendations to the watchlist as a
+      // side effect -- do it explicitly so "Accept & Watchlist" is true.
+      // Isolated in try/catch: the recommendation status update already
+      // succeeded server-side by this point, so a transient watchlist-toggle
+      // failure must not prevent the UI from refreshing to reflect that.
+      if (variables.status === "ACCEPTED") {
+        try {
+          await toggleWatchlistState(variables.titleId, true);
+        } catch (err) {
+          console.error("Failed to add accepted recommendation to watchlist", err);
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ["recommendations"] });
-      queryClient.invalidateQueries({ queryKey: ["watchlist"] }); // Accepting adds to watchlist
+      queryClient.invalidateQueries({ queryKey: ["watchlist"] });
     },
   });
 
-  const handleAction = (id: string, newStatus: "accepted" | "dismissed") => {
-    updateStatusMutation.mutate({ id, status: newStatus });
+  const handleAction = (rec: RecommendationItem, newStatus: "ACCEPTED" | "REJECTED") => {
+    updateStatusMutation.mutate({ id: rec.recommendation_id, status: newStatus, titleId: rec.title_id });
   };
 
-  // Map API models to UI models
-  const recommendations = rawRecommendations.map((rec) => ({
-    id: rec.id,
-    movieTitle: rec.title?.canonical_title || "Unknown Title",
-    movieId: rec.title_id,
-    posterUrl: rec.title?.poster_url || "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
-    year: rec.title?.production_year || 2024,
-    sender: {
-      name: rec.sender_name || "Anonymous",
-      username: `@${rec.sender_name?.toLowerCase().replace(/\s/g, "_") || "user"}`,
-      avatarBg: rec.sender_id === "ai" ? "from-emerald-600 to-teal-500" : "from-violet-600 to-indigo-500",
-      isAI: rec.sender_id === "ai",
-    },
-    note: rec.message || "No message attached.",
-    tasteMatch: 95, // hardcoded match score fallback
-    timestamp: new Date(rec.sent_at).toLocaleString(),
-    status: rec.status,
-  }));
+  const isLoading = isLoadingReceived || isLoadingSent;
+  const pendingCount = received.filter((r) => r.status === "SENT").length;
 
-  const filteredItems = recommendations.filter((rec) => {
-    if (rec.tasteMatch < filterScore) return false;
-    if (activeTab === "ai") return rec.sender.isAI;
-    if (activeTab === "sent") return false; // Demo sent view
+  const visibleRecommendations = activeTab === "sent" ? sent : received;
+  const filteredItems = visibleRecommendations.filter((rec) => {
+    const otherPartyId = activeTab === "sent" ? rec.recipient_id : rec.sender_id;
+    const score = tasteMatchMap.get(otherPartyId);
+    if (filterScore > 0 && (score ?? -1) < filterScore) return false;
     return true;
   });
 
-  const pendingCount = recommendations.filter((r) => r.status === "pending").length;
+  const acceptedFriends = friendships.filter((f) => f.status === "ACCEPTED");
+  const friendMatches = acceptedFriends
+    .map((f) => ({ friend: f, score: tasteMatchMap.get(f.friend_id) }))
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
 
   if (isLoading) {
     return (
@@ -140,137 +172,192 @@ export default function SocialRecommendationsPage() {
             </button>
           </div>
 
-          {/* Quick Filter Control */}
-          <div className="flex items-center gap-2 text-xs text-zinc-400">
-            <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-500" />
-            <span>Min Match:</span>
-            <select
-              value={filterScore}
-              onChange={(e) => setFilterScore(Number(e.target.value))}
-              className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-violet-500"
-            >
-              <option value={0}>All Scores</option>
-              <option value={90}>90%+ Match</option>
-              <option value={95}>95%+ Match</option>
-            </select>
-          </div>
+          {activeTab !== "ai" && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-500" />
+              <span>Min Match:</span>
+              <select
+                value={filterScore}
+                onChange={(e) => setFilterScore(Number(e.target.value))}
+                className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-violet-500"
+              >
+                <option value={0}>All Scores</option>
+                <option value={90}>90%+ Match</option>
+                <option value={95}>95%+ Match</option>
+              </select>
+            </div>
+          )}
         </div>
 
-        {/* REVEAL GRID FOR INCOMING RECOMMENDATIONS */}
-        {activeTab === "sent" ? (
+        {activeTab === "ai" ? (
+          /* AI TASTE MATCH LEADERBOARD -- real cosine similarity across accepted friends */
+          friendMatches.length === 0 ? (
+            <div className="p-12 text-center rounded-2xl bg-zinc-900/40 border border-zinc-900 text-zinc-400 space-y-3">
+              <Sparkles className="w-8 h-8 text-zinc-600 mx-auto" />
+              <h3 className="text-sm font-semibold text-zinc-200">No Taste Matches Yet</h3>
+              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                Add accepted friends and build up your watch history to see real taste
+                compatibility scores here.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {friendMatches.map(({ friend, score }) => (
+                <div
+                  key={friend.friend_id}
+                  className="p-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md flex items-center gap-3"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white shadow-md text-xs font-bold shrink-0">
+                    {(friend.friend_name || "?").charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-zinc-100 truncate">
+                      {friend.friend_name || "Unknown Member"}
+                    </p>
+                    <p className="text-[10px] text-zinc-500">
+                      {friend.friend_username ? `@${friend.friend_username}` : "No taste vector yet"}
+                    </p>
+                  </div>
+                  {score !== undefined ? (
+                    <div className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0">
+                      <Sparkles className="w-3 h-3" />
+                      {score.toFixed(1)}%
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-zinc-600 shrink-0">No score yet</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        ) : filteredItems.length === 0 ? (
           <div className="p-12 text-center rounded-2xl bg-zinc-900/40 border border-zinc-900 text-zinc-400 space-y-3">
-            <Send className="w-8 h-8 text-zinc-600 mx-auto" />
-            <h3 className="text-sm font-semibold text-zinc-200">No Sent Recommendations History</h3>
+            {activeTab === "sent" ? (
+              <Send className="w-8 h-8 text-zinc-600 mx-auto" />
+            ) : (
+              <Inbox className="w-8 h-8 text-zinc-600 mx-auto" />
+            )}
+            <h3 className="text-sm font-semibold text-zinc-200">
+              {activeTab === "sent" ? "No Sent Recommendations Yet" : "Your Inbox Is Empty"}
+            </h3>
             <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-              Recommendations you dispatch to peers from movie detail pages will be tracked here.
+              {activeTab === "sent"
+                ? "Recommendations you dispatch to friends from movie detail pages will be tracked here."
+                : "Recommendations friends send you will show up here."}
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {filteredItems.map((rec) => {
-              const isAccepted = rec.status === "accepted";
-              const isRejected = rec.status === "dismissed";
+              const isSent = activeTab === "sent";
+              const otherPartyId = isSent ? rec.recipient_id : rec.sender_id;
+              const otherPartyName = isSent ? rec.recipient_name : rec.sender_name;
+              const score = tasteMatchMap.get(otherPartyId);
+              const isAccepted = rec.status === "ACCEPTED" || rec.status === "WATCHED" || rec.status === "RATED";
+              const isRejected = rec.status === "REJECTED";
+              const movieTitle = rec.canonical_title || "Unknown Title";
 
               return (
                 <div
-                  key={rec.id}
+                  key={rec.recommendation_id}
                   className={`group relative p-5 rounded-2xl border transition-all duration-300 bg-zinc-900/40 backdrop-blur-md flex flex-col justify-between ${
                     isAccepted
                       ? "border-emerald-500/30 bg-emerald-950/10"
                       : isRejected
                       ? "border-zinc-900 opacity-50 bg-zinc-950/50"
                       : "border-zinc-800/80 hover:border-zinc-700 hover:shadow-xl hover:shadow-violet-950/20"
-                  } ${updateStatusMutation.isPending && updateStatusMutation.variables?.id === rec.id ? 'opacity-50' : ''}`}
+                  } ${
+                    updateStatusMutation.isPending && updateStatusMutation.variables?.id === rec.recommendation_id
+                      ? "opacity-50"
+                      : ""
+                  }`}
                 >
-                  {/* Sender Header + AI Taste Match Badge */}
+                  {/* Peer Header + Real Taste Match Badge */}
                   <div className="flex items-start justify-between gap-3 mb-4">
                     <div className="flex items-center gap-3">
-                      <div
-                        className={`w-9 h-9 rounded-xl bg-gradient-to-tr ${rec.sender.avatarBg} flex items-center justify-center text-white shadow-md text-xs font-bold`}
-                      >
-                        {rec.sender.isAI ? (
-                          <Bot className="w-4 h-4" />
-                        ) : (
-                          rec.sender.name.charAt(0).toUpperCase()
-                        )}
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white shadow-md text-xs font-bold">
+                        {(otherPartyName || "?").charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="text-xs font-bold text-zinc-100">{rec.sender.name}</h4>
-                          {rec.sender.isAI && (
-                            <span className="px-1.5 py-0.2 text-[9px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-md">
-                              AI Engine
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-zinc-500">{rec.timestamp}</span>
+                        <h4 className="text-xs font-bold text-zinc-100">
+                          {isSent ? "To " : ""}
+                          {otherPartyName || "Unknown Member"}
+                        </h4>
+                        <span className="text-[11px] text-zinc-500">
+                          {new Date(rec.sent_at).toLocaleString()}
+                        </span>
                       </div>
                     </div>
 
-                    {/* GLOWING AI TASTE Match Badge */}
-                    <div className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-semibold shadow-sm">
-                      <Sparkles className="w-3 h-3 text-emerald-400" />
-                      <span>{rec.tasteMatch}% Match</span>
-                    </div>
+                    {score !== undefined && (
+                      <div className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 backdrop-blur-md px-3 py-1 rounded-full text-xs font-semibold shadow-sm">
+                        <Sparkles className="w-3 h-3 text-emerald-400" />
+                        <span>{score.toFixed(1)}% Match</span>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Movie Card Preview & Sender Note */}
+                  {/* Movie Card Preview & Note */}
                   <div className="flex gap-4 p-3 rounded-xl bg-zinc-950/60 border border-zinc-900 mb-4">
-                    {/* Poster */}
                     <Link
-                      href={`/movies/${rec.movieId}`}
+                      href={`/movies/${rec.title_id}`}
                       className="shrink-0 w-16 sm:w-20 aspect-[2/3] rounded-lg overflow-hidden bg-zinc-900 block group/poster"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={rec.posterUrl}
-                        alt={rec.movieTitle}
+                        src={rec.poster_url || FALLBACK_POSTER}
+                        alt={movieTitle}
                         className="w-full h-full object-cover group-hover/poster:scale-105 transition-transform duration-300"
                       />
                     </Link>
 
-                    {/* Movie Info & Note */}
                     <div className="flex-1 flex flex-col justify-between min-w-0">
                       <div>
                         <Link
-                          href={`/movies/${rec.movieId}`}
+                          href={`/movies/${rec.title_id}`}
                           className="text-sm font-bold text-zinc-100 hover:text-violet-400 transition-colors line-clamp-1"
                         >
-                          {rec.movieTitle}
+                          {movieTitle}
                         </Link>
-                        <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-0.5">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-zinc-500" />
-                            {rec.year}
-                          </span>
-                          <span>•</span>
-                          <span className="text-zinc-400">Feature Film</span>
-                        </div>
+                        {rec.production_year && (
+                          <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-0.5">
+                            <span className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-zinc-500" />
+                              {rec.production_year}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Sender Note */}
-                      <p className="text-xs text-zinc-300/90 italic bg-zinc-900/60 p-2 rounded-lg border border-zinc-800/60 mt-2 line-clamp-2 leading-relaxed">
-                        &ldquo;{rec.note}&rdquo;
-                      </p>
+                      {rec.context_note && (
+                        <p className="text-xs text-zinc-300/90 italic bg-zinc-900/60 p-2 rounded-lg border border-zinc-800/60 mt-2 line-clamp-2 leading-relaxed">
+                          &ldquo;{rec.context_note}&rdquo;
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  {/* ACTION BUTTONS (ACCEPT / DISMISS) */}
+                  {/* ACTION BUTTONS (ACCEPT / DISMISS) -- inbox only, sent items are read-only */}
                   <div className="flex items-center justify-between pt-1">
                     {isAccepted ? (
                       <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
                         <Check className="w-4 h-4" />
-                        <span>Accepted & Added to Watchlist</span>
+                        <span>{isSent ? "Accepted" : "Accepted & Added to Watchlist"}</span>
                       </div>
                     ) : isRejected ? (
                       <div className="flex items-center gap-2 text-xs text-zinc-500">
                         <X className="w-4 h-4" />
                         <span>Recommendation Dismissed</span>
                       </div>
+                    ) : isSent ? (
+                      <div className="flex items-center gap-2 text-xs text-zinc-500">
+                        <Users className="w-4 h-4" />
+                        <span>Waiting on {otherPartyName || "your friend"}</span>
+                      </div>
                     ) : (
                       <div className="w-full flex items-center justify-end gap-2.5">
                         <button
-                          onClick={() => handleAction(rec.id, "dismissed")}
+                          onClick={() => handleAction(rec, "REJECTED")}
                           disabled={updateStatusMutation.isPending}
                           className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium text-zinc-400 hover:text-red-400 bg-zinc-900/80 hover:bg-red-950/30 border border-zinc-800 hover:border-red-900/50 transition-all cursor-pointer"
                         >
@@ -279,7 +366,7 @@ export default function SocialRecommendationsPage() {
                         </button>
 
                         <button
-                          onClick={() => handleAction(rec.id, "accepted")}
+                          onClick={() => handleAction(rec, "ACCEPTED")}
                           disabled={updateStatusMutation.isPending}
                           className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 border border-violet-500 shadow-md shadow-violet-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
                         >

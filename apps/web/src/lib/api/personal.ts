@@ -1,5 +1,4 @@
 import { apiFetch } from "./client";
-import { TitleDetail } from "./types";
 
 export interface WatchlistStateResponse {
   in_watchlist: boolean;
@@ -23,15 +22,27 @@ export interface WatchlistPageResponse {
   offset: number;
 }
 
+// Matches services/api/schemas/social.py's EnrichedRecommendationResponse.
+// Raw sender_id/recipient_id/title_id are kept alongside the joined/resolved
+// fields per PLAN.md 1.2 ("keep the raw fields too"). Name fields are
+// best-effort only -- this backend has no user-profile table, so they're
+// null for anyone outside the fixed local-dev credential store.
 export interface RecommendationItem {
-  id: string;
+  recommendation_id: string;
   sender_id: string;
-  sender_name: string;
+  sender_name: string | null;
+  sender_username: string | null;
+  recipient_id: string;
+  recipient_name: string | null;
+  recipient_username: string | null;
   title_id: string;
-  title: TitleDetail; // assuming populated by backend
-  message?: string;
-  status: "pending" | "accepted" | "dismissed";
+  canonical_title: string | null;
+  poster_url: string | null;
+  production_year: number | null;
+  status: "SENT" | "ACCEPTED" | "REJECTED" | "WATCHED" | "RATED";
+  context_note: string | null;
   sent_at: string;
+  updated_at: string;
 }
 
 // ── Watchlist ─────────────────────────────────────────────────────────────
@@ -73,25 +84,30 @@ export async function removeFromWatchlist(titleId: string): Promise<void> {
 export async function sendRecommendation(
   titleId: string,
   recipientId: string,
-  message?: string
+  contextNote?: string
 ): Promise<void> {
   await apiFetch("/social/recommendations", {
     method: "POST",
     body: JSON.stringify({
       title_id: titleId,
       recipient_id: recipientId,
-      message,
+      // Backend field is context_note, not message -- the old "message" key
+      // was silently dropped by pydantic on every call (PLAN.md 1.2).
+      context_note: contextNote || undefined,
     }),
   });
 }
 
-export async function getRecommendations(): Promise<RecommendationItem[]> {
-  return await apiFetch<RecommendationItem[]>("/social/recommendations");
+export async function getRecommendations(
+  params: { role?: "sent" | "received" | "all" } = {}
+): Promise<RecommendationItem[]> {
+  const qs = params.role ? `?role=${encodeURIComponent(params.role)}` : "";
+  return await apiFetch<RecommendationItem[]>(`/social/recommendations${qs}`);
 }
 
 export async function updateRecommendationStatus(
   id: string,
-  status: "accepted" | "dismissed"
+  status: "ACCEPTED" | "REJECTED"
 ): Promise<RecommendationItem> {
   return await apiFetch<RecommendationItem>(`/social/recommendations/${encodeURIComponent(id)}`, {
     method: "PATCH",

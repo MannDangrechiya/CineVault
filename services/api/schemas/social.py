@@ -89,6 +89,29 @@ class RecommendationResponse(BaseModel):
     updated_at: datetime
 
 
+class EnrichedRecommendationResponse(RecommendationResponse):
+    """
+    GET /social/recommendations response shape (PLAN.md 1.2): adds joined
+    canonical.title metadata and best-effort sender/recipient display names on
+    top of the raw RecommendationResponse fields, which are kept as-is so
+    other callers (services/api/routers/automation.py) are unaffected.
+
+    Display name resolution has a real limit: this system has no user-profile
+    table at all (identity is a JWT `sub` hashed to a UUID, see PLAN.md Part 2
+    grounding notes) — names are only resolvable for the fixed local-dev
+    accounts in services/api/routers/auth.py's credential store. Real
+    Keycloak-issued users resolve to null here; the frontend must render a
+    sensible fallback, not fabricate a name.
+    """
+    canonical_title: Optional[str] = None
+    poster_url: Optional[str] = None
+    production_year: Optional[int] = None
+    sender_name: Optional[str] = None
+    sender_username: Optional[str] = None
+    recipient_name: Optional[str] = None
+    recipient_username: Optional[str] = None
+
+
 # =========================================================================
 # Friendship Schemas
 # =========================================================================
@@ -113,6 +136,19 @@ class FriendshipResponse(BaseModel):
     trust_score: float
     created_at: datetime
     updated_at: datetime
+
+
+class EnrichedFriendshipResponse(FriendshipResponse):
+    """
+    GET /social/friendships response shape: adds the caller-relative
+    `friend_id` (whichever of requester_id/addressee_id isn't the caller) plus
+    a best-effort display name, same resolution limits as
+    EnrichedRecommendationResponse above.
+    """
+    friend_id: uuid.UUID
+    friend_name: Optional[str] = None
+    friend_username: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 # =========================================================================

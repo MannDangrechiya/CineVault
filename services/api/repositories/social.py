@@ -41,6 +41,20 @@ def _resolve_uuid(val: Any, field_name: str = "id") -> uuid.UUID:
         return uuid.uuid5(uuid.NAMESPACE_DNS, f"cinevault:{field_name}:{val}")
 
 
+def resolve_friend_id(requester_id: uuid.UUID, addressee_id: uuid.UUID, caller_id: uuid.UUID) -> Optional[uuid.UUID]:
+    """
+    Given a friendship's two sides and the caller's own id, returns the
+    *other* party -- the caller's friend. Returns None if the caller isn't
+    actually one of the two sides (shouldn't happen for rows a correctly
+    scoped query returned, but avoids silently returning the wrong id).
+    """
+    if requester_id == caller_id:
+        return addressee_id
+    if addressee_id == caller_id:
+        return requester_id
+    return None
+
+
 def _compute_cosine_distance(vec_a: List[float], vec_b: List[float]) -> float:
     """
     Computes cosine distance = 1 - cosine_similarity between two vector embeddings.
@@ -607,12 +621,11 @@ class SocialRepository:
             res_friends = await session.execute(stmt_friends)
             friend_records = res_friends.scalars().all()
 
-            friend_ids: List[uuid.UUID] = []
-            for f in friend_records:
-                if f.requester_id == u_uuid:
-                    friend_ids.append(f.addressee_id)
-                elif f.addressee_id == u_uuid:
-                    friend_ids.append(f.requester_id)
+            friend_ids: List[uuid.UUID] = [
+                fid for fid in (
+                    resolve_friend_id(f.requester_id, f.addressee_id, u_uuid) for f in friend_records
+                ) if fid is not None
+            ]
 
             if not friend_ids:
                 return []
@@ -653,13 +666,13 @@ class SocialRepository:
             target_vector = SEED_TASTE_PROFILES[u_uuid]["taste_vector"]
 
             # Find accepted friends
-            friend_ids: List[uuid.UUID] = []
-            for f in SEED_FRIENDSHIPS.values():
-                if f.status == FriendshipStatusEnum.ACCEPTED:
-                    if f.requester_id == u_uuid:
-                        friend_ids.append(f.addressee_id)
-                    elif f.addressee_id == u_uuid:
-                        friend_ids.append(f.requester_id)
+            friend_ids: List[uuid.UUID] = [
+                fid for fid in (
+                    resolve_friend_id(f.requester_id, f.addressee_id, u_uuid)
+                    for f in SEED_FRIENDSHIPS.values()
+                    if f.status == FriendshipStatusEnum.ACCEPTED
+                ) if fid is not None
+            ]
 
             if not friend_ids:
                 return []

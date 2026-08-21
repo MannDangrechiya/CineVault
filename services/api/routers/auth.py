@@ -2,7 +2,6 @@
 # P0 Fix: Removed arbitrary-password login and email-based role assignment.
 # Local dev now uses bcrypt-hashed credential store; staging/production returns 501.
 
-import os
 import time
 import logging
 from typing import List, Optional
@@ -12,6 +11,7 @@ from pydantic import BaseModel
 from ..config import config
 from ..auth.dependencies import require_authenticated_user
 from ..auth.jwt_validator import SecurityTokenClaims
+from ..auth.user_directory import load_local_user_store as _load_local_user_store
 
 logger = logging.getLogger("cinevault.routers.auth")
 
@@ -45,65 +45,6 @@ router = APIRouter(prefix="/v1/auth", tags=["Authentication & Identity"])
 # Dev default:  email=dev@cinevault.local  password=devpass
 #               email=curator@cinevault.local  password=curatorpass
 # ---------------------------------------------------------------------------
-
-def _load_local_user_store() -> dict:
-    """
-    Builds the local dev credential store from environment variables.
-    Schema: { email: { "hash": bcrypt_hash, "user_id": uuid_str, "roles": [...] } }
-
-    P0 Fix (Day 1-7 remediation): the previous store baked a hardcoded
-    system_admin credential (`mann_068` / bcrypt hash committed in source)
-    directly into this function, and the login page rendered it to any
-    unauthenticated visitor. Privileged accounts must now be opted into
-    explicitly via environment variables — no privileged hash ships in
-    source, and nothing is rendered unless the operator configures it.
-    """
-    store = {
-        os.getenv("DEV_USER_EMAIL", "dev@cinevault.local"): {
-            "hash": os.getenv(
-                "DEV_USER_PASSWORD_HASH",
-                # Hash for password "devpass"
-                "$2b$12$PVfblhI8qmxxO1ZbUoqIr.U.zkYngh4J9jLz5MxXcyCZPUB69DstG",
-            ),
-            "user_id": os.getenv(
-                "DEV_USER_UUID",
-                "018f0000-0000-7000-8000-000000000001",
-            ),
-            "roles": ["authenticated_user"],
-        },
-        os.getenv("DEV_CURATOR_EMAIL", "curator@cinevault.local"): {
-            "hash": os.getenv(
-                "DEV_CURATOR_PASSWORD_HASH",
-                # Hash for password "curatorpass"
-                "$2b$12$Yw5cy4oqZ80UoPxN/22V3uxLLYR73Dhy2dFGGBHJafogPcCUXVhXS",
-            ),
-            "user_id": os.getenv(
-                "DEV_CURATOR_UUID",
-                "018f0000-0000-7000-8000-000000000002",
-            ),
-            "roles": ["authenticated_user", "curator"],
-        },
-        os.getenv("DEV_ADMIN_EMAIL", "admin@cinevault.local"): {
-            "hash": os.getenv(
-                "DEV_ADMIN_PASSWORD_HASH",
-                # Hash for password "adminpass"
-                "$2b$12$1sKUHElH5Mf0mTw74DbiXeKQUJsMxmVNAqDwXb2LCwkMfGtyFJ71W",
-            ),
-            "user_id": os.getenv(
-                "DEV_ADMIN_UUID",
-                "018f0000-0000-7000-8000-000000000003",
-            ),
-            "roles": ["authenticated_user", "curator", "system_admin"],
-        },
-    }
-
-    # Also support dev_admin alias if configured
-    dev_admin_email = os.getenv("DEV_ADMIN_ALT_EMAIL", "dev_admin@cinevault.local")
-    if dev_admin_email not in store:
-        store[dev_admin_email] = store[os.getenv("DEV_ADMIN_EMAIL", "admin@cinevault.local")]
-
-    return store
-
 
 class LoginRequest(BaseModel):
     email: str
