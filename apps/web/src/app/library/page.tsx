@@ -111,9 +111,6 @@ export default function LibraryPage() {
                   <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-zinc-950/80 backdrop-blur-md text-zinc-300 border border-zinc-800">
                     {item.content_type === "MOVIE" ? "Movie" : "Series"}
                   </span>
-                  <span className="px-1.5 py-0.5 rounded-md text-[9px] font-mono bg-violet-600/30 text-violet-300 border border-violet-500/40">
-                    4K
-                  </span>
                 </div>
               </div>
 
@@ -122,7 +119,6 @@ export default function LibraryPage() {
               </h4>
               <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-1">
                 <span>{item.production_year}</span>
-                <span className="text-emerald-400 text-[10px]">Vault Verified</span>
               </div>
             </Link>
           ))}

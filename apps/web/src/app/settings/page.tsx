@@ -1,6 +1,6 @@
 import React from "react";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { Sparkles, Moon, Shield, Server, Database } from "lucide-react";
+import { Sparkles, Moon, Shield, Server } from "lucide-react";
 
 export default function SettingsPage() {
   return (
@@ -37,11 +37,11 @@ export default function SettingsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-900 space-y-1">
               <span className="text-zinc-500 text-[10px] uppercase">Embedding Dimension</span>
-              <p className="text-zinc-200 font-mono font-bold">1536-dim text-embedding-3</p>
+              <p className="text-zinc-200 font-mono font-bold">384-dim (all-MiniLM-L6-v2)</p>
             </div>
             <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-900 space-y-1">
               <span className="text-zinc-500 text-[10px] uppercase">Vector Similarity Index</span>
-              <p className="text-emerald-400 font-mono font-bold">HNSW Cosine Distance</p>
+              <p className="text-emerald-400 font-mono font-bold">pgvector Cosine Distance</p>
             </div>
           </div>
         </div>
@@ -59,15 +59,7 @@ export default function SettingsPage() {
                 <Shield className="w-4 h-4 text-emerald-400" />
                 <span>Identity & Auth: Keycloak OIDC + PKCE</span>
               </div>
-              <span className="text-emerald-400 font-mono text-[11px]">Ready</span>
-            </div>
-
-            <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-950/60 border border-zinc-900">
-              <div className="flex items-center gap-2 text-zinc-300">
-                <Database className="w-4 h-4 text-violet-400" />
-                <span>Local Cache: Dexie IndexedDB Offline Sync</span>
-              </div>
-              <span className="text-violet-300 font-mono text-[11px]">Active</span>
+              <span className="text-violet-300 font-mono text-[11px]">Configured</span>
             </div>
           </div>
         </div>
