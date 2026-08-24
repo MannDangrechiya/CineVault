@@ -30,6 +30,11 @@ from ..schemas.social import (
     InvitePreviewResponse,
     ReferralResponse,
     ReferralStatsResponse,
+    PickRoomCreate,
+    PickRoomDetailResponse,
+    PickVoteCreate,
+    PickVoteResponse,
+    PickRoomCloseResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
     TasteProfileComputeRequest,
@@ -645,6 +650,106 @@ async def get_referral_stats(
             r.invitee_name = name
             r.invitee_username = username
     return res
+
+
+@router.post(
+    "/pick-rooms",
+    response_model=PickRoomDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))],
+)
+async def create_pick_room(
+    body: PickRoomCreate,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Creates a new shareable group-pick ballot room with nominated candidate titles."""
+    host_id = _extract_user_id(claims)
+    res = await social_repository.create_pick_room(
+        db=db, host_id=host_id, data=body
+    )
+    user_map = resolve_display_names([host_id])
+    name, username = user_map.get(str(host_id), (None, None))
+    res.host_name = name
+    res.host_username = username
+    return res
+
+
+@router.get(
+    "/pick-rooms/{slug}",
+    response_model=PickRoomDetailResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_pick_room(
+    slug: str = Path(..., description="Pick room unique slug"),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Retrieves current state, nominated titles, and live vote tallies for a pick room."""
+    res = await social_repository.get_pick_room_by_slug(db=db, slug=slug)
+    if not res:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pick room not found.",
+        )
+    user_map = resolve_display_names([res.host_id])
+    name, username = user_map.get(str(res.host_id), (None, None))
+    res.host_name = name
+    res.host_username = username
+    return res
+
+
+@router.post(
+    "/pick-rooms/{slug}/vote",
+    response_model=PickVoteResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def cast_pick_vote(
+    slug: str = Path(..., description="Pick room unique slug"),
+    body: PickVoteCreate = ...,
+    optional_claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Casts an async vote on a candidate title within a pick room."""
+    voter_user_id = _extract_user_id(optional_claims) if optional_claims else None
+
+    try:
+        return await social_repository.cast_pick_vote(
+            db=db, slug=slug, voter_user_id=voter_user_id, data=body
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/pick-rooms/{slug}/close",
+    response_model=PickRoomCloseResponse,
+    dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))],
+)
+async def close_pick_room(
+    slug: str = Path(..., description="Pick room unique slug"),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Host closes voting on a pick room and locks the winning title."""
+    host_id = _extract_user_id(claims)
+    try:
+        return await social_repository.close_pick_room(
+            db=db, slug=slug, host_id=host_id
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
 
 
 

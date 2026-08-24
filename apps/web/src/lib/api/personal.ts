@@ -307,6 +307,91 @@ export async function getReferralStats(): Promise<ReferralStatsResponse> {
   return await apiFetch<ReferralStatsResponse>("/social/referrals");
 }
 
+export interface CandidateSummary {
+  title_id: string;
+  canonical_title: string;
+  original_title?: string | null;
+  production_year?: number | null;
+  poster_url?: string | null;
+  backdrop_url?: string | null;
+  upvotes: number;
+  voter_names: string[];
+}
+
+export interface PickRoomDetailResponse {
+  room_id: string;
+  host_id: string;
+  host_name?: string | null;
+  host_username?: string | null;
+  slug: string;
+  title: string;
+  status: "OPEN" | "CLOSED" | "RESOLVED" | string;
+  winning_title_id?: string | null;
+  winning_title_name?: string | null;
+  total_votes: number;
+  candidates: CandidateSummary[];
+  expires_at?: string | null;
+  is_expired: boolean;
+  created_at: string;
+}
+
+export interface PickRoomCreate {
+  title: string;
+  candidate_title_ids: string[];
+  expires_in_hours?: number;
+  constraints_json?: Record<string, unknown>;
+}
+
+export interface PickVoteCreate {
+  title_id: string;
+  guest_name?: string | null;
+  voter_fingerprint?: string | null;
+  vote_type?: "UPVOTE" | "DOWNVOTE";
+}
+
+export interface PickVoteResponse {
+  vote_id: string;
+  room_id: string;
+  title_id: string;
+  voter_name: string;
+  vote_type: string;
+  created_at: string;
+}
+
+export interface PickRoomCloseResponse {
+  room_id: string;
+  slug: string;
+  status: string;
+  winning_title_id?: string | null;
+  winning_title_name?: string | null;
+  total_votes_cast: number;
+}
+
+export async function createPickRoom(data: PickRoomCreate): Promise<PickRoomDetailResponse> {
+  return await apiFetch<PickRoomDetailResponse>("/social/pick-rooms", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getPickRoom(slug: string): Promise<PickRoomDetailResponse> {
+  return await apiFetch<PickRoomDetailResponse>(`/social/pick-rooms/${encodeURIComponent(slug)}`);
+}
+
+export async function castPickVote(slug: string, data: PickVoteCreate): Promise<PickVoteResponse> {
+  return await apiFetch<PickVoteResponse>(`/social/pick-rooms/${encodeURIComponent(slug)}/vote`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function closePickRoom(slug: string): Promise<PickRoomCloseResponse> {
+  return await apiFetch<PickRoomCloseResponse>(`/social/pick-rooms/${encodeURIComponent(slug)}/close`, {
+    method: "POST",
+  });
+}
+
+
 
 
 

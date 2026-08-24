@@ -241,4 +241,110 @@ class ReferralModel(Base):
     )
 
 
+class PickRoomModel(Base):
+    """
+    Represents a shareable movie-night voting ballot room with candidates and async voting.
+    Isolated within the `social` PostgreSQL schema.
+    """
+    __tablename__ = "pick_room"
+    __table_args__ = {"schema": "social"}
+
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    host_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    slug: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(
+        String(255), default="Movie Night Ballot", nullable=False
+    )
+    constraints_json: Mapped[dict] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), default="OPEN", nullable=False
+    )  # OPEN, CLOSED, RESOLVED
+    winning_title_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("canonical.title.title_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class PickRoomCandidateModel(Base):
+    """
+    Represents candidate titles nominated for a pick room ballot.
+    Isolated within the `social` PostgreSQL schema.
+    """
+    __tablename__ = "pick_room_candidate"
+    __table_args__ = (
+        PrimaryKeyConstraint("room_id", "title_id"),
+        {"schema": "social"},
+    )
+
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("social.pick_room.room_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("canonical.title.title_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+
+class PickVoteModel(Base):
+    """
+    Represents an async ballot vote cast by a circle member or guest in a pick room.
+    Isolated within the `social` PostgreSQL schema.
+    """
+    __tablename__ = "pick_vote"
+    __table_args__ = {"schema": "social"}
+
+    vote_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("social.pick_room.room_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    guest_name: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True
+    )
+    voter_fingerprint: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )
+    title_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("canonical.title.title_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    vote_type: Mapped[str] = mapped_column(
+        String(16), default="UPVOTE", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+
 

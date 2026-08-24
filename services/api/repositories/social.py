@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.social import (
     FriendshipModel, RecommendationModel, UserTasteProfileModel,
     BadgeDefinitionModel, UserBadgeModel,
-    InviteTokenModel, ReferralModel
+    InviteTokenModel, ReferralModel,
+    PickRoomModel, PickRoomCandidateModel, PickVoteModel,
 )
 from ..schemas.social import (
     FriendshipStatusEnum,
@@ -33,6 +34,12 @@ from ..schemas.social import (
     InvitePreviewResponse,
     ReferralResponse,
     ReferralStatsResponse,
+    PickRoomCreate,
+    CandidateSummary,
+    PickRoomDetailResponse,
+    PickVoteCreate,
+    PickVoteResponse,
+    PickRoomCloseResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
     ALLOWED_STATE_TRANSITIONS,
@@ -46,6 +53,8 @@ SEED_RECOMMENDATIONS: Dict[uuid.UUID, RecommendationResponse] = {}
 SEED_TASTE_PROFILES: Dict[uuid.UUID, Dict[str, Any]] = {}
 SEED_INVITES: Dict[str, Dict[str, Any]] = {}
 SEED_REFERRALS: List[Dict[str, Any]] = []
+SEED_PICK_ROOMS: Dict[str, Dict[str, Any]] = {}
+SEED_PICK_VOTES: List[Dict[str, Any]] = []
 SEED_BADGES = [
     {
         "badge_id": uuid.UUID("018f3a00-0000-7000-8000-000000000001"),
@@ -1526,6 +1535,368 @@ class SocialRepository:
                 referrals=referrals,
             )
 
+    # ── Group Pick Room & Async Voting (Part 2 — Item 2.8) ──────────────────────────
+
+    async def create_pick_room(
+        self,
+        db: Optional[AsyncSession],
+        host_id: uuid.UUID,
+        data: PickRoomCreate,
+    ) -> PickRoomDetailResponse:
+        """
+        Creates a new shareable group-pick ballot room with nominated candidate titles.
+        """
+        h_uuid = _resolve_uuid(host_id, "host_id")
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(hours=data.expires_in_hours or 48)
+        slug = f"pick-{secrets.token_hex(4)}"
+
+        if db is not None:
+            room_id = uuid.uuid4()
+            room = PickRoomModel(
+                room_id=room_id,
+                host_id=h_uuid,
+                slug=slug,
+                title=data.title,
+                constraints_json=data.constraints_json or {},
+                status="OPEN",
+                expires_at=expires_at,
+                created_at=now,
+            )
+            db.add(room)
+            await db.flush()
+
+            for title_id in set(data.candidate_title_ids):
+                t_uuid = _resolve_uuid(title_id, "title_id")
+                db.add(PickRoomCandidateModel(room_id=room_id, title_id=t_uuid))
+            await db.flush()
+
+            res = await self.get_pick_room_by_slug(db, slug)
+            if not res:
+                raise ValueError("Failed to retrieve created pick room")
+            return res
+        else:
+            room_id = uuid.uuid4()
+            SEED_PICK_ROOMS[slug] = {
+                "room_id": room_id,
+                "host_id": h_uuid,
+                "slug": slug,
+                "title": data.title,
+                "constraints_json": data.constraints_json or {},
+                "status": "OPEN",
+                "winning_title_id": None,
+                "expires_at": expires_at,
+                "created_at": now,
+                "candidate_title_ids": [str(t) for t in data.candidate_title_ids],
+            }
+            res = await self.get_pick_room_by_slug(None, slug)
+            if not res:
+                raise ValueError("Failed to retrieve created pick room")
+            return res
+
+    async def get_pick_room_by_slug(
+        self,
+        db: Optional[AsyncSession],
+        slug: str,
+    ) -> Optional[PickRoomDetailResponse]:
+        """
+        Fetches full room details, candidates, and current vote counts by slug.
+        """
+        if db is not None:
+            from ..models.canonical import TitleModel
+
+            stmt_room = select(PickRoomModel).where(PickRoomModel.slug == slug)
+            room = (await db.execute(stmt_room)).scalar_one_or_none()
+            if not room:
+                return None
+
+            # Get candidate titles
+            stmt_cand = (
+                select(PickRoomCandidateModel.title_id, TitleModel)
+                .join(TitleModel, PickRoomCandidateModel.title_id == TitleModel.title_id)
+                .where(PickRoomCandidateModel.room_id == room.room_id)
+            )
+            cand_rows = (await db.execute(stmt_cand)).all()
+
+            # Get all votes for this room
+            stmt_votes = select(PickVoteModel).where(PickVoteModel.room_id == room.room_id)
+            votes = (await db.execute(stmt_votes)).scalars().all()
+
+            # Map votes per candidate
+            vote_map: Dict[uuid.UUID, List[str]] = {}
+            for v in votes:
+                if v.vote_type == "UPVOTE":
+                    name = v.guest_name or "Circle Member"
+                    vote_map.setdefault(v.title_id, []).append(name)
+
+            candidates: List[CandidateSummary] = []
+            for tid, tmodel in cand_rows:
+                voters = vote_map.get(tid, [])
+                candidates.append(
+                    CandidateSummary(
+                        title_id=tid,
+                        canonical_title=tmodel.canonical_title,
+                        original_title=tmodel.original_title,
+                        production_year=tmodel.production_year,
+                        poster_url=tmodel.poster_url,
+                        backdrop_url=tmodel.backdrop_url,
+                        upvotes=len(voters),
+                        voter_names=voters,
+                    )
+                )
+
+            # Sort candidates by upvotes descending
+            candidates.sort(key=lambda c: c.upvotes, reverse=True)
+
+            winning_name = None
+            if room.winning_title_id:
+                stmt_w = select(TitleModel.canonical_title).where(TitleModel.title_id == room.winning_title_id)
+                winning_name = (await db.execute(stmt_w)).scalar_one_or_none()
+
+            now = datetime.now(timezone.utc)
+            is_expired = room.expires_at is not None and room.expires_at < now
+
+            return PickRoomDetailResponse(
+                room_id=room.room_id,
+                host_id=room.host_id,
+                host_name=None,
+                host_username=None,
+                slug=room.slug,
+                title=room.title,
+                status=room.status,
+                winning_title_id=room.winning_title_id,
+                winning_title_name=winning_name,
+                total_votes=len(votes),
+                candidates=candidates,
+                expires_at=room.expires_at,
+                is_expired=is_expired,
+                created_at=room.created_at,
+            )
+        else:
+            room = SEED_PICK_ROOMS.get(slug)
+            if not room:
+                return None
+            room_votes = [v for v in SEED_PICK_VOTES if v["room_id"] == room["room_id"]]
+            candidates = []
+            for tid_str in room.get("candidate_title_ids", []):
+                tid = uuid.UUID(tid_str) if isinstance(tid_str, str) else tid_str
+                voters = [v.get("guest_name", "Guest") for v in room_votes if v["title_id"] == tid and v["vote_type"] == "UPVOTE"]
+                candidates.append(
+                    CandidateSummary(
+                        title_id=tid,
+                        canonical_title="Candidate Movie",
+                        production_year=2024,
+                        poster_url=None,
+                        upvotes=len(voters),
+                        voter_names=voters,
+                    )
+                )
+            candidates.sort(key=lambda c: c.upvotes, reverse=True)
+            return PickRoomDetailResponse(
+                room_id=room["room_id"],
+                host_id=room["host_id"],
+                host_name="Host Member",
+                host_username="host",
+                slug=room["slug"],
+                title=room["title"],
+                status=room["status"],
+                winning_title_id=room["winning_title_id"],
+                winning_title_name="Candidate Movie" if room["winning_title_id"] else None,
+                total_votes=len(room_votes),
+                candidates=candidates,
+                expires_at=room["expires_at"],
+                is_expired=False,
+                created_at=room["created_at"],
+            )
+
+    async def cast_pick_vote(
+        self,
+        db: Optional[AsyncSession],
+        slug: str,
+        voter_user_id: Optional[uuid.UUID],
+        data: PickVoteCreate,
+    ) -> PickVoteResponse:
+        """
+        Casts or updates an async vote for a candidate title in a pick room.
+        """
+        t_uuid = _resolve_uuid(data.title_id, "title_id")
+        u_uuid = _resolve_uuid(voter_user_id, "voter_user_id") if voter_user_id else None
+        fingerprint = data.voter_fingerprint or (str(u_uuid) if u_uuid else secrets.token_hex(8))
+        voter_name = data.guest_name or ("Circle Member" if u_uuid else "Guest Voter")
+        now = datetime.now(timezone.utc)
+
+        if db is not None:
+            stmt_room = select(PickRoomModel).where(PickRoomModel.slug == slug)
+            room = (await db.execute(stmt_room)).scalar_one_or_none()
+            if not room:
+                raise ValueError("Pick room not found.")
+
+            if room.status != "OPEN":
+                raise ValueError(f"Cannot vote on a room with status '{room.status}'.")
+
+            if room.expires_at and room.expires_at < now:
+                raise ValueError("This pick room voting window has expired.")
+
+            # Validate candidate belongs to room
+            stmt_cand = select(PickRoomCandidateModel).where(
+                and_(
+                    PickRoomCandidateModel.room_id == room.room_id,
+                    PickRoomCandidateModel.title_id == t_uuid,
+                )
+            )
+            cand = (await db.execute(stmt_cand)).scalar_one_or_none()
+            if not cand:
+                raise ValueError("Specified title is not a candidate in this pick room.")
+
+            # Check for existing vote by this fingerprint & candidate
+            stmt_existing = select(PickVoteModel).where(
+                and_(
+                    PickVoteModel.room_id == room.room_id,
+                    PickVoteModel.voter_fingerprint == fingerprint,
+                    PickVoteModel.title_id == t_uuid,
+                )
+            )
+            vote_orm = (await db.execute(stmt_existing)).scalar_one_or_none()
+            if vote_orm:
+                vote_orm.vote_type = data.vote_type
+                vote_orm.guest_name = voter_name
+                vote_orm.user_id = u_uuid
+            else:
+                vote_orm = PickVoteModel(
+                    vote_id=uuid.uuid4(),
+                    room_id=room.room_id,
+                    user_id=u_uuid,
+                    guest_name=voter_name,
+                    voter_fingerprint=fingerprint,
+                    title_id=t_uuid,
+                    vote_type=data.vote_type,
+                    created_at=now,
+                )
+                db.add(vote_orm)
+
+            await db.flush()
+            return PickVoteResponse(
+                vote_id=vote_orm.vote_id,
+                room_id=room.room_id,
+                title_id=t_uuid,
+                voter_name=voter_name,
+                vote_type=vote_orm.vote_type,
+                created_at=vote_orm.created_at,
+            )
+        else:
+            room = SEED_PICK_ROOMS.get(slug)
+            if not room:
+                raise ValueError("Pick room not found.")
+            if room["status"] != "OPEN":
+                raise ValueError(f"Cannot vote on a room with status '{room['status']}'.")
+            vote_id = uuid.uuid4()
+            SEED_PICK_VOTES.append({
+                "vote_id": vote_id,
+                "room_id": room["room_id"],
+                "user_id": u_uuid,
+                "guest_name": voter_name,
+                "voter_fingerprint": fingerprint,
+                "title_id": t_uuid,
+                "vote_type": data.vote_type,
+                "created_at": now,
+            })
+            return PickVoteResponse(
+                vote_id=vote_id,
+                room_id=room["room_id"],
+                title_id=t_uuid,
+                voter_name=voter_name,
+                vote_type=data.vote_type,
+                created_at=now,
+            )
+
+    async def close_pick_room(
+        self,
+        db: Optional[AsyncSession],
+        slug: str,
+        host_id: uuid.UUID,
+    ) -> PickRoomCloseResponse:
+        """
+        Host closes voting ballot and declares winning title by majority vote.
+        """
+        h_uuid = _resolve_uuid(host_id, "host_id")
+
+        if db is not None:
+            from ..models.canonical import TitleModel
+
+            stmt_room = select(PickRoomModel).where(PickRoomModel.slug == slug)
+            room = (await db.execute(stmt_room)).scalar_one_or_none()
+            if not room:
+                raise ValueError("Pick room not found.")
+
+            if room.host_id != h_uuid:
+                raise PermissionError("Only the room host can close voting and finalize winner.")
+
+            # Tally votes per candidate
+            stmt_tally = (
+                select(PickVoteModel.title_id, func.count(PickVoteModel.vote_id))
+                .where(
+                    and_(
+                        PickVoteModel.room_id == room.room_id,
+                        PickVoteModel.vote_type == "UPVOTE",
+                    )
+                )
+                .group_by(PickVoteModel.title_id)
+                .order_by(func.count(PickVoteModel.vote_id).desc())
+            )
+            tallies = (await db.execute(stmt_tally)).all()
+
+            winning_title_id = None
+            winning_name = None
+            if tallies:
+                winning_title_id = tallies[0][0]
+                stmt_w = select(TitleModel.canonical_title).where(TitleModel.title_id == winning_title_id)
+                winning_name = (await db.execute(stmt_w)).scalar_one_or_none()
+            else:
+                # If no votes, pick the first candidate
+                stmt_first = select(PickRoomCandidateModel.title_id).where(
+                    PickRoomCandidateModel.room_id == room.room_id
+                ).limit(1)
+                winning_title_id = (await db.execute(stmt_first)).scalar_one_or_none()
+                if winning_title_id:
+                    stmt_w = select(TitleModel.canonical_title).where(TitleModel.title_id == winning_title_id)
+                    winning_name = (await db.execute(stmt_w)).scalar_one_or_none()
+
+            room.status = "RESOLVED"
+            room.winning_title_id = winning_title_id
+            await db.flush()
+
+            stmt_count = select(func.count(PickVoteModel.vote_id)).where(PickVoteModel.room_id == room.room_id)
+            total_votes = (await db.execute(stmt_count)).scalar_one() or 0
+
+            return PickRoomCloseResponse(
+                room_id=room.room_id,
+                slug=room.slug,
+                status="RESOLVED",
+                winning_title_id=winning_title_id,
+                winning_title_name=winning_name,
+                total_votes_cast=total_votes,
+            )
+        else:
+            room = SEED_PICK_ROOMS.get(slug)
+            if not room:
+                raise ValueError("Pick room not found.")
+            if room["host_id"] != h_uuid:
+                raise PermissionError("Only the room host can close voting and finalize winner.")
+            room["status"] = "RESOLVED"
+            candidates = room.get("candidate_title_ids", [])
+            winner_id = uuid.UUID(candidates[0]) if candidates else uuid.uuid4()
+            room["winning_title_id"] = winner_id
+            room_votes = [v for v in SEED_PICK_VOTES if v["room_id"] == room["room_id"]]
+            return PickRoomCloseResponse(
+                room_id=room["room_id"],
+                slug=room["slug"],
+                status="RESOLVED",
+                winning_title_id=winner_id,
+                winning_title_name="Winning Movie",
+                total_votes_cast=len(room_votes),
+            )
+
 
 social_repository = SocialRepository()
+
 

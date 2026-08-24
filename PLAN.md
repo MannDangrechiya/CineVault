@@ -444,20 +444,18 @@ effort estimate on the taste-similarity features from "build" to "wire up."
 - Automated tests: in `tests/test_v2_social_invites_referrals.py` (4/4 passed).
 
 
-**2.8 Shareable group-pick room (MVP, async voting — no real-time)**
-- New tables: `social.pick_room (id, host_id UUID, slug, constraints_json,
-  status, winning_title_id, created_at, expires_at)`,
-  `social.pick_vote (id, room_id, user_id UUID NULL, guest_name TEXT NULL,
-  title_id, vote_type, created_at)`.
-- Ballot curation: reuse the AI group-matchmaking recommendation logic
-  (`services/api/routers/ai.py`) to generate 5–10 candidate titles from the
-  host's (or combined guests') taste vectors, instead of a generic popular
-  list.
-- Host creates room → shareable link → guests vote (guest voting allowed
-  without an account, tracked by `guest_name` + a signed room-scoped
-  cookie/token to prevent duplicate votes) → simple majority/ranked-choice
-  picks the winner.
-- **Effort:** medium · **Depends on:** existing AI matchmaking endpoint.
+**2.8 Shareable group-pick room (MVP, async voting)** — [x] done
+- Added Flyway migration `db/migrations/V3.3__create_group_pick_room_tables.sql`
+  creating `social.pick_room`, `social.pick_room_candidate`, and `social.pick_vote`.
+- Added `PickRoomModel`, `PickRoomCandidateModel`, and `PickVoteModel` in `services/api/models/social.py`.
+- Added `PickRoomCreate`, `CandidateSummary`, `PickRoomDetailResponse`, `PickVoteCreate`, `PickVoteResponse`, `PickRoomCloseResponse` in `services/api/schemas/social.py`.
+- Implemented `create_pick_room`, `get_pick_room_by_slug`, `cast_pick_vote`, and `close_pick_room`
+  with automatic majority-tallying in `services/api/repositories/social.py`.
+- Added `POST /social/pick-rooms`, `GET /social/pick-rooms/{slug}`, `POST /social/pick-rooms/{slug}/vote`,
+  and `POST /social/pick-rooms/{slug}/close` in `services/api/routers/social.py`.
+- Added interactive real-time voting ballot page `apps/web/src/app/pick/[slug]/page.tsx` with candidate posters, live vote percentage bars, guest voter name prompt, and winner celebration banner.
+- Automated tests: `tests/test_v2_group_pick_room.py` (5/5 passed).
+
 
 **2.9 Wrapped-style recap card**
 - No new schema — pure aggregation over existing analytics data

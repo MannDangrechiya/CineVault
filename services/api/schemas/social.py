@@ -318,6 +318,77 @@ class ReferralStatsResponse(BaseModel):
     referrals: List[ReferralResponse] = Field(default_factory=list)
 
 
+class PickRoomCreate(BaseModel):
+    """Payload to create a new group-pick room."""
+    title: str = Field("Movie Night Ballot", max_length=255)
+    candidate_title_ids: List[uuid.UUID] = Field(..., min_length=2, max_length=12)
+    expires_in_hours: Optional[int] = Field(48, ge=1, le=168)
+    constraints_json: Optional[Dict[str, Any]] = None
+
+
+class CandidateSummary(BaseModel):
+    """Candidate title details with vote count and voters."""
+    model_config = ConfigDict(from_attributes=True)
+
+    title_id: uuid.UUID
+    canonical_title: str
+    original_title: Optional[str] = None
+    production_year: Optional[int] = None
+    poster_url: Optional[str] = None
+    backdrop_url: Optional[str] = None
+    upvotes: int = 0
+    voter_names: List[str] = Field(default_factory=list)
+
+
+class PickRoomDetailResponse(BaseModel):
+    """Complete group pick ballot room state and candidate tallies."""
+    model_config = ConfigDict(from_attributes=True)
+
+    room_id: uuid.UUID
+    host_id: uuid.UUID
+    host_name: Optional[str] = None
+    host_username: Optional[str] = None
+    slug: str
+    title: str
+    status: str
+    winning_title_id: Optional[uuid.UUID] = None
+    winning_title_name: Optional[str] = None
+    total_votes: int = 0
+    candidates: List[CandidateSummary] = Field(default_factory=list)
+    expires_at: Optional[datetime] = None
+    is_expired: bool = False
+    created_at: datetime
+
+
+class PickVoteCreate(BaseModel):
+    """Payload to cast a vote for a candidate title."""
+    title_id: uuid.UUID
+    guest_name: Optional[str] = Field(None, max_length=128)
+    voter_fingerprint: Optional[str] = Field(None, max_length=64)
+    vote_type: str = Field("UPVOTE", pattern="^(UPVOTE|DOWNVOTE)$")
+
+
+class PickVoteResponse(BaseModel):
+    """Acknowledgement of a recorded vote."""
+    vote_id: uuid.UUID
+    room_id: uuid.UUID
+    title_id: uuid.UUID
+    voter_name: str
+    vote_type: str
+    created_at: datetime
+
+
+class PickRoomCloseResponse(BaseModel):
+    """Result of closing and resolving a group pick ballot."""
+    room_id: uuid.UUID
+    slug: str
+    status: str
+    winning_title_id: Optional[uuid.UUID] = None
+    winning_title_name: Optional[str] = None
+    total_votes_cast: int = 0
+
+
+
 
 
 
