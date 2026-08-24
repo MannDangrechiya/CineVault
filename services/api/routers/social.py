@@ -26,6 +26,10 @@ from ..schemas.social import (
     LeaderboardEntry,
     BadgeResponse,
     UserBadgesResponse,
+    InviteTokenCreateResponse,
+    InvitePreviewResponse,
+    ReferralResponse,
+    ReferralStatsResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
     TasteProfileComputeRequest,
@@ -551,5 +555,97 @@ async def evaluate_badges(
     """Evaluates criteria for unearned badges and automatically grants unlocked badges."""
     user_id = _extract_user_id(claims)
     return await social_repository.evaluate_user_badges(db=db, user_id=user_id)
+
+
+# ── /social/invites & /social/referrals (Part 2 Phase 2 Items 2.6 & 2.7) ───
+
+@router.post(
+    "/invites",
+    response_model=InviteTokenCreateResponse,
+    dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))],
+)
+async def create_invite(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Generates a shareable viral invite token with a baked snapshot of the inviter's taste profile."""
+    user_id = _extract_user_id(claims)
+    res = await social_repository.create_invite_token(db=db, inviter_id=user_id)
+    user_map = resolve_display_names([user_id])
+    name, username = user_map.get(str(user_id), (None, None))
+    res.inviter_name = name
+    res.inviter_username = username
+    return res
+
+
+@router.get(
+    "/invites/{token}/preview",
+    response_model=InvitePreviewResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_invite_preview(
+    token: str = Path(..., description="16-character shareable invite token"),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Public unauthenticated endpoint to preview an inviter's taste snapshot."""
+    res = await social_repository.get_invite_preview(db=db, token=token)
+    if not res:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Invite token '{token}' does not exist.",
+        )
+    user_map = resolve_display_names([res.inviter_id])
+    name, username = user_map.get(str(res.inviter_id), (None, None))
+    res.inviter_name = name
+    res.inviter_username = username
+    return res
+
+
+@router.post(
+    "/invites/{token}/accept",
+    response_model=FriendshipResponse,
+    dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))],
+)
+async def accept_invite(
+    token: str = Path(..., description="Invite token to accept"),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Accepts an invite token, auto-connects an ACCEPTED friendship, and logs referral milestone."""
+    user_id = _extract_user_id(claims)
+    try:
+        _, friendship = await social_repository.accept_invite_token(
+            db=db, token=token, invitee_id=user_id
+        )
+        return friendship
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get(
+    "/referrals",
+    response_model=ReferralStatsResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_referral_stats(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Retrieves aggregated referral reward analytics and converted peer records."""
+    user_id = _extract_user_id(claims)
+    res = await social_repository.get_referral_stats(db=db, user_id=user_id)
+    invitee_ids = [r.invitee_id for r in res.referrals]
+    if invitee_ids:
+        user_map = resolve_display_names(invitee_ids)
+        for r in res.referrals:
+            name, username = user_map.get(str(r.invitee_id), (None, None))
+            r.invitee_name = name
+            r.invitee_username = username
+    return res
+
+
 
 

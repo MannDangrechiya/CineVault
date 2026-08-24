@@ -7,11 +7,13 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Tuple, Any
 import uuid
 from sqlalchemy import select, and_, or_, update, func
+import secrets
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.social import (
     FriendshipModel, RecommendationModel, UserTasteProfileModel,
-    BadgeDefinitionModel, UserBadgeModel
+    BadgeDefinitionModel, UserBadgeModel,
+    InviteTokenModel, ReferralModel
 )
 from ..schemas.social import (
     FriendshipStatusEnum,
@@ -27,6 +29,10 @@ from ..schemas.social import (
     LeaderboardResponse,
     BadgeResponse,
     UserBadgesResponse,
+    InviteTokenCreateResponse,
+    InvitePreviewResponse,
+    ReferralResponse,
+    ReferralStatsResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
     ALLOWED_STATE_TRANSITIONS,
@@ -38,6 +44,8 @@ logger = logging.getLogger("cinevault.repositories.social")
 SEED_FRIENDSHIPS: Dict[uuid.UUID, FriendshipResponse] = {}
 SEED_RECOMMENDATIONS: Dict[uuid.UUID, RecommendationResponse] = {}
 SEED_TASTE_PROFILES: Dict[uuid.UUID, Dict[str, Any]] = {}
+SEED_INVITES: Dict[str, Dict[str, Any]] = {}
+SEED_REFERRALS: List[Dict[str, Any]] = []
 SEED_BADGES = [
     {
         "badge_id": uuid.UUID("018f3a00-0000-7000-8000-000000000001"),
@@ -1203,6 +1211,320 @@ class SocialRepository:
             await db.flush()
 
         return await self.list_user_badges(db, u_uuid)
+
+    async def create_invite_token(
+        self,
+        db: Optional[AsyncSession],
+        inviter_id: uuid.UUID,
+        base_url: str = "http://localhost:3000",
+    ) -> InviteTokenCreateResponse:
+        """Generates a shareable viral invite token with a baked taste profile snapshot."""
+        u_uuid = _resolve_uuid(inviter_id, "user_id")
+        token = secrets.token_urlsafe(12)
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(days=30)
+
+        preview_data = {
+            "top_genres": ["Sci-Fi", "Drama", "Thriller"],
+            "recent_watched_titles": [],
+            "total_watched_count": 0,
+        }
+
+        if db is not None:
+            from ..models.personal import WatchEventModel
+            from ..models.canonical import TitleModel, TitleGenreModel, GenreModel
+
+            # 1. Total watched count
+            stmt_wc = select(func.count(WatchEventModel.watch_event_id)).where(
+                and_(
+                    WatchEventModel.user_id == u_uuid,
+                    WatchEventModel.is_tombstoned == False,  # noqa: E712
+                )
+            )
+            total_watches = (await db.execute(stmt_wc)).scalar_one() or 0
+
+            # 2. Recent 3 titles
+            stmt_recents = (
+                select(TitleModel.canonical_title)
+                .join(WatchEventModel, TitleModel.title_id == WatchEventModel.title_id)
+                .where(
+                    and_(
+                        WatchEventModel.user_id == u_uuid,
+                        WatchEventModel.is_tombstoned == False,  # noqa: E712
+                    )
+                )
+                .order_by(WatchEventModel.watched_at.desc())
+                .limit(3)
+            )
+            recent_titles = list((await db.execute(stmt_recents)).scalars().all())
+
+            # 3. Top 3 genres
+            stmt_genres = (
+                select(GenreModel.name, func.count(WatchEventModel.watch_event_id))
+                .join(TitleGenreModel, GenreModel.genre_id == TitleGenreModel.genre_id)
+                .join(TitleModel, TitleGenreModel.title_id == TitleModel.title_id)
+                .join(WatchEventModel, TitleModel.title_id == WatchEventModel.title_id)
+                .where(
+                    and_(
+                        WatchEventModel.user_id == u_uuid,
+                        WatchEventModel.is_tombstoned == False,  # noqa: E712
+                    )
+                )
+                .group_by(GenreModel.name)
+                .order_by(func.count(WatchEventModel.watch_event_id).desc())
+                .limit(3)
+            )
+            top_genres = [r[0] for r in (await db.execute(stmt_genres)).all()]
+            if not top_genres:
+                top_genres = ["Cinema", "Sci-Fi", "Drama"]
+
+            preview_data = {
+                "top_genres": top_genres,
+                "recent_watched_titles": recent_titles,
+                "total_watched_count": total_watches,
+            }
+
+            token_orm = InviteTokenModel(
+                token=token,
+                inviter_id=u_uuid,
+                preview_data_json=preview_data,
+                expires_at=expires_at,
+                created_at=now,
+            )
+            db.add(token_orm)
+            await db.flush()
+        else:
+            SEED_INVITES[token] = {
+                "token": token,
+                "inviter_id": u_uuid,
+                "preview_data": preview_data,
+                "expires_at": expires_at,
+                "converted_user_id": None,
+                "created_at": now,
+            }
+
+        return InviteTokenCreateResponse(
+            token=token,
+            invite_url=f"{base_url}/invite/{token}",
+            inviter_id=u_uuid,
+            preview_data=preview_data,
+            expires_at=expires_at,
+            created_at=now,
+        )
+
+    async def get_invite_preview(
+        self,
+        db: Optional[AsyncSession],
+        token: str,
+    ) -> Optional[InvitePreviewResponse]:
+        """Fetches public taste preview snapshot for an invite token."""
+        if db is not None:
+            stmt = select(InviteTokenModel).where(InviteTokenModel.token == token)
+            token_orm = (await db.execute(stmt)).scalar_one_or_none()
+            if not token_orm:
+                return None
+
+            now = datetime.now(timezone.utc)
+            is_expired = token_orm.expires_at is not None and token_orm.expires_at < now
+            is_converted = token_orm.converted_user_id is not None
+            prev = token_orm.preview_data_json or {}
+
+            return InvitePreviewResponse(
+                token=token,
+                inviter_id=token_orm.inviter_id,
+                inviter_name=None,
+                inviter_username=None,
+                top_genres=prev.get("top_genres", []),
+                recent_watched_titles=prev.get("recent_watched_titles", []),
+                total_watched_count=prev.get("total_watched_count", 0),
+                is_expired=is_expired,
+                is_converted=is_converted,
+                created_at=token_orm.created_at,
+            )
+        else:
+            token_data = SEED_INVITES.get(token)
+            if not token_data:
+                return None
+            prev = token_data.get("preview_data", {})
+            return InvitePreviewResponse(
+                token=token,
+                inviter_id=token_data["inviter_id"],
+                inviter_name="Cinephile Host",
+                inviter_username="cinephile",
+                top_genres=prev.get("top_genres", ["Sci-Fi", "Drama"]),
+                recent_watched_titles=prev.get("recent_watched_titles", []),
+                total_watched_count=prev.get("total_watched_count", 0),
+                is_expired=False,
+                is_converted=token_data.get("converted_user_id") is not None,
+                created_at=token_data.get("created_at", datetime.now(timezone.utc)),
+            )
+
+    async def accept_invite_token(
+        self,
+        db: Optional[AsyncSession],
+        token: str,
+        invitee_id: uuid.UUID,
+    ) -> Tuple[Any, Any]:
+        """
+        Consumes an invite token, connects mutual accepted friendship, and logs referral record.
+        """
+        i_uuid = _resolve_uuid(invitee_id, "user_id")
+
+        if db is not None:
+            stmt = select(InviteTokenModel).where(InviteTokenModel.token == token)
+            token_orm = (await db.execute(stmt)).scalar_one_or_none()
+            if not token_orm:
+                raise ValueError("Invite token not found.")
+
+            now = datetime.now(timezone.utc)
+            if token_orm.expires_at and token_orm.expires_at < now:
+                raise ValueError("Invite token has expired.")
+
+            if token_orm.inviter_id == i_uuid:
+                raise ValueError("Users cannot accept their own invite token.")
+
+            # Mark converted
+            if not token_orm.converted_user_id:
+                token_orm.converted_user_id = i_uuid
+
+            # Check if friendship already exists
+            f_stmt = select(FriendshipModel).where(
+                or_(
+                    and_(FriendshipModel.requester_id == token_orm.inviter_id, FriendshipModel.addressee_id == i_uuid),
+                    and_(FriendshipModel.requester_id == i_uuid, FriendshipModel.addressee_id == token_orm.inviter_id),
+                )
+            )
+            friendship = (await db.execute(f_stmt)).scalar_one_or_none()
+            if not friendship:
+                friendship = FriendshipModel(
+                    friendship_id=uuid.uuid4(),
+                    requester_id=token_orm.inviter_id,
+                    addressee_id=i_uuid,
+                    status=FriendshipStatusEnum.ACCEPTED.value,
+                    trust_score=75.0,
+                    created_at=now,
+                    updated_at=now,
+                )
+                db.add(friendship)
+
+            # Record referral
+            r_stmt = select(ReferralModel).where(
+                and_(
+                    ReferralModel.inviter_id == token_orm.inviter_id,
+                    ReferralModel.invitee_id == i_uuid,
+                )
+            )
+            referral = (await db.execute(r_stmt)).scalar_one_or_none()
+            if not referral:
+                referral = ReferralModel(
+                    referral_id=uuid.uuid4(),
+                    inviter_id=token_orm.inviter_id,
+                    invitee_id=i_uuid,
+                    status="PENDING",
+                    created_at=now,
+                )
+                db.add(referral)
+
+            await db.flush()
+            return token_orm, friendship
+        else:
+            token_data = SEED_INVITES.get(token)
+            if not token_data:
+                raise ValueError("Invite token not found.")
+            if token_data["inviter_id"] == i_uuid:
+                raise ValueError("Users cannot accept their own invite token.")
+            token_data["converted_user_id"] = i_uuid
+            fid = uuid.uuid4()
+            friendship = FriendshipResponse(
+                friendship_id=fid,
+                requester_id=token_data["inviter_id"],
+                addressee_id=i_uuid,
+                status=FriendshipStatusEnum.ACCEPTED,
+                trust_score=75.0,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            SEED_FRIENDSHIPS[fid] = friendship
+            ref_id = uuid.uuid4()
+            SEED_REFERRALS.append({
+                "referral_id": ref_id,
+                "inviter_id": token_data["inviter_id"],
+                "invitee_id": i_uuid,
+                "status": "PENDING",
+                "milestone_reached_at": None,
+                "reward_issued": False,
+                "created_at": datetime.now(timezone.utc),
+            })
+            token_orm = InviteTokenModel(
+                token=token,
+                inviter_id=token_data["inviter_id"],
+                preview_data_json=token_data.get("preview_data", {}),
+                expires_at=token_data.get("expires_at"),
+                converted_user_id=i_uuid,
+                created_at=token_data.get("created_at", datetime.now(timezone.utc)),
+            )
+            return token_orm, friendship
+
+    async def get_referral_stats(
+        self,
+        db: Optional[AsyncSession],
+        user_id: uuid.UUID,
+    ) -> ReferralStatsResponse:
+        """Retrieves aggregated referral analytics and conversions list for a user."""
+        u_uuid = _resolve_uuid(user_id, "user_id")
+
+        if db is not None:
+            stmt_invites = select(func.count(InviteTokenModel.token)).where(InviteTokenModel.inviter_id == u_uuid)
+            total_invites = (await db.execute(stmt_invites)).scalar_one() or 0
+
+            stmt_refs = select(ReferralModel).where(ReferralModel.inviter_id == u_uuid).order_by(ReferralModel.created_at.desc())
+            refs = (await db.execute(stmt_refs)).scalars().all()
+
+            referrals = [
+                ReferralResponse(
+                    referral_id=r.referral_id,
+                    inviter_id=r.inviter_id,
+                    invitee_id=r.invitee_id,
+                    status=r.status,
+                    milestone_reached_at=r.milestone_reached_at,
+                    reward_issued=r.reward_issued,
+                    created_at=r.created_at,
+                )
+                for r in refs
+            ]
+
+            total_conversions = len(referrals)
+            qualified = sum(1 for r in refs if r.status in ("QUALIFIED", "REWARDED") or r.reward_issued)
+
+            return ReferralStatsResponse(
+                inviter_id=u_uuid,
+                total_invites_sent=total_invites,
+                total_conversions=total_conversions,
+                qualified_referrals=qualified,
+                referrals=referrals,
+            )
+        else:
+            user_refs = [r for r in SEED_REFERRALS if r["inviter_id"] == u_uuid]
+            referrals = [
+                ReferralResponse(
+                    referral_id=r["referral_id"],
+                    inviter_id=r["inviter_id"],
+                    invitee_id=r["invitee_id"],
+                    status=r["status"],
+                    milestone_reached_at=r["milestone_reached_at"],
+                    reward_issued=r["reward_issued"],
+                    created_at=r["created_at"],
+                )
+                for r in user_refs
+            ]
+            invites_count = sum(1 for inv in SEED_INVITES.values() if inv["inviter_id"] == u_uuid)
+            return ReferralStatsResponse(
+                inviter_id=u_uuid,
+                total_invites_sent=invites_count,
+                total_conversions=len(referrals),
+                qualified_referrals=sum(1 for r in user_refs if r["status"] in ("QUALIFIED", "REWARDED") or r["reward_issued"]),
+                referrals=referrals,
+            )
 
 
 social_repository = SocialRepository()

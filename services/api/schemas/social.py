@@ -262,5 +262,62 @@ class UserBadgesResponse(BaseModel):
     total_earned: int = 0
 
 
+class InviteTokenCreateResponse(BaseModel):
+    """Shareable taste-preview invite link details."""
+    model_config = ConfigDict(from_attributes=True)
+
+    token: str
+    invite_url: str
+    inviter_id: uuid.UUID
+    inviter_name: Optional[str] = None
+    inviter_username: Optional[str] = None
+    preview_data: Dict[str, Any] = Field(default_factory=dict)
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class InvitePreviewResponse(BaseModel):
+    """Publicly accessible taste preview for link visitors."""
+    model_config = ConfigDict(from_attributes=True)
+
+    token: str
+    inviter_id: uuid.UUID
+    inviter_name: Optional[str] = None
+    inviter_username: Optional[str] = None
+    top_genres: List[str] = Field(default_factory=list)
+    recent_watched_titles: List[str] = Field(default_factory=list)
+    total_watched_count: int = 0
+    is_expired: bool = False
+    is_converted: bool = False
+    created_at: datetime
+
+
+class ReferralResponse(BaseModel):
+    """Details of a single referral conversion."""
+    model_config = ConfigDict(from_attributes=True)
+
+    referral_id: uuid.UUID
+    inviter_id: uuid.UUID
+    invitee_id: uuid.UUID
+    invitee_name: Optional[str] = None
+    invitee_username: Optional[str] = None
+    status: str
+    milestone_reached_at: Optional[datetime] = None
+    reward_issued: bool
+    created_at: datetime
+
+
+class ReferralStatsResponse(BaseModel):
+    """Aggregated referral reward analytics for a user."""
+    model_config = ConfigDict(from_attributes=True)
+
+    inviter_id: uuid.UUID
+    total_invites_sent: int = 0
+    total_conversions: int = 0
+    qualified_referrals: int = 0
+    referrals: List[ReferralResponse] = Field(default_factory=list)
+
+
+
 
 

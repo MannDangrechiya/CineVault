@@ -228,6 +228,86 @@ export async function evaluateUserBadges(): Promise<UserBadgesResponse> {
   });
 }
 
+export interface InviteTokenCreateResponse {
+  token: string;
+  invite_url: string;
+  inviter_id: string;
+  inviter_name: string | null;
+  inviter_username: string | null;
+  preview_data: {
+    top_genres?: string[];
+    recent_watched_titles?: string[];
+    total_watched_count?: number;
+  };
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface InvitePreviewResponse {
+  token: string;
+  inviter_id: string;
+  inviter_name: string | null;
+  inviter_username: string | null;
+  top_genres: string[];
+  recent_watched_titles: string[];
+  total_watched_count: number;
+  is_expired: boolean;
+  is_converted: boolean;
+  created_at: string;
+}
+
+export interface ReferralResponse {
+  referral_id: string;
+  inviter_id: string;
+  invitee_id: string;
+  invitee_name: string | null;
+  invitee_username: string | null;
+  status: string;
+  milestone_reached_at: string | null;
+  reward_issued: boolean;
+  created_at: string;
+}
+
+export interface ReferralStatsResponse {
+  inviter_id: string;
+  total_invites_sent: number;
+  total_conversions: number;
+  qualified_referrals: number;
+  referrals: ReferralResponse[];
+}
+
+export interface FriendshipResponse {
+  friendship_id: string;
+  requester_id: string;
+  addressee_id: string;
+  status: "PENDING" | "ACCEPTED" | "BLOCKED" | string;
+  trust_score: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function createInviteToken(): Promise<InviteTokenCreateResponse> {
+  return await apiFetch<InviteTokenCreateResponse>("/social/invites", {
+    method: "POST",
+  });
+}
+
+export async function getInvitePreview(token: string): Promise<InvitePreviewResponse> {
+  return await apiFetch<InvitePreviewResponse>(`/social/invites/${encodeURIComponent(token)}/preview`);
+}
+
+export async function acceptInviteToken(token: string): Promise<FriendshipResponse> {
+  return await apiFetch<FriendshipResponse>(`/social/invites/${encodeURIComponent(token)}/accept`, {
+    method: "POST",
+  });
+}
+
+
+export async function getReferralStats(): Promise<ReferralStatsResponse> {
+  return await apiFetch<ReferralStatsResponse>("/social/referrals");
+}
+
+
 
 
 

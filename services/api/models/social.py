@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional, Any
 import uuid
 from sqlalchemy import (
-    String, Text, Float, ForeignKey, DateTime, PrimaryKeyConstraint
+    String, Text, Float, ForeignKey, DateTime, PrimaryKeyConstraint, Boolean
 )
 from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -176,5 +176,69 @@ class UserBadgeModel(Base):
     context_json: Mapped[Optional[dict]] = mapped_column(
         JSONB, nullable=True
     )
+
+
+class InviteTokenModel(Base):
+    """
+    Represents shareable taste-preview invite tokens with baked stats snapshots.
+    Isolated within the `social` PostgreSQL schema.
+    """
+    __tablename__ = "invite_token"
+    __table_args__ = {"schema": "social"}
+
+    token: Mapped[str] = mapped_column(
+        String(64), primary_key=True
+    )
+    inviter_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    preview_data_json: Mapped[dict] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
+    expires_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    converted_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class ReferralModel(Base):
+    """
+    Tracks viral member referrals and milestone reward qualifications.
+    Isolated within the `social` PostgreSQL schema.
+    """
+    __tablename__ = "referral"
+    __table_args__ = {"schema": "social"}
+
+    referral_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    inviter_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    invitee_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), default="PENDING", nullable=False
+    )  # PENDING, QUALIFIED, REWARDED
+    milestone_reached_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=True
+    )
+    reward_issued: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
 
 

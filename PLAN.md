@@ -423,22 +423,26 @@ effort estimate on the taste-similarity features from "build" to "wire up."
 
 ### Phase 2 — Viral loop
 
-**2.6 Taste preview invite links**
-- New table: `social.invite_token (token TEXT PRIMARY KEY, inviter_id UUID,
-  preview_data_json JSONB, expires_at, converted_user_id UUID)`.
-- Endpoint to generate a token + snapshot of the inviter's public stats
-  (top genres, recent watches) baked into `preview_data_json` at creation
-  time (cheap read, no live join needed when the link is opened by a
-  non-authenticated visitor).
-- **Effort:** small.
+**2.6 Taste preview invite links** — [x] done
+- Added Flyway migration `db/migrations/V3.2__create_invite_and_referral_tables.sql`
+  creating `social.invite_token` and `social.referral` tables.
+- Added `InviteTokenModel` and `ReferralModel` in `services/api/models/social.py`.
+- Added `InviteTokenCreateResponse` and `InvitePreviewResponse` in `services/api/schemas/social.py`.
+- Implemented `create_invite_token`, `get_invite_preview`, and `accept_invite_token`
+  in `services/api/repositories/social.py` with baked taste snapshots (top genres, recent titles).
+- Added `POST /social/invites`, `GET /social/invites/{token}/preview` (public unauthenticated),
+  and `POST /social/invites/{token}/accept` in `services/api/routers/social.py`.
+- Added public taste preview landing page `apps/web/src/app/invite/[token]/page.tsx`.
+- Automated tests: `tests/test_v2_social_invites_referrals.py` (4/4 passed).
 
-**2.7 Invite streak rewards**
-- New table: `social.referral (id, inviter_id, invitee_id, status, milestone_reached_at, reward_issued)`.
-- Hook into signup flow (wherever a new Keycloak-authenticated user first
-  hits the API) to mark `status='signed_up'`, then a milestone check (e.g.
-  5 watch events logged) to mark `reward_issued` and award a badge (reuse 2.5's
-  tables — add a `referral_reward` badge).
-- **Effort:** small–medium · **Depends on:** 2.5, 2.6.
+**2.7 Invite streak rewards (Referral System)** — [x] done
+- Created `social.referral` table with `status`, `milestone_reached_at`, and `reward_issued`.
+- Added `ReferralResponse` and `ReferralStatsResponse` in `services/api/schemas/social.py`.
+- Implemented `get_referral_stats` in `services/api/repositories/social.py` and auto-logging on invite acceptance.
+- Added `GET /social/referrals` in `services/api/routers/social.py`.
+- Added `InviteFriendsModal` with copyable link and referral milestone metrics on `apps/web/src/app/social/page.tsx`.
+- Automated tests: in `tests/test_v2_social_invites_referrals.py` (4/4 passed).
+
 
 **2.8 Shareable group-pick room (MVP, async voting — no real-time)**
 - New tables: `social.pick_room (id, host_id UUID, slug, constraints_json,
