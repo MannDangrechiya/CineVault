@@ -137,17 +137,16 @@ export default function ImportPage() {
 
   const handleResolveDisambiguation = (newTitle: string, newYear?: number) => {
     if (disambiguationIndex === null) return;
-    setParsedItems((prev) => {
-      const updated = [...prev];
-      updated[disambiguationIndex] = {
-        ...updated[disambiguationIndex],
-        canonical_title: newTitle,
-        production_year: newYear ?? updated[disambiguationIndex].production_year,
-      };
-      return updated;
-    });
+    const updated = [...parsedItems];
+    updated[disambiguationIndex] = {
+      ...updated[disambiguationIndex],
+      canonical_title: newTitle,
+      production_year: newYear ?? updated[disambiguationIndex].production_year,
+    };
+    setParsedItems(updated);
     setDisambiguationIndex(null);
     setCustomTitleInput("");
+    previewMutation.mutate(updated);
   };
 
   const handleResetWizard = () => {
@@ -443,51 +442,95 @@ export default function ImportPage() {
               </div>
 
               <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
-                {parsedItems.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-2xl bg-zinc-950/80 border border-zinc-850 hover:border-zinc-700 flex items-center justify-between gap-4 transition-all"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-violet-600/10 text-violet-400 flex items-center justify-center text-xs font-mono font-bold shrink-0">
-                        {idx + 1}
+                {parsedItems.map((item, idx) => {
+                  const verdict = previewResult?.item_verdicts?.[idx];
+                  const isUnmatched = verdict?.verdict === "UNMATCHED" || verdict?.matched === false;
+                  const isProbable = verdict?.verdict === "PROBABLE_MATCH";
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded-2xl border flex items-center justify-between gap-4 transition-all ${
+                        isUnmatched
+                          ? "bg-rose-950/15 border-rose-500/30 hover:border-rose-500/50"
+                          : isProbable
+                          ? "bg-zinc-950/90 border-amber-500/30 hover:border-amber-500/50"
+                          : "bg-zinc-950/80 border-zinc-850 hover:border-zinc-700"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-mono font-bold shrink-0 ${
+                            isUnmatched
+                              ? "bg-rose-600/15 text-rose-400 border border-rose-500/20"
+                              : isProbable
+                              ? "bg-amber-600/15 text-amber-400 border border-amber-500/20"
+                              : "bg-violet-600/10 text-violet-400"
+                          }`}
+                        >
+                          {idx + 1}
+                        </div>
+
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-bold ${isUnmatched ? "text-rose-200" : "text-zinc-100"}`}>
+                              {item.canonical_title}
+                            </span>
+                            {item.production_year && (
+                              <span className="text-[10px] text-zinc-500">({item.production_year})</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-zinc-400">
+                            {item.rating_value && (
+                              <span className="text-amber-400 font-semibold">★ {item.rating_value}/5</span>
+                            )}
+                            {item.notes && <span className="text-zinc-500 truncate max-w-xs">{item.notes}</span>}
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-zinc-100">{item.canonical_title}</span>
-                          {item.production_year && (
-                            <span className="text-[10px] text-zinc-500">({item.production_year})</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-[10px] text-zinc-400">
-                          {item.rating_value && (
-                            <span className="text-amber-400 font-semibold">★ {item.rating_value}/5</span>
-                          )}
-                          {item.notes && <span className="text-zinc-500 truncate max-w-xs">{item.notes}</span>}
-                        </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => {
+                            setDisambiguationIndex(idx);
+                            setCustomTitleInput(item.canonical_title || "");
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-colors cursor-pointer border ${
+                            isUnmatched
+                              ? "bg-rose-600/20 text-rose-200 border-rose-500/40 hover:bg-rose-600/30"
+                              : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border-zinc-800"
+                          }`}
+                        >
+                          Disambiguate
+                        </button>
+
+                        {verdict ? (
+                          verdict.verdict === "EXACT_MATCH" ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              <Check className="w-3 h-3" />
+                              <span>Exact ({Math.round(verdict.confidence_score * 100)}%)</span>
+                            </span>
+                          ) : verdict.verdict === "PROBABLE_MATCH" ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                              <Sparkles className="w-3 h-3" />
+                              <span>Probable ({Math.round(verdict.confidence_score * 100)}%)</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                              <AlertTriangle className="w-3 h-3" />
+                              <span>Unmatched</span>
+                            </span>
+                          )
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <Check className="w-3 h-3" />
+                            <span>Matched</span>
+                          </span>
+                        )}
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          setDisambiguationIndex(idx);
-                          setCustomTitleInput(item.canonical_title || "");
-                        }}
-                        className="px-2.5 py-1 rounded-lg text-[10px] font-medium bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 transition-colors cursor-pointer"
-                      >
-                        Disambiguate
-                      </button>
-
-                      {/* ponytail: backend's preview response only returns aggregate
-                          counts, not a per-item match verdict — upgrade when it does */}
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        Matched
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Ingestion Progress Bar */}

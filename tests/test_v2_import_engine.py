@@ -69,6 +69,7 @@ def test_personal_import_preview_endpoint():
             {"canonical_title": "Dune: Part Two", "production_year": 2024, "rating_value": 5},
             {"canonical_title": "Blade Runner 2049", "production_year": 2017, "rating_value": 5},
             {"canonical_title": "Arrival", "production_year": 2016, "rating_value": 5},
+            {"canonical_title": "Totally Nonexistent Cinematic Title 9999", "production_year": 2099},
         ]
     }
     response = client.post(
@@ -78,9 +79,24 @@ def test_personal_import_preview_endpoint():
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["total_items"] == 3
+    assert data["total_items"] == 4
     assert data["matched_titles"] >= 2
     assert "conflicts" in data
+    assert "item_verdicts" in data
+    assert len(data["item_verdicts"]) == 4
+
+    # Check matched item verdict
+    first_item = data["item_verdicts"][0]
+    assert first_item["canonical_title"] == "Dune: Part Two"
+    assert first_item["matched"] is True
+    assert first_item["confidence_score"] > 0.5
+    assert first_item["verdict"] in ("EXACT_MATCH", "PROBABLE_MATCH")
+
+    # Check unmatched item verdict
+    last_item = data["item_verdicts"][3]
+    assert last_item["matched"] is False
+    assert last_item["confidence_score"] == 0.0
+    assert last_item["verdict"] == "UNMATCHED"
 
 
 def test_personal_import_apply_endpoint():

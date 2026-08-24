@@ -23,12 +23,23 @@ export interface ImportConflictItem {
   imported_value: unknown;
 }
 
+export interface ImportItemVerdict {
+  index: number;
+  canonical_title: string;
+  production_year?: number;
+  matched: boolean;
+  matched_title_id?: string;
+  confidence_score: number;
+  verdict: "EXACT_MATCH" | "PROBABLE_MATCH" | "UNMATCHED";
+}
+
 export interface ImportPreviewResponse {
   total_items: number;
   matched_titles: number;
   unmatched_titles: number;
   conflicts_count: number;
   conflicts: ImportConflictItem[];
+  item_verdicts?: ImportItemVerdict[];
 }
 
 export interface ImportApplyResponse {

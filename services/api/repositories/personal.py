@@ -40,6 +40,7 @@ from ..schemas.personal import (
     ImportApplyRequest,
     ImportItemPayload,
     ImportConflictStrategyEnum,
+    ImportItemVerdict,
     WatchlistItemResponse,
     WatchlistPageResponse,
     UserStreakResponse,
@@ -1173,31 +1174,96 @@ class PersonalRepository:
         """Validates and previews personal data import, matching canonical titles and identifying conflicts."""
         user_uuid = _resolve_user_uuid(user_id)
         conflicts: List[ImportConflictItem] = []
+        item_verdicts: List[ImportItemVerdict] = []
         matched_count = 0
         unmatched_count = 0
 
         if db is not None:
             try:
-                for item in items:
+                for idx, item in enumerate(items):
                     matched_title: Optional[TitleModel] = None
+                    confidence: float = 0.0
+                    verdict: str = "UNMATCHED"
 
                     if item.title_id:
                         try:
                             t_uuid = uuid.UUID(item.title_id)
                             matched_title = await db.get(TitleModel, t_uuid)
+                            if matched_title:
+                                confidence = 1.0
+                                verdict = "EXACT_MATCH"
                         except ValueError:
                             pass
 
                     if not matched_title and item.canonical_title:
-                        stmt = select(TitleModel).where(TitleModel.canonical_title.ilike(item.canonical_title.strip()))
+                        clean_title = item.canonical_title.strip()
                         if item.production_year:
-                            stmt = stmt.where(TitleModel.production_year == item.production_year)
-                        res = await db.execute(stmt)
-                        matched_title = res.scalars().first()
+                            # 1. Exact title (case-insensitive) + exact production year
+                            stmt = select(TitleModel).where(
+                                func.lower(TitleModel.canonical_title) == clean_title.lower(),
+                                TitleModel.production_year == item.production_year
+                            )
+                            res = await db.execute(stmt)
+                            matched_title = res.scalars().first()
+                            if matched_title:
+                                confidence = 1.0
+                                verdict = "EXACT_MATCH"
+                            else:
+                                # 2. Exact title (case-insensitive) without year filter
+                                stmt = select(TitleModel).where(
+                                    func.lower(TitleModel.canonical_title) == clean_title.lower()
+                                )
+                                res = await db.execute(stmt)
+                                matched_title = res.scalars().first()
+                                if matched_title:
+                                    confidence = 0.80
+                                    verdict = "PROBABLE_MATCH"
+                                else:
+                                    # 3. Substring / ILIKE match
+                                    stmt = select(TitleModel).where(
+                                        TitleModel.canonical_title.ilike(f"%{clean_title}%")
+                                    ).limit(1)
+                                    res = await db.execute(stmt)
+                                    matched_title = res.scalars().first()
+                                    if matched_title:
+                                        confidence = 0.65
+                                        verdict = "PROBABLE_MATCH"
+                        else:
+                            # No production year provided
+                            # 1. Exact title match
+                            stmt = select(TitleModel).where(
+                                func.lower(TitleModel.canonical_title) == clean_title.lower()
+                            )
+                            res = await db.execute(stmt)
+                            matched_title = res.scalars().first()
+                            if matched_title:
+                                confidence = 0.95
+                                verdict = "EXACT_MATCH"
+                            else:
+                                # 2. Substring / ILIKE match
+                                stmt = select(TitleModel).where(
+                                    TitleModel.canonical_title.ilike(f"%{clean_title}%")
+                                ).limit(1)
+                                res = await db.execute(stmt)
+                                matched_title = res.scalars().first()
+                                if matched_title:
+                                    confidence = 0.65
+                                    verdict = "PROBABLE_MATCH"
 
                     if matched_title:
                         matched_count += 1
                         t_id_str = str(matched_title.title_id)
+                        item_verdicts.append(
+                            ImportItemVerdict(
+                                index=idx,
+                                canonical_title=item.canonical_title or matched_title.canonical_title,
+                                production_year=item.production_year or matched_title.production_year,
+                                matched=True,
+                                matched_title_id=t_id_str,
+                                confidence_score=confidence,
+                                verdict=verdict
+                            )
+                        )
 
                         # Check for conflicts against existing rating
                         if item.rating_value is not None:
@@ -1236,6 +1302,17 @@ class PersonalRepository:
                                 )
                     else:
                         unmatched_count += 1
+                        item_verdicts.append(
+                            ImportItemVerdict(
+                                index=idx,
+                                canonical_title=item.canonical_title or "Unknown",
+                                production_year=item.production_year,
+                                matched=False,
+                                matched_title_id=None,
+                                confidence_score=0.0,
+                                verdict="UNMATCHED"
+                            )
+                        )
 
             except Exception as exc:
                 logger.error("preview_user_import failed: %s", exc, exc_info=True)
@@ -1247,7 +1324,8 @@ class PersonalRepository:
             matched_titles=matched_count,
             unmatched_titles=unmatched_count,
             conflicts_count=len(conflicts),
-            conflicts=conflicts
+            conflicts=conflicts,
+            item_verdicts=item_verdicts
         )
 
     async def apply_user_import(
@@ -1276,11 +1354,26 @@ class PersonalRepository:
                             pass
 
                     if not matched_title and item.canonical_title:
-                        stmt = select(TitleModel).where(TitleModel.canonical_title.ilike(item.canonical_title.strip()))
+                        clean_title = item.canonical_title.strip()
                         if item.production_year:
-                            stmt = stmt.where(TitleModel.production_year == item.production_year)
-                        res = await db.execute(stmt)
-                        matched_title = res.scalars().first()
+                            stmt = select(TitleModel).where(
+                                func.lower(TitleModel.canonical_title) == clean_title.lower(),
+                                TitleModel.production_year == item.production_year
+                            )
+                            res = await db.execute(stmt)
+                            matched_title = res.scalars().first()
+                        if not matched_title:
+                            stmt = select(TitleModel).where(
+                                func.lower(TitleModel.canonical_title) == clean_title.lower()
+                            )
+                            res = await db.execute(stmt)
+                            matched_title = res.scalars().first()
+                        if not matched_title:
+                            stmt = select(TitleModel).where(
+                                TitleModel.canonical_title.ilike(f"%{clean_title}%")
+                            ).limit(1)
+                            res = await db.execute(stmt)
+                            matched_title = res.scalars().first()
 
                     if not matched_title:
                         continue

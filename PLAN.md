@@ -183,13 +183,14 @@ manufacturing them.
     unblocks 1.2, 1.3, and all of Part 2's real-schema assumptions.
 - **Effort:** small · **Files:** `services/api/routers/personal.py`.
 
-### 1.5 Import wizard per-item confidence
-- [ ] Backend: extend `ImportPreviewResponse` to include a per-item match
-      verdict/confidence (currently only aggregate counts + a conflicts list).
-- [ ] Frontend: replace the always-"Matched" badge in
-      [import/page.tsx](apps/web/src/app/import/page.tsx) with the real
-      per-item value.
-- **Effort:** medium (schema change) · **Priority:** low — defer past 1.1–1.4.
+### 1.5 Import wizard per-item confidence — [x] done
+- [x] Backend: extended `ImportPreviewResponse` with `item_verdicts: List[ImportItemVerdict]`
+      providing per-item `confidence_score` (0.0–1.0) and `verdict: "EXACT_MATCH" | "PROBABLE_MATCH" | "UNMATCHED"`.
+      Implemented robust multi-tier matching in `personal_repository.preview_user_import` and router preview simulation.
+- [x] Frontend: updated `apps/web/src/lib/api/import.ts` with `ImportItemVerdict` and replaced
+      the static "Matched" badge in [import/page.tsx](apps/web/src/app/import/page.tsx) with dynamic
+      badges (Exact Match, Probable Match, Unmatched) and real-time disambiguation re-previewing.
+- [x] Automated tests: `tests/test_v2_import_engine.py` (5/5 passed), full v2 suite (78/78 passed).
 
 ### 1.6 Full regression pass
 - [x] Audit `settings/page.tsx` and `library/page.tsx` — found and fixed

@@ -42,12 +42,23 @@ class ImportConflictItem(BaseModel):
     existing_value: Any
     imported_value: Any
 
+class ImportItemVerdict(BaseModel):
+    index: int
+    canonical_title: str
+    production_year: Optional[int] = None
+    matched: bool = False
+    matched_title_id: Optional[str] = None
+    confidence_score: float = 0.0
+    verdict: str = "UNMATCHED"  # EXACT_MATCH, PROBABLE_MATCH, UNMATCHED
+
 class ImportPreviewResponse(BaseModel):
     total_items: int
     matched_titles: int
     unmatched_titles: int
     conflicts_count: int
-    conflicts: List[ImportConflictItem]
+    conflicts: List[ImportConflictItem] = Field(default_factory=list)
+    item_verdicts: List[ImportItemVerdict] = Field(default_factory=list)
+
 
 class ImportApplyRequest(BaseModel):
     items: List[ImportItemPayload]
