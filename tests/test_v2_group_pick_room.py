@@ -34,9 +34,9 @@ class TestGroupPickRoomIntegration(unittest.IsolatedAsyncioTestCase):
         self.title_3_id = uuid.uuid4()
 
         async with self.SessionLocal() as session:
-            t1_name = f"Inception {uuid.uuid4().hex[:4]}"
-            t2_name = f"Interstellar {uuid.uuid4().hex[:4]}"
-            t3_name = f"Oppenheimer {uuid.uuid4().hex[:4]}"
+            t1_name = f"Inception {uuid.uuid4().hex[:12]}"
+            t2_name = f"Interstellar {uuid.uuid4().hex[:12]}"
+            t3_name = f"Oppenheimer {uuid.uuid4().hex[:12]}"
             t1 = TitleModel(
                 title_id=self.title_1_id,
                 display_id=f"MOV-PK1-{uuid.uuid4().hex[:6].upper()}",

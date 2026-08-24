@@ -43,6 +43,15 @@ from ..schemas.social import (
     RecapGenreStat,
     RecapDirectorStat,
     RecapResponse,
+    WatchClubCreate,
+    WatchClubResponse,
+    ClubMembershipResponse,
+    ClubDetailResponse,
+    ClubActivityResponse,
+    ChallengeCreate,
+    ChallengeResponse,
+    ChallengeParticipantResponse,
+    ChallengeDetailResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
     ALLOWED_STATE_TRANSITIONS,
@@ -58,6 +67,11 @@ SEED_INVITES: Dict[str, Dict[str, Any]] = {}
 SEED_REFERRALS: List[Dict[str, Any]] = []
 SEED_PICK_ROOMS: Dict[str, Dict[str, Any]] = {}
 SEED_PICK_VOTES: List[Dict[str, Any]] = []
+SEED_CLUBS: Dict[str, Dict[str, Any]] = {}
+SEED_CLUB_MEMBERSHIPS: List[Dict[str, Any]] = []
+SEED_CLUB_ACTIVITIES: List[Dict[str, Any]] = []
+SEED_CHALLENGES: Dict[uuid.UUID, Dict[str, Any]] = {}
+SEED_CHALLENGE_PARTICIPANTS: List[Dict[str, Any]] = []
 SEED_BADGES = [
     {
         "badge_id": uuid.UUID("018f3a00-0000-7000-8000-000000000001"),
@@ -2129,8 +2143,366 @@ class SocialRepository:
                 generated_at=now,
             )
 
+    # ── Watch Clubs (Part 2 — Item 2.10) ─────────────────────────────────────────
+
+    async def create_watch_club(
+        self, db: Optional[AsyncSession], creator_id: uuid.UUID, payload: WatchClubCreate,
+    ) -> WatchClubResponse:
+        """Create a new watch club and add the creator as OWNER."""
+        c_uuid = _resolve_uuid(creator_id, "creator_id")
+        now = datetime.now(timezone.utc)
+        slug = payload.name.lower().replace(" ", "-")[:100] + "-" + uuid.uuid4().hex[:6]
+
+        if db is not None:
+            from ..models.social import WatchClubModel, ClubMembershipModel
+            club = WatchClubModel(
+                name=payload.name, slug=slug, created_by=c_uuid,
+                avatar_url=payload.avatar_url, description=payload.description,
+                member_count=1, created_at=now,
+            )
+            db.add(club)
+            await db.flush()
+            membership = ClubMembershipModel(
+                club_id=club.club_id, user_id=c_uuid, role="OWNER", joined_at=now,
+            )
+            db.add(membership)
+            await db.commit()
+            return WatchClubResponse(
+                club_id=club.club_id, name=club.name, slug=club.slug,
+                created_by=c_uuid, member_count=1, created_at=now,
+            )
+        else:
+            club_id = uuid.uuid4()
+            rec = {
+                "club_id": club_id, "name": payload.name, "slug": slug,
+                "created_by": c_uuid, "avatar_url": payload.avatar_url,
+                "description": payload.description, "member_count": 1, "created_at": now,
+            }
+            SEED_CLUBS[slug] = rec
+            SEED_CLUB_MEMBERSHIPS.append({"club_id": club_id, "user_id": c_uuid, "role": "OWNER", "joined_at": now})
+            return WatchClubResponse(**rec)
+
+    async def get_watch_club(
+        self, db: Optional[AsyncSession], slug: str,
+    ) -> ClubDetailResponse:
+        """Retrieve a watch club by slug with members list."""
+        if db is not None:
+            from ..models.social import WatchClubModel, ClubMembershipModel
+            stmt = select(WatchClubModel).where(WatchClubModel.slug == slug)
+            club = (await db.execute(stmt)).scalar_one_or_none()
+            if not club:
+                raise ValueError("Watch club not found.")
+            stmt_m = select(ClubMembershipModel).where(ClubMembershipModel.club_id == club.club_id)
+            members = (await db.execute(stmt_m)).scalars().all()
+            return ClubDetailResponse(
+                club=WatchClubResponse(
+                    club_id=club.club_id, name=club.name, slug=club.slug,
+                    created_by=club.created_by, member_count=club.member_count,
+                    avatar_url=club.avatar_url, description=club.description,
+                    created_at=club.created_at,
+                ),
+                members=[
+                    ClubMembershipResponse(
+                        club_id=m.club_id, user_id=m.user_id, role=m.role, joined_at=m.joined_at,
+                    ) for m in members
+                ],
+            )
+        else:
+            rec = SEED_CLUBS.get(slug)
+            if not rec:
+                raise ValueError("Watch club not found.")
+            members = [
+                ClubMembershipResponse(**m) for m in SEED_CLUB_MEMBERSHIPS if m["club_id"] == rec["club_id"]
+            ]
+            return ClubDetailResponse(club=WatchClubResponse(**rec), members=members)
+
+    async def join_watch_club(
+        self, db: Optional[AsyncSession], slug: str, user_id: uuid.UUID,
+    ) -> ClubMembershipResponse:
+        """Add a user to a watch club."""
+        u_uuid = _resolve_uuid(user_id, "user_id")
+        now = datetime.now(timezone.utc)
+        if db is not None:
+            from ..models.social import WatchClubModel, ClubMembershipModel
+            stmt = select(WatchClubModel).where(WatchClubModel.slug == slug)
+            club = (await db.execute(stmt)).scalar_one_or_none()
+            if not club:
+                raise ValueError("Watch club not found.")
+            membership = ClubMembershipModel(
+                club_id=club.club_id, user_id=u_uuid, role="MEMBER", joined_at=now,
+            )
+            db.add(membership)
+            club.member_count += 1
+            await db.commit()
+            return ClubMembershipResponse(
+                club_id=club.club_id, user_id=u_uuid, role="MEMBER", joined_at=now,
+            )
+        else:
+            rec = SEED_CLUBS.get(slug)
+            if not rec:
+                raise ValueError("Watch club not found.")
+            m = {"club_id": rec["club_id"], "user_id": u_uuid, "role": "MEMBER", "joined_at": now}
+            SEED_CLUB_MEMBERSHIPS.append(m)
+            rec["member_count"] = rec.get("member_count", 1) + 1
+            return ClubMembershipResponse(**m)
+
+    async def list_user_clubs(
+        self, db: Optional[AsyncSession], user_id: uuid.UUID,
+    ) -> List[WatchClubResponse]:
+        """List all clubs a user belongs to."""
+        u_uuid = _resolve_uuid(user_id, "user_id")
+        if db is not None:
+            from ..models.social import WatchClubModel, ClubMembershipModel
+            stmt = (
+                select(WatchClubModel)
+                .join(ClubMembershipModel, WatchClubModel.club_id == ClubMembershipModel.club_id)
+                .where(ClubMembershipModel.user_id == u_uuid)
+            )
+            clubs = (await db.execute(stmt)).scalars().all()
+            return [
+                WatchClubResponse(
+                    club_id=c.club_id, name=c.name, slug=c.slug,
+                    created_by=c.created_by, member_count=c.member_count,
+                    avatar_url=c.avatar_url, description=c.description,
+                    created_at=c.created_at,
+                ) for c in clubs
+            ]
+        else:
+            my_club_ids = {m["club_id"] for m in SEED_CLUB_MEMBERSHIPS if m["user_id"] == u_uuid}
+            return [WatchClubResponse(**c) for c in SEED_CLUBS.values() if c["club_id"] in my_club_ids]
+
+    # ── Club Activity Feed (Part 2 — Item 2.12) ─────────────────────────────────
+
+    async def post_club_activity(
+        self, db: Optional[AsyncSession], club_id: uuid.UUID, user_id: uuid.UUID,
+        activity_type: str, reference_id: Optional[uuid.UUID] = None, metadata: Optional[dict] = None,
+    ) -> ClubActivityResponse:
+        """Post an activity event to a club feed."""
+        c_uuid = _resolve_uuid(club_id, "club_id")
+        u_uuid = _resolve_uuid(user_id, "user_id")
+        now = datetime.now(timezone.utc)
+        if db is not None:
+            from ..models.social import ClubActivityModel
+            act = ClubActivityModel(
+                club_id=c_uuid, user_id=u_uuid, activity_type=activity_type,
+                reference_id=reference_id, metadata_json=metadata or {}, created_at=now,
+            )
+            db.add(act)
+            await db.commit()
+            return ClubActivityResponse(
+                activity_id=act.activity_id, club_id=c_uuid, user_id=u_uuid,
+                activity_type=activity_type, reference_id=reference_id,
+                metadata_json=metadata, created_at=now,
+            )
+        else:
+            aid = uuid.uuid4()
+            rec = {
+                "activity_id": aid, "club_id": c_uuid, "user_id": u_uuid,
+                "activity_type": activity_type, "reference_id": reference_id,
+                "metadata_json": metadata or {}, "created_at": now,
+            }
+            SEED_CLUB_ACTIVITIES.append(rec)
+            return ClubActivityResponse(**rec)
+
+    async def get_club_activity_feed(
+        self, db: Optional[AsyncSession], slug: str, limit: int = 20,
+    ) -> List[ClubActivityResponse]:
+        """Retrieve the latest activity feed for a club."""
+        if db is not None:
+            from ..models.social import WatchClubModel, ClubActivityModel
+            stmt_club = select(WatchClubModel.club_id).where(WatchClubModel.slug == slug)
+            club_id = (await db.execute(stmt_club)).scalar_one_or_none()
+            if not club_id:
+                raise ValueError("Watch club not found.")
+            stmt = (
+                select(ClubActivityModel)
+                .where(ClubActivityModel.club_id == club_id)
+                .order_by(ClubActivityModel.created_at.desc())
+                .limit(limit)
+            )
+            activities = (await db.execute(stmt)).scalars().all()
+            return [
+                ClubActivityResponse(
+                    activity_id=a.activity_id, club_id=a.club_id, user_id=a.user_id,
+                    activity_type=a.activity_type, reference_id=a.reference_id,
+                    metadata_json=a.metadata_json, created_at=a.created_at,
+                ) for a in activities
+            ]
+        else:
+            rec = SEED_CLUBS.get(slug)
+            if not rec:
+                raise ValueError("Watch club not found.")
+            feed = [a for a in SEED_CLUB_ACTIVITIES if a["club_id"] == rec["club_id"]]
+            feed.sort(key=lambda x: x["created_at"], reverse=True)
+            return [ClubActivityResponse(**a) for a in feed[:limit]]
+
+    # ── Monthly Challenges (Part 2 — Item 2.13) ─────────────────────────────────
+
+    async def create_challenge(
+        self, db: Optional[AsyncSession], payload: ChallengeCreate,
+    ) -> ChallengeResponse:
+        """Create a new viewing challenge."""
+        now = datetime.now(timezone.utc)
+        if db is not None:
+            from ..models.social import ChallengeModel
+            ch = ChallengeModel(
+                title=payload.title, description=payload.description,
+                challenge_type=payload.challenge_type, club_id=payload.club_id,
+                criteria_json=payload.criteria_json or {}, goal_count=payload.goal_count,
+                starts_at=payload.starts_at, ends_at=payload.ends_at, created_at=now,
+            )
+            db.add(ch)
+            await db.commit()
+            return ChallengeResponse(
+                challenge_id=ch.challenge_id, title=ch.title, description=ch.description,
+                challenge_type=ch.challenge_type, club_id=ch.club_id,
+                criteria_json=ch.criteria_json, goal_count=ch.goal_count,
+                starts_at=ch.starts_at, ends_at=ch.ends_at, created_at=now,
+            )
+        else:
+            ch_id = uuid.uuid4()
+            rec = {
+                "challenge_id": ch_id, "title": payload.title, "description": payload.description,
+                "challenge_type": payload.challenge_type, "club_id": payload.club_id,
+                "criteria_json": payload.criteria_json or {}, "goal_count": payload.goal_count,
+                "starts_at": payload.starts_at, "ends_at": payload.ends_at,
+                "created_at": now, "participant_count": 0,
+            }
+            SEED_CHALLENGES[ch_id] = rec
+            return ChallengeResponse(**rec)
+
+    async def join_challenge(
+        self, db: Optional[AsyncSession], challenge_id: uuid.UUID, user_id: uuid.UUID,
+    ) -> ChallengeParticipantResponse:
+        """Join a challenge as a participant."""
+        ch_uuid = _resolve_uuid(challenge_id, "challenge_id")
+        u_uuid = _resolve_uuid(user_id, "user_id")
+        now = datetime.now(timezone.utc)
+        if db is not None:
+            from ..models.social import ChallengeParticipantModel
+            p = ChallengeParticipantModel(
+                challenge_id=ch_uuid, user_id=u_uuid, progress=0, completed=False, joined_at=now,
+            )
+            db.add(p)
+            await db.commit()
+            return ChallengeParticipantResponse(
+                challenge_id=ch_uuid, user_id=u_uuid, progress=0, completed=False, joined_at=now,
+            )
+        else:
+            if ch_uuid not in SEED_CHALLENGES:
+                raise ValueError("Challenge not found.")
+            rec = {"challenge_id": ch_uuid, "user_id": u_uuid, "progress": 0, "completed": False, "completed_at": None, "joined_at": now}
+            SEED_CHALLENGE_PARTICIPANTS.append(rec)
+            SEED_CHALLENGES[ch_uuid]["participant_count"] = SEED_CHALLENGES[ch_uuid].get("participant_count", 0) + 1
+            return ChallengeParticipantResponse(**rec)
+
+    async def update_challenge_progress(
+        self, db: Optional[AsyncSession], challenge_id: uuid.UUID, user_id: uuid.UUID, increment: int = 1,
+    ) -> ChallengeParticipantResponse:
+        """Increment a participant's challenge progress."""
+        ch_uuid = _resolve_uuid(challenge_id, "challenge_id")
+        u_uuid = _resolve_uuid(user_id, "user_id")
+        now = datetime.now(timezone.utc)
+        if db is not None:
+            from ..models.social import ChallengeParticipantModel, ChallengeModel
+            stmt = select(ChallengeParticipantModel).where(
+                and_(ChallengeParticipantModel.challenge_id == ch_uuid, ChallengeParticipantModel.user_id == u_uuid)
+            )
+            p = (await db.execute(stmt)).scalar_one_or_none()
+            if not p:
+                raise ValueError("Not a participant in this challenge.")
+            p.progress += increment
+            goal_stmt = select(ChallengeModel.goal_count).where(ChallengeModel.challenge_id == ch_uuid)
+            goal = (await db.execute(goal_stmt)).scalar_one_or_none() or 1
+            if p.progress >= goal and not p.completed:
+                p.completed = True
+                p.completed_at = now
+            await db.commit()
+            return ChallengeParticipantResponse(
+                challenge_id=ch_uuid, user_id=u_uuid, progress=p.progress,
+                completed=p.completed, completed_at=p.completed_at, joined_at=p.joined_at,
+            )
+        else:
+            for rec in SEED_CHALLENGE_PARTICIPANTS:
+                if rec["challenge_id"] == ch_uuid and rec["user_id"] == u_uuid:
+                    rec["progress"] += increment
+                    ch = SEED_CHALLENGES.get(ch_uuid, {})
+                    if rec["progress"] >= ch.get("goal_count", 1) and not rec["completed"]:
+                        rec["completed"] = True
+                        rec["completed_at"] = now
+                    return ChallengeParticipantResponse(**rec)
+            raise ValueError("Not a participant in this challenge.")
+
+    async def get_challenge_detail(
+        self, db: Optional[AsyncSession], challenge_id: uuid.UUID,
+    ) -> ChallengeDetailResponse:
+        """Get full challenge details with participants."""
+        ch_uuid = _resolve_uuid(challenge_id, "challenge_id")
+        if db is not None:
+            from ..models.social import ChallengeModel, ChallengeParticipantModel
+            stmt = select(ChallengeModel).where(ChallengeModel.challenge_id == ch_uuid)
+            ch = (await db.execute(stmt)).scalar_one_or_none()
+            if not ch:
+                raise ValueError("Challenge not found.")
+            stmt_p = select(ChallengeParticipantModel).where(ChallengeParticipantModel.challenge_id == ch_uuid)
+            participants = (await db.execute(stmt_p)).scalars().all()
+            return ChallengeDetailResponse(
+                challenge=ChallengeResponse(
+                    challenge_id=ch.challenge_id, title=ch.title, description=ch.description,
+                    challenge_type=ch.challenge_type, club_id=ch.club_id,
+                    criteria_json=ch.criteria_json, goal_count=ch.goal_count,
+                    starts_at=ch.starts_at, ends_at=ch.ends_at, created_at=ch.created_at,
+                    participant_count=len(participants),
+                ),
+                participants=[
+                    ChallengeParticipantResponse(
+                        challenge_id=p.challenge_id, user_id=p.user_id, progress=p.progress,
+                        completed=p.completed, completed_at=p.completed_at, joined_at=p.joined_at,
+                    ) for p in participants
+                ],
+            )
+        else:
+            ch = SEED_CHALLENGES.get(ch_uuid)
+            if not ch:
+                raise ValueError("Challenge not found.")
+            participants = [
+                ChallengeParticipantResponse(**p) for p in SEED_CHALLENGE_PARTICIPANTS if p["challenge_id"] == ch_uuid
+            ]
+            ch_resp = ChallengeResponse(**ch)
+            ch_resp.participant_count = len(participants)
+            return ChallengeDetailResponse(challenge=ch_resp, participants=participants)
+
+    async def list_active_challenges(
+        self, db: Optional[AsyncSession],
+    ) -> List[ChallengeResponse]:
+        """List all currently active challenges."""
+        now = datetime.now(timezone.utc)
+        if db is not None:
+            from ..models.social import ChallengeModel
+            stmt = (
+                select(ChallengeModel)
+                .where(and_(ChallengeModel.starts_at <= now, ChallengeModel.ends_at > now))
+                .order_by(ChallengeModel.ends_at.asc())
+            )
+            challenges = (await db.execute(stmt)).scalars().all()
+            return [
+                ChallengeResponse(
+                    challenge_id=c.challenge_id, title=c.title, description=c.description,
+                    challenge_type=c.challenge_type, club_id=c.club_id,
+                    criteria_json=c.criteria_json, goal_count=c.goal_count,
+                    starts_at=c.starts_at, ends_at=c.ends_at, created_at=c.created_at,
+                ) for c in challenges
+            ]
+        else:
+            active = [
+                ChallengeResponse(**c) for c in SEED_CHALLENGES.values()
+                if c["starts_at"] <= now < c["ends_at"]
+            ]
+            return active
+
 
 social_repository = SocialRepository()
+
 
 
 

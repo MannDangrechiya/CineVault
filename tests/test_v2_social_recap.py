@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 import uuid
 from datetime import datetime, timezone
 import pytest
@@ -33,8 +33,8 @@ class TestSocialRecapIntegration(unittest.IsolatedAsyncioTestCase):
         self.title_2_id = uuid.uuid4()
 
         async with self.SessionLocal() as session:
-            t1_name = f"Sci-Fi Film {uuid.uuid4().hex[:4]}"
-            t2_name = f"Drama Film {uuid.uuid4().hex[:4]}"
+            t1_name = f"Sci-Fi Film {uuid.uuid4().hex[:12]}"
+            t2_name = f"Drama Film {uuid.uuid4().hex[:12]}"
 
             t1 = TitleModel(
                 title_id=self.title_1_id,

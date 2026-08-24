@@ -346,5 +346,141 @@ class PickVoteModel(Base):
     )
 
 
+# ── Part 2 Phase 3: Watch Clubs (2.10) ──────────────────────────────────────────
+
+class WatchClubModel(Base):
+    """A persistent named group of users who watch and discuss together."""
+    __tablename__ = "watch_club"
+    __table_args__ = {"schema": "social"}
+
+    club_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    member_count: Mapped[int] = mapped_column(default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class ClubMembershipModel(Base):
+    """Membership link between users and watch clubs."""
+    __tablename__ = "club_membership"
+    __table_args__ = (
+        PrimaryKeyConstraint("club_id", "user_id"),
+        {"schema": "social"},
+    )
+
+    club_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("social.watch_club.club_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(32), default="MEMBER", nullable=False)  # OWNER, ADMIN, MEMBER
+    joined_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+# ── Part 2 Phase 3: Club Taste DNA (2.11) ───────────────────────────────────────
+
+class ClubTasteProfileModel(Base):
+    """Aggregated taste vector for a watch club, computed from member profiles."""
+    __tablename__ = "club_taste_profile"
+    __table_args__ = {"schema": "social"}
+
+    club_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("social.watch_club.club_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    taste_vector = mapped_column(Vector(384), nullable=True)
+    total_watches: Mapped[int] = mapped_column(default=0, nullable=False)
+    top_genres_json: Mapped[Optional[Any]] = mapped_column(JSONB, default=list)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+# ── Part 2 Phase 3: Club Activity Feed (2.12) ───────────────────────────────────
+
+class ClubActivityModel(Base):
+    """Activity feed entry for a watch club."""
+    __tablename__ = "club_activity"
+    __table_args__ = {"schema": "social"}
+
+    activity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    club_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("social.watch_club.club_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    activity_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    reference_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    metadata_json: Mapped[Optional[Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+# ── Part 2 Phase 3: Monthly Challenges (2.13) ───────────────────────────────────
+
+class ChallengeModel(Base):
+    """A time-bound viewing challenge (global or club-scoped)."""
+    __tablename__ = "challenge"
+    __table_args__ = {"schema": "social"}
+
+    challenge_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    challenge_type: Mapped[str] = mapped_column(String(64), default="GLOBAL", nullable=False)
+    club_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("social.watch_club.club_id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    criteria_json: Mapped[Optional[Any]] = mapped_column(JSONB, default=dict)
+    goal_count: Mapped[int] = mapped_column(default=1, nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+class ChallengeParticipantModel(Base):
+    """User participation and progress in a challenge."""
+    __tablename__ = "challenge_participant"
+    __table_args__ = (
+        PrimaryKeyConstraint("challenge_id", "user_id"),
+        {"schema": "social"},
+    )
+
+    challenge_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("social.challenge.challenge_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    progress: Mapped[int] = mapped_column(default=0, nullable=False)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    joined_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+
+
 
 

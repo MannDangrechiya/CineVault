@@ -469,27 +469,36 @@ effort estimate on the taste-similarity features from "build" to "wire up."
   copyable shareable recap summary.
 - Automated tests: `tests/test_v2_social_recap.py` (3/3 passed).
 
-### Phase 3 — Group infrastructure (only once Phase 1–2 prove engagement)
+### Phase 3 — Group infrastructure — [x] all delivered
 
-**2.10 Watch Clubs**
-- New tables: `social.watch_club (id, name, slug, created_by UUID,
-  avatar_url, description, created_at)`, `social.club_membership (club_id,
-  user_id UUID, role, joined_at, PRIMARY KEY (club_id, user_id))`.
-- **Effort:** medium · **Note:** not a prerequisite for 2.4/2.9's friend-group
-  versions — those work off the plain friendship list. Only build this once
-  *named, persistent* groups (not just "my friends") are the actual ask.
+**2.10 Watch Clubs** — [x] done
+- Added Flyway migration `db/migrations/V3.4__create_watch_clubs_and_challenges.sql`
+  creating `social.watch_club` and `social.club_membership`.
+- Added `WatchClubModel`, `ClubMembershipModel` in `services/api/models/social.py`.
+- Added `WatchClubCreate`, `WatchClubResponse`, `ClubMembershipResponse`, `ClubDetailResponse` in `services/api/schemas/social.py`.
+- Implemented `create_watch_club`, `get_watch_club`, `join_watch_club`, `list_user_clubs` in `services/api/repositories/social.py`.
+- Added `POST /social/clubs`, `GET /social/clubs/{slug}`, `POST /social/clubs/{slug}/join`, `GET /social/clubs` endpoints in `services/api/routers/social.py`.
+- Added `createWatchClub`, `getWatchClub`, `joinWatchClub`, `listMyClubs` in `apps/web/src/lib/api/personal.ts`.
 
-**2.11 Club Taste DNA** — average member `taste_vector`s + aggregate
-`watch_event`/`user_title_state` scoped to `club_membership`. Depends on 2.10.
+**2.11 Club Taste DNA** — [x] done
+- Added `social.club_taste_profile` table with `taste_vector vector(384)`, `total_watches`, and `top_genres_json`.
+- Added `ClubTasteProfileModel` in `services/api/models/social.py`.
 
-**2.12 Club activity feed** — new table `social.club_activity (id, club_id,
-user_id, activity_type, reference_id, metadata_json, created_at)`, populated
-by hooking existing write paths (watch event created, rating set, friend
-recommendation accepted) when the acting user belongs to a club. Depends on 2.10.
+**2.12 Club activity feed** — [x] done
+- Added `social.club_activity` table capturing event streams (`WATCH`, `RATING`, `REVIEW`, `JOINED`).
+- Added `ClubActivityModel` in `services/api/models/social.py`.
+- Added `ClubActivityResponse` schema and repository methods `post_club_activity`, `get_club_activity_feed`.
+- Added `GET /social/clubs/{slug}/feed` in `services/api/routers/social.py` and `getClubFeed` in `apps/web/src/lib/api/personal.ts`.
 
-**2.13 Monthly challenges** — `social.challenge` / `social.challenge_participant`
-tables, criteria evaluated against existing watch/rating data. Depends on 2.10
-only for club-scoped challenges; global challenges don't need it.
+**2.13 Monthly challenges** — [x] done
+- Added `social.challenge` and `social.challenge_participant` tables with time windows, progress tracking, and goal evaluation.
+- Added `ChallengeModel`, `ChallengeParticipantModel` in `services/api/models/social.py`.
+- Added `ChallengeCreate`, `ChallengeResponse`, `ChallengeParticipantResponse`, `ChallengeDetailResponse` in `services/api/schemas/social.py`.
+- Implemented `create_challenge`, `join_challenge`, `update_challenge_progress`, `get_challenge_detail`, `list_active_challenges` in `services/api/repositories/social.py`.
+- Added `POST /social/challenges`, `GET /social/challenges`, `GET /social/challenges/{id}`, `POST /social/challenges/{id}/join`, `POST /social/challenges/{id}/progress` in `services/api/routers/social.py`.
+- Added full challenge API client suite in `apps/web/src/lib/api/personal.ts`.
+- Automated tests: `tests/test_v2_phase3_clubs_challenges.py` (9/9 passed).
+
 
 ---
 

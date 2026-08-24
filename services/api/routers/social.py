@@ -36,6 +36,15 @@ from ..schemas.social import (
     PickVoteResponse,
     PickRoomCloseResponse,
     RecapResponse,
+    WatchClubCreate,
+    WatchClubResponse,
+    ClubMembershipResponse,
+    ClubDetailResponse,
+    ClubActivityResponse,
+    ChallengeCreate,
+    ChallengeResponse,
+    ChallengeParticipantResponse,
+    ChallengeDetailResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
     TasteProfileComputeRequest,
@@ -773,6 +782,180 @@ async def get_cinema_recap(
     res.user_name = name
     res.user_username = username
     return res
+
+
+# ── Phase 3: Watch Clubs (2.10) ──────────────────────────────────────────────
+
+@router.post(
+    "/clubs",
+    response_model=WatchClubResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(enforce_rate_limit("SOCIAL_WRITE"))],
+)
+async def create_watch_club(
+    payload: WatchClubCreate,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Create a new watch club."""
+    user_id = _extract_user_id(claims)
+    return await social_repository.create_watch_club(db=db, creator_id=user_id, payload=payload)
+
+
+@router.get(
+    "/clubs/{slug}",
+    response_model=ClubDetailResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_watch_club(
+    slug: str,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Retrieve a watch club by slug with members."""
+    try:
+        return await social_repository.get_watch_club(db=db, slug=slug)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post(
+    "/clubs/{slug}/join",
+    response_model=ClubMembershipResponse,
+    dependencies=[Depends(enforce_rate_limit("SOCIAL_WRITE"))],
+)
+async def join_watch_club(
+    slug: str,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Join an existing watch club."""
+    user_id = _extract_user_id(claims)
+    try:
+        return await social_repository.join_watch_club(db=db, slug=slug, user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get(
+    "/clubs",
+    response_model=List[WatchClubResponse],
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def list_my_clubs(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """List all watch clubs the authenticated user belongs to."""
+    user_id = _extract_user_id(claims)
+    return await social_repository.list_user_clubs(db=db, user_id=user_id)
+
+
+# ── Phase 3: Club Activity Feed (2.12) ──────────────────────────────────────
+
+@router.get(
+    "/clubs/{slug}/feed",
+    response_model=List[ClubActivityResponse],
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_club_feed(
+    slug: str,
+    limit: int = Query(20, ge=1, le=100),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Get the activity feed for a watch club."""
+    try:
+        return await social_repository.get_club_activity_feed(db=db, slug=slug, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+# ── Phase 3: Monthly Challenges (2.13) ──────────────────────────────────────
+
+@router.post(
+    "/challenges",
+    response_model=ChallengeResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(enforce_rate_limit("SOCIAL_WRITE"))],
+)
+async def create_challenge(
+    payload: ChallengeCreate,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Create a new viewing challenge (global or club-scoped)."""
+    return await social_repository.create_challenge(db=db, payload=payload)
+
+
+@router.get(
+    "/challenges",
+    response_model=List[ChallengeResponse],
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def list_active_challenges(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """List all currently active challenges."""
+    return await social_repository.list_active_challenges(db=db)
+
+
+@router.get(
+    "/challenges/{challenge_id}",
+    response_model=ChallengeDetailResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_challenge_detail(
+    challenge_id: uuid.UUID,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Get challenge details with participant list."""
+    try:
+        return await social_repository.get_challenge_detail(db=db, challenge_id=challenge_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post(
+    "/challenges/{challenge_id}/join",
+    response_model=ChallengeParticipantResponse,
+    dependencies=[Depends(enforce_rate_limit("SOCIAL_WRITE"))],
+)
+async def join_challenge(
+    challenge_id: uuid.UUID,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Join a challenge as a participant."""
+    user_id = _extract_user_id(claims)
+    try:
+        return await social_repository.join_challenge(db=db, challenge_id=challenge_id, user_id=user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post(
+    "/challenges/{challenge_id}/progress",
+    response_model=ChallengeParticipantResponse,
+    dependencies=[Depends(enforce_rate_limit("SOCIAL_WRITE"))],
+)
+async def update_challenge_progress(
+    challenge_id: uuid.UUID,
+    increment: int = Query(1, ge=1),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Increment challenge progress for the authenticated user."""
+    user_id = _extract_user_id(claims)
+    try:
+        return await social_repository.update_challenge_progress(
+            db=db, challenge_id=challenge_id, user_id=user_id, increment=increment
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
 
 
 

@@ -3,7 +3,7 @@
 
 from enum import Enum
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 
@@ -420,6 +420,106 @@ class RecapResponse(BaseModel):
     cinema_archetype: str = "The Cinephile Explorer"
     archetype_description: str = "A versatile viewer with an insatiable appetite for cinematic journeys across genres."
     generated_at: datetime
+
+
+# =========================================================================
+# Part 2 Phase 3: Watch Clubs & Monthly Challenges Schemas (2.10 - 2.13)
+# =========================================================================
+
+class WatchClubCreate(BaseModel):
+    name: str = Field(..., max_length=200)
+    description: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+class WatchClubResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    club_id: uuid.UUID
+    name: str
+    slug: str
+    created_by: uuid.UUID
+    creator_name: Optional[str] = None
+    creator_username: Optional[str] = None
+    avatar_url: Optional[str] = None
+    description: Optional[str] = None
+    member_count: int = 1
+    created_at: datetime
+
+
+class ClubMembershipResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    club_id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: Optional[str] = None
+    user_username: Optional[str] = None
+    role: str
+    joined_at: datetime
+
+
+class ClubDetailResponse(BaseModel):
+    club: WatchClubResponse
+    members: List[ClubMembershipResponse] = Field(default_factory=list)
+    taste_profile: Optional[dict] = None
+
+
+class ClubActivityResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    activity_id: uuid.UUID
+    club_id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: Optional[str] = None
+    activity_type: str
+    reference_id: Optional[uuid.UUID] = None
+    metadata_json: Optional[dict] = None
+    created_at: datetime
+
+
+class ChallengeCreate(BaseModel):
+    title: str = Field(..., max_length=200)
+    description: Optional[str] = None
+    challenge_type: str = Field('GLOBAL', pattern='^(GLOBAL|CLUB)$')
+    club_id: Optional[uuid.UUID] = None
+    criteria_json: Optional[dict] = None
+    goal_count: int = Field(1, ge=1)
+    starts_at: datetime
+    ends_at: datetime
+
+
+class ChallengeResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    challenge_id: uuid.UUID
+    title: str
+    description: Optional[str] = None
+    challenge_type: str
+    club_id: Optional[uuid.UUID] = None
+    criteria_json: Optional[dict] = None
+    goal_count: int
+    starts_at: datetime
+    ends_at: datetime
+    created_at: datetime
+    participant_count: int = 0
+
+
+class ChallengeParticipantResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    challenge_id: uuid.UUID
+    user_id: uuid.UUID
+    user_name: Optional[str] = None
+    progress: int = 0
+    completed: bool = False
+    completed_at: Optional[datetime] = None
+    joined_at: datetime
+
+
+class ChallengeDetailResponse(BaseModel):
+    challenge: ChallengeResponse
+    participants: List[ChallengeParticipantResponse] = Field(default_factory=list)
+
 
 
 

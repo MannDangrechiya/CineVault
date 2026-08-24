@@ -426,6 +426,148 @@ export async function getUserRecap(period: string = "yearly", year?: number): Pr
   return await apiFetch<RecapResponse>(`/social/recap?${params.toString()}`);
 }
 
+// ── Phase 3: Watch Clubs ────────────────────────────────────────────────────
+
+export interface WatchClubCreate {
+  name: string;
+  description?: string;
+  avatar_url?: string;
+}
+
+export interface WatchClubResponse {
+  club_id: string;
+  name: string;
+  slug: string;
+  created_by: string;
+  creator_name?: string | null;
+  creator_username?: string | null;
+  avatar_url?: string | null;
+  description?: string | null;
+  member_count: number;
+  created_at: string;
+}
+
+export interface ClubMembershipResponse {
+  club_id: string;
+  user_id: string;
+  user_name?: string | null;
+  user_username?: string | null;
+  role: string;
+  joined_at: string;
+}
+
+export interface ClubDetailResponse {
+  club: WatchClubResponse;
+  members: ClubMembershipResponse[];
+  taste_profile?: Record<string, unknown> | null;
+}
+
+export interface ClubActivityResponse {
+  activity_id: string;
+  club_id: string;
+  user_id: string;
+  user_name?: string | null;
+  activity_type: string;
+  reference_id?: string | null;
+  metadata_json?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export async function createWatchClub(data: WatchClubCreate): Promise<WatchClubResponse> {
+  return await apiFetch<WatchClubResponse>("/social/clubs", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getWatchClub(slug: string): Promise<ClubDetailResponse> {
+  return await apiFetch<ClubDetailResponse>(`/social/clubs/${encodeURIComponent(slug)}`);
+}
+
+export async function joinWatchClub(slug: string): Promise<ClubMembershipResponse> {
+  return await apiFetch<ClubMembershipResponse>(`/social/clubs/${encodeURIComponent(slug)}/join`, {
+    method: "POST",
+  });
+}
+
+export async function listMyClubs(): Promise<WatchClubResponse[]> {
+  return await apiFetch<WatchClubResponse[]>("/social/clubs");
+}
+
+export async function getClubFeed(slug: string, limit: number = 20): Promise<ClubActivityResponse[]> {
+  return await apiFetch<ClubActivityResponse[]>(`/social/clubs/${encodeURIComponent(slug)}/feed?limit=${limit}`);
+}
+
+// ── Phase 3: Monthly Challenges ─────────────────────────────────────────────
+
+export interface ChallengeCreate {
+  title: string;
+  description?: string;
+  challenge_type?: string;
+  club_id?: string;
+  criteria_json?: Record<string, unknown>;
+  goal_count: number;
+  starts_at: string;
+  ends_at: string;
+}
+
+export interface ChallengeResponse {
+  challenge_id: string;
+  title: string;
+  description?: string | null;
+  challenge_type: string;
+  club_id?: string | null;
+  criteria_json?: Record<string, unknown> | null;
+  goal_count: number;
+  starts_at: string;
+  ends_at: string;
+  created_at: string;
+  participant_count: number;
+}
+
+export interface ChallengeParticipantResponse {
+  challenge_id: string;
+  user_id: string;
+  user_name?: string | null;
+  progress: number;
+  completed: boolean;
+  completed_at?: string | null;
+  joined_at: string;
+}
+
+export interface ChallengeDetailResponse {
+  challenge: ChallengeResponse;
+  participants: ChallengeParticipantResponse[];
+}
+
+export async function createChallenge(data: ChallengeCreate): Promise<ChallengeResponse> {
+  return await apiFetch<ChallengeResponse>("/social/challenges", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function listActiveChallenges(): Promise<ChallengeResponse[]> {
+  return await apiFetch<ChallengeResponse[]>("/social/challenges");
+}
+
+export async function getChallengeDetail(challengeId: string): Promise<ChallengeDetailResponse> {
+  return await apiFetch<ChallengeDetailResponse>(`/social/challenges/${challengeId}`);
+}
+
+export async function joinChallenge(challengeId: string): Promise<ChallengeParticipantResponse> {
+  return await apiFetch<ChallengeParticipantResponse>(`/social/challenges/${challengeId}/join`, {
+    method: "POST",
+  });
+}
+
+export async function updateChallengeProgress(challengeId: string, increment: number = 1): Promise<ChallengeParticipantResponse> {
+  return await apiFetch<ChallengeParticipantResponse>(`/social/challenges/${challengeId}/progress?increment=${increment}`, {
+    method: "POST",
+  });
+}
+
+
 
 
 
