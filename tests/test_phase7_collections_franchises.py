@@ -35,35 +35,48 @@ class Phase7CollectionsFranchisesTestCase(IsolatedAsyncioTestCase):
                 session.add(ContentTypeModel(content_type_id="movie", type_name="Feature Film"))
                 await session.flush()
 
-            # 2. Seed MCU Universe & Franchise Titles
-            self.title_im1 = TitleModel(
-                title_id=uuid.uuid4(),
-                display_id="MOV-MCU-001",
-                content_type_id="movie",
-                canonical_title="Iron Man",
-                original_title="Iron Man",
-                production_year=2008
-            )
-            self.title_ca1 = TitleModel(
-                title_id=uuid.uuid4(),
-                display_id="MOV-MCU-002",
-                content_type_id="movie",
-                canonical_title="Captain America: The First Avenger",
-                original_title="Captain America: The First Avenger",
-                production_year=2011
-            )
-            self.title_av1 = TitleModel(
-                title_id=uuid.uuid4(),
-                display_id="MOV-MCU-003",
-                content_type_id="movie",
-                canonical_title="The Avengers",
-                original_title="The Avengers",
-                production_year=2012
-            )
+            # 2. Seed/Find MCU Universe & Franchise Titles
+            stmt_im = select(TitleModel).where(TitleModel.canonical_title == "Iron Man", TitleModel.production_year == 2008)
+            self.title_im1 = (await session.execute(stmt_im)).scalar_one_or_none()
+            if not self.title_im1:
+                self.title_im1 = TitleModel(
+                    title_id=uuid.uuid4(),
+                    display_id="MOV-MCU-001",
+                    content_type_id="movie",
+                    canonical_title="Iron Man",
+                    original_title="Iron Man",
+                    production_year=2008
+                )
+                session.add(self.title_im1)
+                await session.flush()
 
-            # Flush titles
-            session.add_all([self.title_im1, self.title_ca1, self.title_av1])
-            await session.flush()
+            stmt_ca = select(TitleModel).where(TitleModel.canonical_title == "Captain America: The First Avenger", TitleModel.production_year == 2011)
+            self.title_ca1 = (await session.execute(stmt_ca)).scalar_one_or_none()
+            if not self.title_ca1:
+                self.title_ca1 = TitleModel(
+                    title_id=uuid.uuid4(),
+                    display_id="MOV-MCU-002",
+                    content_type_id="movie",
+                    canonical_title="Captain America: The First Avenger",
+                    original_title="Captain America: The First Avenger",
+                    production_year=2011
+                )
+                session.add(self.title_ca1)
+                await session.flush()
+
+            stmt_av = select(TitleModel).where(TitleModel.canonical_title == "The Avengers", TitleModel.production_year == 2012)
+            self.title_av1 = (await session.execute(stmt_av)).scalar_one_or_none()
+            if not self.title_av1:
+                self.title_av1 = TitleModel(
+                    title_id=uuid.uuid4(),
+                    display_id="MOV-MCU-003",
+                    content_type_id="movie",
+                    canonical_title="The Avengers",
+                    original_title="The Avengers",
+                    production_year=2012
+                )
+                session.add(self.title_av1)
+                await session.flush()
 
             # 3. Seed Universe and Franchise
             self.universe = UniverseModel(

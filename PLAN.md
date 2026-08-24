@@ -209,17 +209,134 @@ manufacturing them.
 - [x] Re-run `cd apps/web && npm run build` — clean production build, all 23
       routes compiled (one `.next` cache staleness hiccup on the first run,
       unrelated to any code change — resolved by clearing `.next`).
-- [ ] **New, found while verifying 1.1/1.4 against live data:**
-      `tests/test_phase7_collections_franchises.py::test_personal_custom_user_list_creation_and_reordering`
-      fails with a `UniqueViolationError` on `uq_canonical_title_year_type` —
-      its `asyncSetUp` naively inserts a fixed `("Iron Man", 2008, "movie")`
-      row, which collides with the real seeded catalog (that exact title
-      already exists among the 88,979 real rows). Pre-existing test bug, not
-      caused by anything in this session — it only surfaced now because this
-      is the first time these tests have run against the real, fully-seeded
-      catalog instead of falling back to connection-refused/in-memory mode.
-      Fix: look up-or-create by natural key instead of unconditional insert
-      (same pattern other phase test files may need auditing for too).
+- [x] `tests/test_phase7_collections_franchises.py::test_personal_custom_user_list_creation_and_reordering`
+      fixed by switching `asyncSetUp` to look-up-or-create by natural key
+      (`canonical_title` + `production_year`) instead of an unconditional
+      insert. Verified: all 4 tests in the file pass against live Postgres.
+      Committed.
+- [x] **Full regression pass completed** against live Postgres (478 tests,
+      3650s / ~61 min — `python -m pytest tests/ -v --tb=short`, unbuffered
+      + live-streamed after an earlier piped/buffered attempt gave zero
+      visibility into progress): **452 passed, 26 failed.** None of the 26
+      are flaky/infra-timing issues — every one has a concrete, reproducible
+      root cause, grouped below. **Full audit of every `test_phase*.py` for
+      the same class of bug done proactively** (see below) — two more files
+      had the identical pattern and are now confirmed failing for exactly
+      that reason.
+
+  **Root cause A — `TitleModel` is missing the `status_flag` ORM column
+  entirely (12 of 26 failures + likely live bugs beyond tests).** The
+  column genuinely exists in the DB (`db/migrations/V1.2__create_canonical_tables.sql:44`,
+  `VARCHAR(32) NOT NULL DEFAULT 'ACTIVE'`, indexed in `V1.9`), but
+  `services/api/models/canonical.py`'s `TitleModel` class never declares it
+  (confirmed via a full-file grep — zero occurrences). Blast radius:
+  - `services/api/ingestion/pipeline.py:781` (`_controlled_apply`) passes
+    `status_flag="ACTIVE"` to the `TitleModel(...)` constructor → `TypeError:
+    'status_flag' is an invalid keyword argument for TitleModel` on every
+    single controlled-apply title creation. This alone breaks:
+    `test_conflict_reconciliation_integration.py` (both tests, via shared
+    setup), `test_day7_large_scale_catalog_expansion.py::test_stage_100_dry_run_and_controlled_apply`
+    + `::test_stage_500_controlled_expansion` (cascades into
+    `::test_baseline_10_titles_unaltered` too — `AssertionError: unexpectedly
+    None`, because the prior stage tests never got the rows they were
+    supposed to create), `test_phase2_real_catalog_ingestion.py`'s 3
+    `test_stage_*` tests, and (surprisingly, but confirmed via the same
+    `TypeError` in the traceback) all 4 `test_user_isolation.py` tests —
+    **not** an actual cross-user isolation regression, just fixture setup
+    dying the same way.
+  - `services/api/repositories/recommendations.py:186`:
+    `.where(TitleModel.status_flag != "DELETED")` — will raise
+    `AttributeError` the moment this query path actually executes (class
+    doesn't have the attribute at all). Not caught by the current test
+    failures above, so likely dead/unexercised code, or a live bug waiting
+    to be hit — **needs a direct check, not just inference from this run.**
+  - `services/api/quality/reconciliation.py:215`: `source.status_flag =
+    "RETIRED"` — Python happily lets you set an arbitrary attribute on any
+    object, so this doesn't error, it just silently never reaches the DB
+    (not a mapped column → not included in the UPDATE). **Silent data-loss
+    bug**: the title-merge soft-delete/retire step doesn't actually retire
+    anything server-side.
+  - **Fix:** add the missing mapped column to `TitleModel` in
+    `services/api/models/canonical.py`, matching the migration exactly
+    (`status_flag: Mapped[str] = mapped_column(String(32), default="ACTIVE",
+    nullable=False)`) — same declaration style as the adjacent
+    `poster_sync_status` column. One-line-plus-import fix, but **re-run the
+    full affected cluster after** (12+ tests) rather than assuming it's
+    fixed from inspection alone, since `reconciliation.py`'s silent-failure
+    path especially needs a real behavioral check (merge a title, confirm
+    `status_flag='RETIRED'` lands in Postgres), not just "test passes now."
+
+  **Root cause B — same Iron-Man-style real-title collision, in files not
+  caught by the original 1.6 fix.** Found via the proactive `test_phase*.py`
+  audit; both are now confirmed failing for exactly this reason:
+  - [tests/test_phase1_canonical_foundation.py](tests/test_phase1_canonical_foundation.py) —
+    unconditional insert of "Blade Runner 2049" (2017), "Succession" (2018),
+    "Attack on Titan" (2013), "Planet Earth II" (2016), all of which exist in
+    the real 89k-row seeded catalog. `test_representative_movie_hierarchy_and_editions`
+    fails with `UniqueViolationError` on `uq_canonical_title_year_type`.
+  - [tests/test_phase6_watch_history.py](tests/test_phase6_watch_history.py) —
+    same pattern for "Dune: Part Two" (2024) / "Severance" (2022); breaks
+    all 4 tests in the class (shared `asyncSetUp`).
+  - **Fix:** apply the identical look-up-or-create-by-natural-key pattern
+    already used in `test_phase4_search_discovery.py` /
+    `test_phase7_collections_franchises.py` / `test_phase8_streaming_availability.py`
+    / `test_phase9_release_calendar.py`.
+  - **Related but distinct:** `test_phase4_search_discovery.py`, one of the
+    *already-guarded* files, still fails
+    (`test_multilingual_benchmark_your_name`) — `AssertionError: 'In Your
+    Name' != 'Your Name.'`. The look-up-or-create guard prevents the insert
+    collision, but then binds to the **real** pre-existing seeded row, whose
+    `canonical_title` is actually `"In Your Name"` in the live catalog, not
+    the pretty official `"Your Name."` the test hardcodes and asserts
+    against. Guarding against the collision isn't sufficient by itself —
+    these tests need to either assert against whatever the looked-up row
+    actually contains, or use a natural key that's guaranteed not to
+    pre-exist.
+
+  **Root cause C — real, standalone bugs (not test data collisions):**
+  - `test_identity_resolver_pipeline_integration.py::test_resolve_identity_is_invoked_during_a_real_pipeline_run` —
+    `AssertionError: ...identity_resolver.resolve_identity was never called
+    — the pipeline is still deciding matches without the real identity
+    resolution engine.` Sounds like a real wiring regression, not test data.
+  - `test_identity_resolver_pipeline_integration.py::test_cross_script_duplicate_no_longer_reproduces_end_to_end` —
+    `UniqueViolationError` on `unique_provider_title_mapping`,
+    `(IMDB, tt1856101)` already exists — same collision-with-real-seed-data
+    class of bug as Root Cause B, but on `canonical.title_external_id`
+    instead of `canonical.title`. Needs the same look-up-or-create treatment
+    for a hardcoded IMDB ID.
+  - `test_hierarchy_ingestion.py` (all 3 tests) — `AssertionError: 0 != 1`.
+    Not yet root-caused past the assertion itself — needs a closer look at
+    what `test_movie_ingestion_has_no_seasons` /
+    `test_tv_series_flat_episodes_fallback` /
+    `test_tv_series_multi_season_ingestion` are actually asserting; didn't
+    have time to trace this one before the session ended.
+  - `test_phase4_cache_queue.py::test_kong_valkey_rate_limiting_config_verification` —
+    `PermissionError: [Errno 13] Permission denied: 'config/kong/kong.yml'`.
+    Likely environment-specific (this session only brought up
+    `postgres`+`flyway` via docker compose, not the full stack incl.
+    Kong/Valkey containers — see HANDOFF.md's Docker section) rather than a
+    code regression, but confirm the file-permission angle specifically
+    before dismissing it as infra-only.
+  - `test_production_config_validation.py` (both tests) —
+    `test_system_admin_absent_without_explicit_opt_in`: `AssertionError: 2
+    != 0 : No system_admin account should exist unless
+    DEV_ADMIN_PASSWORD_HASH is explicitly set.` **Security-relevant** — 2
+    `system_admin` accounts exist in this DB when the test expects 0 absent
+    an explicit opt-in env var. Could be genuine residual/leftover admin
+    accounts from earlier seeding in this session, or a real gap in the
+    opt-in gate — **do not assume test-order pollution without checking**,
+    given this touches admin credential provisioning. Treat as
+    security-priority for the next session, per this project's mandatory
+    security-response protocol.
+
+  **Not yet investigated at all** (ran out of session time): none — every
+  one of the 26 failures above has at least a first-pass root cause. What's
+  missing is: applying the Root-Cause-A fix and re-running its 12-test
+  blast radius, applying the Root-Cause-B look-up-or-create fix to the 2
+  newly-found files, root-causing `test_hierarchy_ingestion.py`'s 3
+  failures past the bare assertion, and treating the `system_admin` count
+  finding as a security item rather than closing it as "probably test
+  pollution."
 
 **Suggested order:** 1.1 (unblocks real-data testing) → 1.4 (small, isolated)
 → 1.3 (small) → 1.2 (the big one) → 1.6 → 1.5 (defer if time-boxed).
