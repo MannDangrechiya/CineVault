@@ -391,6 +391,42 @@ export async function closePickRoom(slug: string): Promise<PickRoomCloseResponse
   });
 }
 
+export interface RecapGenreStat {
+  genre: string;
+  count: number;
+  percentage: number;
+}
+
+export interface RecapDirectorStat {
+  director: string;
+  count: number;
+}
+
+export interface RecapResponse {
+  user_id: string;
+  user_name?: string | null;
+  user_username?: string | null;
+  period: string;
+  year: number;
+  total_titles_watched: number;
+  total_runtime_minutes: number;
+  longest_streak_days: number;
+  top_genres: RecapGenreStat[];
+  top_directors: RecapDirectorStat[];
+  favorite_release_era: string;
+  circle_percentile: number;
+  cinema_archetype: string;
+  archetype_description: string;
+  generated_at: string;
+}
+
+export async function getUserRecap(period: string = "yearly", year?: number): Promise<RecapResponse> {
+  const params = new URLSearchParams({ period });
+  if (year) params.append("year", year.toString());
+  return await apiFetch<RecapResponse>(`/social/recap?${params.toString()}`);
+}
+
+
 
 
 

@@ -35,6 +35,7 @@ from ..schemas.social import (
     PickVoteCreate,
     PickVoteResponse,
     PickRoomCloseResponse,
+    RecapResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
     TasteProfileComputeRequest,
@@ -749,6 +750,30 @@ async def close_pick_room(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+
+@router.get(
+    "/recap",
+    response_model=RecapResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_cinema_recap(
+    period: str = Query("yearly", pattern="^(yearly|monthly|all_time)$"),
+    year: Optional[int] = Query(None, ge=1900, le=2100),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Generates a wrapped-style cinema year-in-review / recap card."""
+    user_id = _extract_user_id(claims)
+    res = await social_repository.get_user_recap(
+        db=db, user_id=user_id, period=period, year=year
+    )
+    user_map = resolve_display_names([user_id])
+    name, username = user_map.get(str(user_id), (None, None))
+    res.user_name = name
+    res.user_username = username
+    return res
+
 
 
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -19,8 +19,16 @@ import {
   UserCheck,
   BarChart3,
   Trophy,
+  X,
+  Copy,
+  CheckCheck,
 } from "lucide-react";
-import { getPersonalAnalytics, getTopRecommendations, getUserBadges } from "@/lib/api/personal";
+import {
+  getPersonalAnalytics,
+  getTopRecommendations,
+  getUserBadges,
+  getUserRecap,
+} from "@/lib/api/personal";
 import { EmptyState, ErrorState } from "@/components/ui/States";
 
 function MetricSkeleton() {
@@ -43,7 +51,168 @@ function MetricSkeleton() {
   );
 }
 
+function CinemaRecapModal({ onClose }: { onClose: () => void }) {
+  const [period, setPeriod] = useState<"yearly" | "monthly" | "all_time">("yearly");
+  const [copied, setCopied] = useState(false);
+
+  const { data: recap, isLoading } = useQuery({
+    queryKey: ["cinemaRecap", period],
+    queryFn: () => getUserRecap(period),
+  });
+
+  const copyRecapSummary = () => {
+    if (!recap) return;
+    const summary = `🎬 My CineVault Cinema Wrapped (${recap.period.toUpperCase()}):
+✨ Persona Archetype: ${recap.cinema_archetype}
+⏱️ Total Watched: ${recap.total_titles_watched} titles (${Math.round(recap.total_runtime_minutes / 60)} hrs)
+🔥 Longest Streak: ${recap.longest_streak_days} days
+🏆 Circle Percentile: Top ${Math.max(1, Math.round(100 - recap.circle_percentile))}% in friend group
+🎭 Top Genres: ${recap.top_genres.map((g) => `${g.genre} (${g.percentage}%)`).join(", ")}
+🎞️ Favorite Era: ${recap.favorite_release_era}`;
+    navigator.clipboard.writeText(summary);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-xl rounded-3xl bg-gradient-to-br from-violet-950/60 via-zinc-950 to-zinc-950 border border-violet-500/30 p-6 sm:p-8 shadow-2xl space-y-6 overflow-hidden">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-100 p-1.5 rounded-lg hover:bg-zinc-900 transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {/* Period Selector */}
+        <div className="flex items-center gap-2 p-1 rounded-xl bg-zinc-900/80 border border-zinc-800 w-fit">
+          <button
+            onClick={() => setPeriod("yearly")}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              period === "yearly" ? "bg-violet-600 text-white" : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Year in Review
+          </button>
+          <button
+            onClick={() => setPeriod("monthly")}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              period === "monthly" ? "bg-violet-600 text-white" : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            Month Recap
+          </button>
+          <button
+            onClick={() => setPeriod("all_time")}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              period === "all_time" ? "bg-violet-600 text-white" : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            All-Time
+          </button>
+        </div>
+
+        {isLoading || !recap ? (
+          <div className="py-16 flex items-center justify-center">
+            <div className="w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Persona Archetype Banner */}
+            <div className="p-6 rounded-2xl bg-gradient-to-r from-amber-500/15 via-violet-600/20 to-indigo-600/15 border border-amber-500/30 text-center space-y-2">
+              <span className="text-[10px] font-bold tracking-widest uppercase text-amber-400">
+                Your Cinema Persona Archetype
+              </span>
+              <h2 className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-violet-200 to-indigo-300">
+                {recap.cinema_archetype}
+              </h2>
+              <p className="text-xs text-zinc-300 max-w-md mx-auto leading-relaxed">
+                {recap.archetype_description}
+              </p>
+            </div>
+
+            {/* Core Stats Grid */}
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
+                <span className="text-[11px] text-zinc-400 block">Watched</span>
+                <span className="text-xl font-bold text-zinc-100">{recap.total_titles_watched}</span>
+                <span className="text-[10px] text-zinc-500 block">titles</span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
+                <span className="text-[11px] text-zinc-400 block">Runtime</span>
+                <span className="text-xl font-bold text-violet-400">
+                  {Math.round(recap.total_runtime_minutes / 60)}h
+                </span>
+                <span className="text-[10px] text-zinc-500 block">logged</span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
+                <span className="text-[11px] text-zinc-400 block">Longest Streak</span>
+                <span className="text-xl font-bold text-amber-400">{recap.longest_streak_days}d</span>
+                <span className="text-[10px] text-zinc-500 block">consecutive</span>
+              </div>
+            </div>
+
+            {/* Genre Breakdown & Friend Circle Percentile */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-zinc-300">Dominant Taste DNA</span>
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-400/10 text-amber-400 border border-amber-400/20">
+                  Top {Math.max(1, Math.round(100 - recap.circle_percentile))}% in Friend Circle
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {recap.top_genres.slice(0, 3).map((g) => (
+                  <div key={g.genre} className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                      <span>{g.genre}</span>
+                      <span className="font-mono">{g.percentage}%</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
+                      <div
+                        className="h-full bg-gradient-to-r from-violet-500 to-indigo-400 rounded-full"
+                        style={{ width: `${g.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Favorite Era & Footer CTA */}
+            <div className="pt-2 border-t border-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-left text-xs">
+                <span className="text-zinc-500 block text-[10px]">Favorite Era:</span>
+                <span className="font-semibold text-zinc-300">{recap.favorite_release_era}</span>
+              </div>
+
+              <button
+                onClick={copyRecapSummary}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md shadow-violet-600/30"
+              >
+                {copied ? (
+                  <>
+                    <CheckCheck className="w-3.5 h-3.5 text-emerald-300" />
+                    <span>Summary Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Shareable Card</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
+  const [showRecapModal, setShowRecapModal] = useState(false);
+
   const {
     data: analytics,
     isLoading: isAnalyticsLoading,
@@ -89,15 +258,27 @@ export default function DashboardPage() {
       title="Dashboard & Intelligence"
       subtitle="Overview of user watch activity, catalog stats, and personal AI recommendations"
       action={
-        <Link
-          href="/social"
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 rounded-full shadow-lg shadow-violet-600/30 transition-all"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Open AI Matches</span>
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowRecapModal(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-full transition-all shadow-sm cursor-pointer"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>Cinema Wrapped</span>
+          </button>
+          <Link
+            href="/social"
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 rounded-full shadow-lg shadow-violet-600/30 transition-all"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Open AI Matches</span>
+          </Link>
+        </div>
       }
     >
+      {showRecapModal && (
+        <CinemaRecapModal onClose={() => setShowRecapModal(false)} />
+      )}
       <div className="space-y-8">
         {/* Metric Cards Grid */}
         {isAnalyticsLoading ? (

@@ -388,6 +388,41 @@ class PickRoomCloseResponse(BaseModel):
     total_votes_cast: int = 0
 
 
+class RecapGenreStat(BaseModel):
+    """Genre distribution for cinema recap."""
+    genre: str
+    count: int
+    percentage: float
+
+
+class RecapDirectorStat(BaseModel):
+    """Most watched director for cinema recap."""
+    director: str
+    count: int
+
+
+class RecapResponse(BaseModel):
+    """Aggregated cinema year-in-review / recap snapshot."""
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    user_name: Optional[str] = None
+    user_username: Optional[str] = None
+    period: str = "yearly"
+    year: int
+    total_titles_watched: int = 0
+    total_runtime_minutes: int = 0
+    longest_streak_days: int = 0
+    top_genres: List[RecapGenreStat] = Field(default_factory=list)
+    top_directors: List[RecapDirectorStat] = Field(default_factory=list)
+    favorite_release_era: str = "Contemporary (2020s)"
+    circle_percentile: float = 50.0
+    cinema_archetype: str = "The Cinephile Explorer"
+    archetype_description: str = "A versatile viewer with an insatiable appetite for cinematic journeys across genres."
+    generated_at: datetime
+
+
+
 
 
 

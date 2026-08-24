@@ -457,14 +457,17 @@ effort estimate on the taste-similarity features from "build" to "wire up."
 - Automated tests: `tests/test_v2_group_pick_room.py` (5/5 passed).
 
 
-**2.9 Wrapped-style recap card**
-- No new schema — pure aggregation over existing analytics data
-  (`get_user_dashboard_metrics`) plus a friend-comparison percentile (needs
-  2.4's per-friend aggregation logic).
-- Image generation: decide on approach (server-side SVG/Satori render vs.
-  client-side `html-to-image` — client-side is far less backend work and
-  fine for a v1).
-- **Effort:** medium (mostly frontend/design work).
+**2.9 Wrapped-style recap card** — [x] done
+- Added `RecapGenreStat`, `RecapDirectorStat`, and `RecapResponse` schemas in `services/api/schemas/social.py`.
+- Implemented `get_user_recap` in `services/api/repositories/social.py` aggregating watch volume,
+  runtime, top genres, top directors, longest streak, friend circle percentile, favorite release era,
+  and cinema persona archetype classification (Sci-Fi Visionary, Humanist Critic, Kinetic Thrillseeker, etc.).
+- Added `GET /social/recap` endpoint in `services/api/routers/social.py` with period filter (yearly/monthly/all_time).
+- Added `RecapResponse`, `getUserRecap` in `apps/web/src/lib/api/personal.ts`.
+- Added `CinemaRecapModal` to `apps/web/src/app/dashboard/page.tsx` with gradient archetype banner,
+  core stats grid, genre DNA progress bars, friend circle percentile badge, period toggle, and
+  copyable shareable recap summary.
+- Automated tests: `tests/test_v2_social_recap.py` (3/3 passed).
 
 ### Phase 3 — Group infrastructure (only once Phase 1–2 prove engagement)
 

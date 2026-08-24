@@ -40,6 +40,9 @@ from ..schemas.social import (
     PickVoteCreate,
     PickVoteResponse,
     PickRoomCloseResponse,
+    RecapGenreStat,
+    RecapDirectorStat,
+    RecapResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
     ALLOWED_STATE_TRANSITIONS,
@@ -1896,7 +1899,238 @@ class SocialRepository:
                 total_votes_cast=len(room_votes),
             )
 
+    # ── Wrapped-Style Cinema Recap (Part 2 — Item 2.9) ──────────────────────────
+
+    async def get_user_recap(
+        self,
+        db: Optional[AsyncSession],
+        user_id: uuid.UUID,
+        period: str = "yearly",
+        year: Optional[int] = None,
+    ) -> RecapResponse:
+        """
+        Aggregates annual or monthly cinema viewing analytics, top genres, directors,
+        longest streak, friend circle percentile, and cinema personality archetype.
+        """
+        u_uuid = _resolve_uuid(user_id, "user_id")
+        now = datetime.now(timezone.utc)
+        target_year = year or now.year
+
+        if period == "yearly":
+            start_date = datetime(target_year, 1, 1, tzinfo=timezone.utc)
+            end_date = datetime(target_year + 1, 1, 1, tzinfo=timezone.utc)
+        elif period == "monthly":
+            start_date = datetime(target_year, now.month, 1, tzinfo=timezone.utc)
+            if now.month == 12:
+                end_date = datetime(target_year + 1, 1, 1, tzinfo=timezone.utc)
+            else:
+                end_date = datetime(target_year, now.month + 1, 1, tzinfo=timezone.utc)
+        else:  # all_time
+            start_date = datetime(1970, 1, 1, tzinfo=timezone.utc)
+            end_date = datetime(2100, 1, 1, tzinfo=timezone.utc)
+
+        if db is not None:
+            from ..models.personal import WatchEventModel, UserStreakModel
+            from ..models.canonical import TitleModel, TitleGenreModel, GenreModel, CreditModel, PersonModel, EditionModel
+
+            # 1. Total titles watched & watch event ids
+            stmt_watches = (
+                select(WatchEventModel.watch_event_id, WatchEventModel.title_id, WatchEventModel.edition_id)
+                .where(
+                    and_(
+                        WatchEventModel.user_id == u_uuid,
+                        WatchEventModel.is_tombstoned == False,  # noqa: E712
+                        WatchEventModel.watched_at >= start_date,
+                        WatchEventModel.watched_at < end_date,
+                    )
+                )
+            )
+            watch_rows = (await db.execute(stmt_watches)).all()
+            total_watched = len(watch_rows)
+            title_ids = list({r[1] for r in watch_rows if r[1] is not None})
+            edition_ids = list({r[2] for r in watch_rows if r[2] is not None})
+
+            # 2. Total runtime minutes
+            total_runtime = 0
+            if edition_ids:
+                stmt_rt = select(func.coalesce(func.sum(EditionModel.runtime_minutes), 0)).where(EditionModel.edition_id.in_(edition_ids))
+                total_runtime = int((await db.execute(stmt_rt)).scalar_one() or 0)
+            uncounted_watches = total_watched - len([r for r in watch_rows if r[2] is not None])
+            if uncounted_watches > 0:
+                total_runtime += uncounted_watches * 110
+
+            # 3. Longest streak
+            stmt_streak = select(UserStreakModel.longest_streak).where(UserStreakModel.user_id == u_uuid)
+            longest_streak = (await db.execute(stmt_streak)).scalar_one_or_none() or 0
+
+            # 4. Top Genres
+            top_genres: List[RecapGenreStat] = []
+            if title_ids:
+                stmt_genres = (
+                    select(GenreModel.name, func.count(WatchEventModel.watch_event_id))
+                    .join(TitleGenreModel, GenreModel.genre_id == TitleGenreModel.genre_id)
+                    .join(WatchEventModel, TitleGenreModel.title_id == WatchEventModel.title_id)
+                    .where(
+                        and_(
+                            WatchEventModel.user_id == u_uuid,
+                            WatchEventModel.is_tombstoned == False,  # noqa: E712
+                            WatchEventModel.watched_at >= start_date,
+                            WatchEventModel.watched_at < end_date,
+                        )
+                    )
+                    .group_by(GenreModel.name)
+                    .order_by(func.count(WatchEventModel.watch_event_id).desc())
+                    .limit(5)
+                )
+                genre_rows = (await db.execute(stmt_genres)).all()
+                total_genre_hits = sum(r[1] for r in genre_rows) or 1
+                top_genres = [
+                    RecapGenreStat(
+                        genre=r[0],
+                        count=r[1],
+                        percentage=round((r[1] / total_genre_hits) * 100, 1),
+                    )
+                    for r in genre_rows
+                ]
+
+            # 5. Top Directors
+            top_directors: List[RecapDirectorStat] = []
+            if title_ids:
+                stmt_dirs = (
+                    select(PersonModel.canonical_name, func.count(WatchEventModel.watch_event_id))
+                    .join(CreditModel, PersonModel.person_id == CreditModel.person_id)
+                    .join(WatchEventModel, CreditModel.title_id == WatchEventModel.title_id)
+                    .where(
+                        and_(
+                            WatchEventModel.user_id == u_uuid,
+                            WatchEventModel.is_tombstoned == False,  # noqa: E712
+                            CreditModel.credit_role_id == "DIRECTOR",
+                            WatchEventModel.watched_at >= start_date,
+                            WatchEventModel.watched_at < end_date,
+                        )
+                    )
+                    .group_by(PersonModel.canonical_name)
+                    .order_by(func.count(WatchEventModel.watch_event_id).desc())
+                    .limit(3)
+                )
+                top_directors = [
+                    RecapDirectorStat(director=r[0], count=r[1])
+                    for r in (await db.execute(stmt_dirs)).all()
+                ]
+
+            # 6. Favorite Release Era (average production year)
+            favorite_era = "Contemporary Cinema (2020s)"
+            if title_ids:
+                stmt_years = select(func.avg(TitleModel.production_year)).where(TitleModel.title_id.in_(title_ids))
+                avg_year = (await db.execute(stmt_years)).scalar_one_or_none()
+                if avg_year:
+                    if avg_year < 1980:
+                        favorite_era = "Golden Age & Classic Hollywood (Pre-1980)"
+                    elif avg_year < 2000:
+                        favorite_era = "Retro & Blockbuster Era (80s–90s)"
+                    elif avg_year < 2015:
+                        favorite_era = "Turn of the Millennium (2000–2014)"
+                    else:
+                        favorite_era = "Modern Cinema (2015–Present)"
+
+            # 7. Friend Circle Percentile
+            stmt_f = select(FriendshipModel).where(
+                and_(
+                    or_(FriendshipModel.requester_id == u_uuid, FriendshipModel.addressee_id == u_uuid),
+                    FriendshipModel.status == FriendshipStatusEnum.ACCEPTED.value,
+                )
+            )
+            friendships = (await db.execute(stmt_f)).scalars().all()
+            friend_ids = [
+                f.addressee_id if f.requester_id == u_uuid else f.requester_id
+                for f in friendships
+            ]
+
+            circle_percentile = 75.0
+            if friend_ids:
+                stmt_friend_counts = (
+                    select(WatchEventModel.user_id, func.count(WatchEventModel.watch_event_id))
+                    .where(
+                        and_(
+                            WatchEventModel.user_id.in_(friend_ids),
+                            WatchEventModel.is_tombstoned == False,  # noqa: E712
+                            WatchEventModel.watched_at >= start_date,
+                            WatchEventModel.watched_at < end_date,
+                        )
+                    )
+                    .group_by(WatchEventModel.user_id)
+                )
+                friend_counts = dict((await db.execute(stmt_friend_counts)).all())
+                all_volumes = [friend_counts.get(fid, 0) for fid in friend_ids] + [total_watched]
+                lower_count = sum(1 for v in all_volumes if v <= total_watched)
+                circle_percentile = round((lower_count / len(all_volumes)) * 100, 1)
+
+            # 8. Cinema Archetype Classification
+            dominant_genre = top_genres[0].genre if top_genres else "General"
+            archetype = "The Cinephile Explorer"
+            description = "A versatile viewer with an insatiable appetite for cinematic journeys across genres."
+
+            if "Sci-Fi" in dominant_genre or "Science Fiction" in dominant_genre:
+                archetype = "The Sci-Fi Visionary"
+                description = "Always drawn toward futuristic frontiers, mind-bending speculative worldbuilding, and cosmic epics."
+            elif "Drama" in dominant_genre:
+                archetype = "The Humanist Critic"
+                description = "Drawn to emotional resonance, complex characters, and poignant character-driven storytelling."
+            elif "Action" in dominant_genre or "Adventure" in dominant_genre:
+                archetype = "The Kinetic Thrillseeker"
+                description = "Thriving on high-octane set-pieces, kinetic choreography, and heart-pumping spectacle."
+            elif "Horror" in dominant_genre or "Thriller" in dominant_genre:
+                archetype = "The Midnight Auteur"
+                description = "Feasting on atmospheric dread, psychological suspense, and boundary-pushing tension."
+            elif total_watched >= 30:
+                archetype = "The Marathon Cineaste"
+                description = "An unstoppable cinema lover devouring entire filmographies with tireless passion."
+
+            return RecapResponse(
+                user_id=u_uuid,
+                period=period,
+                year=target_year,
+                total_titles_watched=total_watched,
+                total_runtime_minutes=total_runtime,
+                longest_streak_days=longest_streak,
+                top_genres=top_genres,
+                top_directors=top_directors,
+                favorite_release_era=favorite_era,
+                circle_percentile=circle_percentile,
+                cinema_archetype=archetype,
+                archetype_description=description,
+                generated_at=now,
+            )
+        else:
+            top_genres = [
+                RecapGenreStat(genre="Sci-Fi", count=8, percentage=50.0),
+                RecapGenreStat(genre="Drama", count=5, percentage=31.2),
+                RecapGenreStat(genre="Thriller", count=3, percentage=18.8),
+            ]
+            top_directors = [
+                RecapDirectorStat(director="Denis Villeneuve", count=4),
+                RecapDirectorStat(director="Christopher Nolan", count=3),
+            ]
+            return RecapResponse(
+                user_id=u_uuid,
+                user_name="Cinephile Pioneer",
+                user_username="cinephile",
+                period=period,
+                year=target_year,
+                total_titles_watched=16,
+                total_runtime_minutes=2140,
+                longest_streak_days=7,
+                top_genres=top_genres,
+                top_directors=top_directors,
+                favorite_release_era="Modern Cinema (2015–Present)",
+                circle_percentile=85.0,
+                cinema_archetype="The Sci-Fi Visionary",
+                archetype_description="Always drawn toward futuristic frontiers, mind-bending speculative worldbuilding, and cosmic epics.",
+                generated_at=now,
+            )
+
 
 social_repository = SocialRepository()
+
 
 
