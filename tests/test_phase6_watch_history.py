@@ -40,10 +40,10 @@ class Phase6WatchHistoryEngineTestCase(IsolatedAsyncioTestCase):
             self.movie_id = uuid.uuid4()
             self.movie = TitleModel(
                 title_id=self.movie_id,
-                display_id="MOV-WATCH-001",
+                display_id=f"MOV-WATCH-{uuid.uuid4().hex[:6].upper()}",
                 content_type_id="movie",
-                canonical_title="Dune: Part Two",
-                original_title="Dune: Part Two",
+                canonical_title="Dune: Part Two (Watch Test)",
+                original_title="Dune: Part Two (Watch Test)",
                 production_year=2024
             )
             self.movie_edition = EditionModel(
@@ -58,10 +58,10 @@ class Phase6WatchHistoryEngineTestCase(IsolatedAsyncioTestCase):
             self.tv_id = uuid.uuid4()
             self.tv_series = TitleModel(
                 title_id=self.tv_id,
-                display_id="TV-WATCH-001",
+                display_id=f"TV-WATCH-{uuid.uuid4().hex[:6].upper()}",
                 content_type_id="tv_series",
-                canonical_title="Severance",
-                original_title="Severance",
+                canonical_title="Severance (Watch Test)",
+                original_title="Severance (Watch Test)",
                 production_year=2022
             )
             session.add_all([self.movie, self.movie_edition, self.tv_series])
@@ -246,7 +246,7 @@ class Phase6WatchHistoryEngineTestCase(IsolatedAsyncioTestCase):
             await session.commit()
 
             # Mutate canonical title and edition
-            self.movie.canonical_title = "Dune: Part Two (Remastered Edition)"
+            self.movie.canonical_title = "Dune: Part Two (Watch Test Remastered)"
             self.movie.synopsis = "Updated synopsis with new official plot details."
             self.movie_edition.runtime_minutes = 168
             await session.commit()

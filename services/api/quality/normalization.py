@@ -134,16 +134,17 @@ def is_transliteration_candidate(orig_title: Optional[str], prop_title: Optional
         return False
     key1 = normalize_for_matching(orig_title)
     key2 = normalize_for_matching(prop_title)
+    digits1 = set(re.findall(r"\d+", key1))
+    digits2 = set(re.findall(r"\d+", key2))
+    if digits1 and digits2 and digits1 != digits2:
+        return False
 
     if key1 and key2:
         if key1 == key2:
             return True
         if key1 in key2 or key2 in key1:
             if len(key1) >= 4 and len(key2) >= 4:
-                digits1 = set(re.findall(r"\d+", key1))
-                digits2 = set(re.findall(r"\d+", key2))
-                if not (digits1 and digits2 and digits1 != digits2):
-                    return True
+                return True
 
     # Phonetic cross-script transliteration: only applicable if at least one string is non-ASCII
     # (If both strings are 100% ASCII Latin, transliteration does not apply and difflib ratio on ASCII creates false matches)

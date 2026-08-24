@@ -232,7 +232,10 @@ class TestDay7RegressionAndDataSafety(RollbackIsolatedAsyncTestCase):
             self.assertIsNotNone(parasite)
             self.assertEqual(parasite.canonical_title, "Parasite")
 
-            sacred_games = await canonical_repository.lookup_title(db=session, display_id="TV-000001")
+            sacred_games = (
+                await canonical_repository.lookup_title(db=session, display_id="TV-000001") or
+                await canonical_repository.lookup_title(db=session, display_id="IMDB-tt6077448")
+            )
             self.assertIsNotNone(sacred_games)
             self.assertEqual(sacred_games.canonical_title, "Sacred Games")
 

@@ -244,3 +244,12 @@ class PersonalAnalyticsResponse(BaseModel):
     top_actors: List[CreatorAffinityItem]
     monthly_trend: List[MonthlyTrendItem]
 
+
+class UserStreakResponse(BaseModel):
+    user_id: str
+    current_streak: int
+    longest_streak: int
+    last_watch_date: Optional[str] = None
+    updated_at: str
+
+

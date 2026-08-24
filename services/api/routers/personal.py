@@ -23,7 +23,7 @@ from ..schemas.personal import (
     HistoryItemResponse, HistoryPageResponse,
     CollectionItemResponse, CollectionCreateRequest,
     PersonalAnalyticsResponse, GenreAffinityItem, CreatorAffinityItem, MonthlyTrendItem,
-    WatchlistPageResponse
+    WatchlistPageResponse, UserStreakResponse
 )
 from ..auth.dependencies import require_authenticated_user, get_optional_claims
 from ..auth.jwt_validator import SecurityTokenClaims
@@ -38,6 +38,13 @@ logger = logging.getLogger("cinevault.personal")
 
 router = APIRouter(prefix="/v1/me", tags=["Personal Data (CAT-2)"])
 personal_router = APIRouter(prefix="/v1/personal", tags=["Personal Frontend APIs (CAT-2)"])
+
+
+def _extract_user_id(claims: Optional[SecurityTokenClaims]) -> str:
+    """Extracts a valid user ID string from claims sub or returns default test user ID."""
+    if claims and hasattr(claims, "sub") and claims.sub:
+        return str(claims.sub)
+    return "00000000-0000-0000-0000-000000000001"
 
 # In-memory store for user-created collections & history in local dev
 SEED_USER_COLLECTIONS: List[dict] = [
@@ -304,6 +311,18 @@ async def get_personal_analytics(
             MonthlyTrendItem(month="Aug", count=18, hours=41.0),
         ]
     )
+
+
+@router.get("/streak", response_model=UserStreakResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+@personal_router.get("/streak", response_model=UserStreakResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+async def get_user_streak(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Returns the authenticated user's current and longest watch streak metrics."""
+    user_id = _extract_user_id(claims)
+    return await personal_repository.get_user_streak(db=db, user_id=user_id)
+
 
 # ── /v1/personal/import ────────────────────────────────────────────────────
 

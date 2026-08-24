@@ -103,10 +103,10 @@ class Phase1CanonicalFoundationTestCase(IsolatedAsyncioTestCase):
             # 1. Base entities
             movie = TitleModel(
                 title_id=movie_id,
-                display_id="MOV-P1-001",
+                display_id=f"MOV-P1-{uuid.uuid4().hex[:6].upper()}",
                 content_type_id="MOVIE",
-                canonical_title="Blade Runner 2049",
-                original_title="Blade Runner 2049",
+                canonical_title="Blade Runner 2049 (Phase 1 Test)",
+                original_title="Blade Runner 2049 (Phase 1 Test)",
                 production_year=2017,
                 tagline="The key to the future is finally unearthed.",
                 synopsis="Young Blade Runner K's discovery of a long-buried secret leads him to track down former Blade Runner Rick Deckard."
@@ -203,7 +203,7 @@ class Phase1CanonicalFoundationTestCase(IsolatedAsyncioTestCase):
                 mapping_id=uuid.uuid4(),
                 title_id=movie_id,
                 provider_name="IMDB",
-                external_id="tt1856101"
+                external_id=f"tt1856101-{uuid.uuid4().hex[:6]}"
             )
             title_genre = TitleGenreModel(title_id=movie_id, genre_id="SCI_FI")
             title_theme = TitleThemeModel(title_id=movie_id, theme_id="DYSTOPIA")
@@ -219,7 +219,7 @@ class Phase1CanonicalFoundationTestCase(IsolatedAsyncioTestCase):
             # Query via repository and verify full schema hydration
             detail = await canonical_repository.get_title_by_id(session, str(movie_id))
             self.assertIsNotNone(detail)
-            self.assertEqual(detail.canonical_title, "Blade Runner 2049")
+            self.assertEqual(detail.canonical_title, "Blade Runner 2049 (Phase 1 Test)")
             self.assertEqual(detail.content_type, "MOVIE")
             self.assertEqual(len(detail.editions), 1)
             self.assertEqual(detail.editions[0].edition_name, "Theatrical Cut")
@@ -249,10 +249,10 @@ class Phase1CanonicalFoundationTestCase(IsolatedAsyncioTestCase):
             # 1. Base TV Series Title & Network
             tv_series = TitleModel(
                 title_id=tv_id,
-                display_id="TV-P1-001",
+                display_id=f"TV-P1-{uuid.uuid4().hex[:6].upper()}",
                 content_type_id="TV_SERIES",
-                canonical_title="Succession",
-                original_title="Succession",
+                canonical_title="Succession (Phase 1 Test)",
+                original_title="Succession (Phase 1 Test)",
                 production_year=2018,
                 synopsis="The Roy family is known for controlling the biggest media and entertainment company in the world."
             )
@@ -328,7 +328,7 @@ class Phase1CanonicalFoundationTestCase(IsolatedAsyncioTestCase):
 
             detail = await canonical_repository.get_title_by_id(session, str(tv_id))
             self.assertIsNotNone(detail)
-            self.assertEqual(detail.canonical_title, "Succession")
+            self.assertEqual(detail.canonical_title, "Succession (Phase 1 Test)")
             self.assertEqual(detail.content_type, "TV_SERIES")
             self.assertEqual(len(detail.seasons), 2)
             self.assertEqual(detail.seasons[0].season_number, 1)
@@ -349,10 +349,10 @@ class Phase1CanonicalFoundationTestCase(IsolatedAsyncioTestCase):
 
             anime = TitleModel(
                 title_id=anime_id,
-                display_id="ANM-P1-001",
+                display_id=f"ANM-P1-{uuid.uuid4().hex[:6].upper()}",
                 content_type_id="ANIME",
-                canonical_title="Attack on Titan",
-                original_title="進撃の巨人",
+                canonical_title="Attack on Titan (Phase 1 Test)",
+                original_title="進撃の巨人 (Phase 1 Test)",
                 production_year=2013,
                 synopsis="After his hometown is destroyed and his mother is killed, young Eren Jaeger vows to cleanse the earth of the giant humanoid Titans."
             )
@@ -400,14 +400,14 @@ class Phase1CanonicalFoundationTestCase(IsolatedAsyncioTestCase):
                 mapping_id=uuid.uuid4(),
                 title_id=anime_id,
                 provider_name="ANILIST",
-                external_id="16498",
+                external_id=f"16498-{uuid.uuid4().hex[:6]}",
                 external_url="https://anilist.co/anime/16498"
             )
             ext_mal = TitleExternalIdModel(
                 mapping_id=uuid.uuid4(),
                 title_id=anime_id,
                 provider_name="MAL",
-                external_id="16498"
+                external_id=f"16498-{uuid.uuid4().hex[:6]}"
             )
 
             session.add_all([ep1, title_studio, ext_anilist, ext_mal])
@@ -415,12 +415,12 @@ class Phase1CanonicalFoundationTestCase(IsolatedAsyncioTestCase):
 
             detail = await canonical_repository.get_title_by_id(session, str(anime_id))
             self.assertIsNotNone(detail)
-            self.assertEqual(detail.canonical_title, "Attack on Titan")
-            self.assertEqual(detail.original_title, "進撃の巨人")
+            self.assertEqual(detail.canonical_title, "Attack on Titan (Phase 1 Test)")
+            self.assertEqual(detail.original_title, "進撃の巨人 (Phase 1 Test)")
             self.assertEqual(len(detail.aliases), 2)
             self.assertTrue(any(a.alias_name == "Shingeki no Kyojin" and a.alias_type == "TRANSLITERATED" for a in detail.aliases))
             self.assertEqual(len(detail.external_ids), 2)
-            self.assertTrue(any(e.provider_name == "ANILIST" and e.external_id == "16498" for e in detail.external_ids))
+            self.assertTrue(any(e.provider_name == "ANILIST" and "16498" in e.external_id for e in detail.external_ids))
             self.assertEqual(detail.companies[0].company_name, "WIT Studio")
 
     async def test_representative_documentary_and_festivals(self):
@@ -433,10 +433,10 @@ class Phase1CanonicalFoundationTestCase(IsolatedAsyncioTestCase):
 
             doc = TitleModel(
                 title_id=doc_id,
-                display_id="DOC-P1-001",
+                display_id=f"DOC-P1-{uuid.uuid4().hex[:6].upper()}",
                 content_type_id="DOCUMENTARY",
-                canonical_title="Planet Earth II",
-                original_title="Planet Earth II",
+                canonical_title="Planet Earth II (Phase 1 Test)",
+                original_title="Planet Earth II (Phase 1 Test)",
                 production_year=2016,
                 synopsis="David Attenborough presents a documentary series exploring the world's most iconic habitats and fascinating animal behavior."
             )
@@ -469,7 +469,7 @@ class Phase1CanonicalFoundationTestCase(IsolatedAsyncioTestCase):
 
             detail = await canonical_repository.get_title_by_id(session, str(doc_id))
             self.assertIsNotNone(detail)
-            self.assertEqual(detail.canonical_title, "Planet Earth II")
+            self.assertEqual(detail.canonical_title, "Planet Earth II (Phase 1 Test)")
             self.assertEqual(detail.content_type, "DOCUMENTARY")
             self.assertEqual(len(detail.themes), 1)
             self.assertEqual(detail.themes[0].name, "Nature & Wildlife")

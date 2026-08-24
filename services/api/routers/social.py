@@ -21,6 +21,11 @@ from ..schemas.social import (
     RecommendationResponse,
     EnrichedRecommendationResponse,
     TasteMatchResponse,
+    CompatibilityResponse,
+    LeaderboardResponse,
+    LeaderboardEntry,
+    BadgeResponse,
+    UserBadgesResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
     TasteProfileComputeRequest,
@@ -324,6 +329,87 @@ async def get_taste_matches(
     )
 
 
+@router.get(
+    "/friendships/{friend_id}/compatibility",
+    response_model=CompatibilityResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+@router.get(
+    "/compatibility/{friend_id}",
+    response_model=CompatibilityResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_friend_compatibility(
+    friend_id: uuid.UUID = Path(..., description="Target friend UUID"),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """
+    Returns head-to-head taste compatibility between the authenticated user and an accepted friend.
+    Includes pgvector cosine similarity score, taste tier, and overlapping genres/directors/favorites.
+    """
+    user_id = _extract_user_id(claims)
+
+    # Verify friendship exists
+    friendships = await social_repository.list_friendships(db=db, user_id=user_id)
+    is_friend = any(
+        f.status == FriendshipStatusEnum.ACCEPTED
+        and (f.requester_id == friend_id or f.addressee_id == friend_id)
+        for f in friendships
+    )
+    if not is_friend:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"User {friend_id} is not an accepted friend of the requester.",
+        )
+
+    res = await social_repository.get_head_to_head_compatibility(
+        db=db,
+        user_id=user_id,
+        friend_id=friend_id,
+    )
+
+    # Enrich with friend display name
+    name_map = resolve_display_names([friend_id])
+    friend_name, friend_username = name_map.get(str(friend_id), (None, None))
+    res.friend_name = friend_name
+    res.friend_username = friend_username
+
+    return res
+
+
+@router.get(
+    "/leaderboard",
+    response_model=LeaderboardResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_social_leaderboard(
+    period: str = Query("weekly", pattern="^(weekly|monthly|all_time)$", description="Leaderboard time window"),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """
+    Returns viewing activity leaderboard across the user's accepted friends for the specified period.
+    """
+    user_id = _extract_user_id(claims)
+    leaderboard = await social_repository.get_friend_leaderboard(
+        db=db,
+        user_id=user_id,
+        period=period,
+    )
+
+    # Enrich with display names for all circle members
+    uids = [e.user_id for e in leaderboard.entries]
+    name_map = resolve_display_names(uids)
+
+    for entry in leaderboard.entries:
+        name, username = name_map.get(str(entry.user_id), (None, None))
+        entry.name = name
+        entry.username = username
+
+    return leaderboard
+
+
 @router.put(
     "/taste-profile/mock-compute",
     dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))],
@@ -421,4 +507,49 @@ async def compute_taste_profile_from_summary(
         "message": "Taste profile computed and persisted successfully via Ollama AI Brain",
         "last_computed_at": result.get("last_computed_at"),
     }
+
+
+# ── /social/badges (Part 2 Item 2.5) ───────────────────────────────────────
+
+@router.get(
+    "/badges",
+    response_model=UserBadgesResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_my_badges(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Retrieves all badge definitions with earned status and timestamp for the caller."""
+    user_id = _extract_user_id(claims)
+    return await social_repository.list_user_badges(db=db, user_id=user_id)
+
+
+@router.get(
+    "/badges/{target_user_id}",
+    response_model=UserBadgesResponse,
+    dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
+)
+async def get_user_badges(
+    target_user_id: uuid.UUID = Path(..., description="Target user ID to inspect earned badges"),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Retrieves all badge definitions with earned status and timestamp for a target user."""
+    return await social_repository.list_user_badges(db=db, user_id=target_user_id)
+
+
+@router.post(
+    "/badges/evaluate",
+    response_model=UserBadgesResponse,
+    dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))],
+)
+async def evaluate_badges(
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Evaluates criteria for unearned badges and automatically grants unlocked badges."""
+    user_id = _extract_user_id(claims)
+    return await social_repository.evaluate_user_badges(db=db, user_id=user_id)
+
 

@@ -199,3 +199,68 @@ class TasteProfileComputeRequest(BaseModel):
     )
 
 
+class CompatibilityResponse(BaseModel):
+    """Detailed head-to-head compatibility breakdown between two users."""
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    friend_id: uuid.UUID
+    friend_name: Optional[str] = None
+    friend_username: Optional[str] = None
+    compatibility_score: float = Field(
+        ..., ge=0.0, le=100.0, description="Taste compatibility percentage score (0.0 to 100.0)"
+    )
+    taste_tier: str = Field(..., description="Compatibility tier label (Oracle, Critic, Regular, Curious)")
+    shared_genres: List[str] = Field(default_factory=list, description="Top genres overlapping between both users")
+    shared_directors: List[str] = Field(default_factory=list, description="Directors watched by both users")
+    shared_favorite_titles: List[str] = Field(default_factory=list, description="Titles favored or highly rated by both users")
+    calculated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class LeaderboardEntry(BaseModel):
+    """Represents a member's rank and viewing volume on the social circle leaderboard."""
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    name: Optional[str] = None
+    username: Optional[str] = None
+    watch_count: int = Field(0, description="Total titles or episodes watched within the period")
+    watch_hours: float = Field(0.0, description="Total viewing duration in hours")
+    rank: int = Field(..., description="Position on the leaderboard starting at 1")
+    is_current_user: bool = Field(False, description="True if this entry corresponds to the requesting user")
+
+
+class LeaderboardResponse(BaseModel):
+    """Social circle viewing activity leaderboard."""
+    model_config = ConfigDict(from_attributes=True)
+
+    period: str = Field("weekly", description="Leaderboard time window: weekly, monthly, or all_time")
+    entries: List[LeaderboardEntry] = Field(default_factory=list)
+    calculated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class BadgeResponse(BaseModel):
+    """Badge achievement details."""
+    model_config = ConfigDict(from_attributes=True)
+
+    badge_id: uuid.UUID
+    slug: str
+    name: str
+    description: str
+    icon_url: Optional[str] = None
+    is_earned: bool = False
+    earned_at: Optional[datetime] = None
+    context_json: Optional[Dict[str, Any]] = None
+
+
+class UserBadgesResponse(BaseModel):
+    """List of all system badges and earned status for a user."""
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: uuid.UUID
+    badges: List[BadgeResponse] = Field(default_factory=list)
+    total_earned: int = 0
+
+
+
+

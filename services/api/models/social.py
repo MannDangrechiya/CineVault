@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from typing import Optional, Any
 import uuid
 from sqlalchemy import (
-    String, Text, Float, ForeignKey, DateTime
+    String, Text, Float, ForeignKey, DateTime, PrimaryKeyConstraint
 )
-from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from pgvector.sqlalchemy import Vector
 from .canonical import Base
@@ -113,4 +113,68 @@ class UserTasteProfileModel(Base):
         default=lambda: datetime.now(timezone.utc),
         nullable=False,
     )
+
+
+class BadgeDefinitionModel(Base):
+    """
+    Defines system badge achievements and unlock criteria.
+    Isolated within the `social` PostgreSQL schema.
+    """
+    __tablename__ = "badge_definition"
+    __table_args__ = {"schema": "social"}
+
+    badge_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    slug: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(
+        String(128), nullable=False
+    )
+    description: Mapped[str] = mapped_column(
+        Text, nullable=False
+    )
+    icon_url: Mapped[Optional[str]] = mapped_column(
+        String(512), nullable=True
+    )
+    criteria_json: Mapped[dict] = mapped_column(
+        JSONB, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class UserBadgeModel(Base):
+    """
+    Represents badges earned by users with timestamp and award context.
+    Isolated within the `social` PostgreSQL schema.
+    """
+    __tablename__ = "user_badge"
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", "badge_id"),
+        {"schema": "social"},
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    badge_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("social.badge_definition.badge_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    earned_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+    context_json: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True
+    )
+
 

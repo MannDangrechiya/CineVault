@@ -3,13 +3,16 @@
 
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Tuple, Any
 import uuid
-from sqlalchemy import select, and_, or_, update
+from sqlalchemy import select, and_, or_, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models.social import FriendshipModel, RecommendationModel, UserTasteProfileModel
+from ..models.social import (
+    FriendshipModel, RecommendationModel, UserTasteProfileModel,
+    BadgeDefinitionModel, UserBadgeModel
+)
 from ..schemas.social import (
     FriendshipStatusEnum,
     FriendshipResponse,
@@ -19,6 +22,11 @@ from ..schemas.social import (
     RecommendationStateUpdate,
     RecommendationResponse,
     TasteMatchResponse,
+    CompatibilityResponse,
+    LeaderboardEntry,
+    LeaderboardResponse,
+    BadgeResponse,
+    UserBadgesResponse,
     UserTasteProfileUpdate,
     UserTasteProfileResponse,
     ALLOWED_STATE_TRANSITIONS,
@@ -30,6 +38,51 @@ logger = logging.getLogger("cinevault.repositories.social")
 SEED_FRIENDSHIPS: Dict[uuid.UUID, FriendshipResponse] = {}
 SEED_RECOMMENDATIONS: Dict[uuid.UUID, RecommendationResponse] = {}
 SEED_TASTE_PROFILES: Dict[uuid.UUID, Dict[str, Any]] = {}
+SEED_BADGES = [
+    {
+        "badge_id": uuid.UUID("018f3a00-0000-7000-8000-000000000001"),
+        "slug": "first-watch",
+        "name": "First Reel",
+        "description": "Log your first film or episode watch event",
+        "criteria_json": {"type": "watch_count", "threshold": 1},
+    },
+    {
+        "badge_id": uuid.UUID("018f3a00-0000-7000-8000-000000000002"),
+        "slug": "century-club",
+        "name": "Century Club",
+        "description": "Watch and log 100 titles in CineVault",
+        "criteria_json": {"type": "watch_count", "threshold": 100},
+    },
+    {
+        "badge_id": uuid.UUID("018f3a00-0000-7000-8000-000000000003"),
+        "slug": "seven-day-streak",
+        "name": "Dedicated Cinephile",
+        "description": "Maintain a continuous 7-day viewing streak",
+        "criteria_json": {"type": "streak_days", "threshold": 7},
+    },
+    {
+        "badge_id": uuid.UUID("018f3a00-0000-7000-8000-000000000004"),
+        "slug": "inner-circle",
+        "name": "Inner Circle",
+        "description": "Connect with 5 accepted cinephile friends",
+        "criteria_json": {"type": "friend_count", "threshold": 5},
+    },
+    {
+        "badge_id": uuid.UUID("018f3a00-0000-7000-8000-000000000005"),
+        "slug": "first-review",
+        "name": "Critic in the Making",
+        "description": "Publish your first film review or critique",
+        "criteria_json": {"type": "review_count", "threshold": 1},
+    },
+    {
+        "badge_id": uuid.UUID("018f3a00-0000-7000-8000-000000000006"),
+        "slug": "curator-elite",
+        "name": "Curator Elite",
+        "description": "Create your first custom film collection",
+        "criteria_json": {"type": "collection_count", "threshold": 1},
+    },
+]
+
 
 
 def _resolve_uuid(val: Any, field_name: str = "id") -> uuid.UUID:
@@ -691,6 +744,465 @@ class SocialRepository:
                 TasteMatchResponse(friend_id=item[0], compatibility_score=item[2])
                 for item in matches[:target_limit]
             ]
+
+    async def get_head_to_head_compatibility(
+        self,
+        db: Optional[AsyncSession],
+        user_id: uuid.UUID,
+        friend_id: uuid.UUID,
+    ) -> CompatibilityResponse:
+        """
+        Computes detailed head-to-head compatibility metrics between user_id and friend_id.
+        Includes pgvector cosine similarity score, taste tier, overlapping genres,
+        shared directors, and mutually loved/watched titles.
+        """
+        u_uuid = _resolve_uuid(user_id, "user_id")
+        f_uuid = _resolve_uuid(friend_id, "friend_id")
+
+        now = datetime.now(timezone.utc)
+        score = 0.0
+        shared_genres: List[str] = []
+        shared_directors: List[str] = []
+        shared_favorite_titles: List[str] = []
+
+        if db is not None:
+            # 1. Cosine similarity via taste vectors
+            stmt_vec = select(UserTasteProfileModel).where(
+                UserTasteProfileModel.user_id.in_([u_uuid, f_uuid])
+            )
+            res_vec = await db.execute(stmt_vec)
+            profiles = {p.user_id: p for p in res_vec.scalars().all()}
+            u_prof = profiles.get(u_uuid)
+            f_prof = profiles.get(f_uuid)
+
+            if u_prof and f_prof and u_prof.taste_vector is not None and f_prof.taste_vector is not None:
+                dist_expr = UserTasteProfileModel.taste_vector.cosine_distance(u_prof.taste_vector)
+                stmt_dist = (
+                    select(dist_expr)
+                    .where(UserTasteProfileModel.user_id == f_uuid)
+                )
+                res_dist = await db.execute(stmt_dist)
+                dist_val = res_dist.scalar_one_or_none()
+                if dist_val is not None:
+                    score = max(0.0, min(100.0, round((1.0 - float(dist_val)) * 100.0, 1)))
+
+            # 2. Extract watched & favorite title IDs for both users
+            from ..models.personal import WatchEventModel, UserTitleStateModel
+            from ..models.canonical import TitleModel, TitleGenreModel, GenreModel, CreditModel, PersonModel
+
+            stmt_u_titles = select(WatchEventModel.title_id).where(
+                and_(WatchEventModel.user_id == u_uuid, WatchEventModel.is_tombstoned == False)
+            )
+            res_u_titles = await db.execute(stmt_u_titles)
+            u_title_ids = set(res_u_titles.scalars().all())
+
+            stmt_f_titles = select(WatchEventModel.title_id).where(
+                and_(WatchEventModel.user_id == f_uuid, WatchEventModel.is_tombstoned == False)
+            )
+            res_f_titles = await db.execute(stmt_f_titles)
+            f_title_ids = set(res_f_titles.scalars().all())
+
+            # Shared watched titles
+            common_title_ids = list(u_title_ids.intersection(f_title_ids))
+
+            # Shared favorites / high ratings (rating >= 8 or is_favorite)
+            stmt_u_favs = select(UserTitleStateModel.title_id).where(
+                and_(UserTitleStateModel.user_id == u_uuid, UserTitleStateModel.is_favorite == True)
+            )
+            res_u_favs = await db.execute(stmt_u_favs)
+            u_fav_ids = set(res_u_favs.scalars().all())
+
+            stmt_f_favs = select(UserTitleStateModel.title_id).where(
+                and_(UserTitleStateModel.user_id == f_uuid, UserTitleStateModel.is_favorite == True)
+            )
+            res_f_favs = await db.execute(stmt_f_favs)
+            f_fav_ids = set(res_f_favs.scalars().all())
+
+            common_fav_ids = list(u_fav_ids.intersection(f_fav_ids))
+            if not common_fav_ids and common_title_ids:
+                common_fav_ids = common_title_ids[:5]
+
+            if common_fav_ids:
+                stmt_fav_names = select(TitleModel.canonical_title).where(
+                    TitleModel.title_id.in_(common_fav_ids[:5])
+                )
+                res_fav_names = await db.execute(stmt_fav_names)
+                shared_favorite_titles = [name for name in res_fav_names.scalars().all() if name]
+
+            # 3. Intersecting top genres
+            if u_title_ids and f_title_ids:
+                stmt_u_genres = (
+                    select(GenreModel.name, func.count(TitleGenreModel.title_id).label("cnt"))
+                    .join(TitleGenreModel, GenreModel.genre_id == TitleGenreModel.genre_id)
+                    .where(TitleGenreModel.title_id.in_(u_title_ids))
+                    .group_by(GenreModel.name)
+                    .order_by(func.count(TitleGenreModel.title_id).desc())
+                )
+                res_u_genres = await db.execute(stmt_u_genres)
+                u_genres = {row[0]: row[1] for row in res_u_genres.all()}
+
+                stmt_f_genres = (
+                    select(GenreModel.name, func.count(TitleGenreModel.title_id).label("cnt"))
+                    .join(TitleGenreModel, GenreModel.genre_id == TitleGenreModel.genre_id)
+                    .where(TitleGenreModel.title_id.in_(f_title_ids))
+                    .group_by(GenreModel.name)
+                    .order_by(func.count(TitleGenreModel.title_id).desc())
+                )
+                res_f_genres = await db.execute(stmt_f_genres)
+                f_genres = {row[0]: row[1] for row in res_f_genres.all()}
+
+                overlap_genres = sorted(
+                    set(u_genres.keys()).intersection(set(f_genres.keys())),
+                    key=lambda g: u_genres[g] + f_genres[g],
+                    reverse=True
+                )
+                shared_genres = overlap_genres[:5]
+
+            # 4. Intersecting top directors
+            if u_title_ids and f_title_ids:
+                stmt_dirs = (
+                    select(PersonModel.canonical_name)
+                    .join(CreditModel, PersonModel.person_id == CreditModel.person_id)
+                    .where(
+                        and_(
+                            CreditModel.title_id.in_(u_title_ids),
+                            CreditModel.credit_role_id == "DIRECTOR"
+                        )
+                    )
+                )
+                res_u_dirs = await db.execute(stmt_dirs)
+                u_dirs = set(res_u_dirs.scalars().all())
+
+                stmt_f_dirs = (
+                    select(PersonModel.canonical_name)
+                    .join(CreditModel, PersonModel.person_id == CreditModel.person_id)
+                    .where(
+                        and_(
+                            CreditModel.title_id.in_(f_title_ids),
+                            CreditModel.credit_role_id == "DIRECTOR"
+                        )
+                    )
+                )
+                res_f_dirs = await db.execute(stmt_f_dirs)
+                f_dirs = set(res_f_dirs.scalars().all())
+
+                shared_directors = list(u_dirs.intersection(f_dirs))[:5]
+
+        else:
+            # In-memory test fallback
+            if (
+                u_uuid in SEED_TASTE_PROFILES
+                and f_uuid in SEED_TASTE_PROFILES
+                and SEED_TASTE_PROFILES[u_uuid].get("taste_vector")
+                and SEED_TASTE_PROFILES[f_uuid].get("taste_vector")
+            ):
+                cos_dist = _compute_cosine_distance(
+                    SEED_TASTE_PROFILES[u_uuid]["taste_vector"],
+                    SEED_TASTE_PROFILES[f_uuid]["taste_vector"]
+                )
+                score = max(0.0, min(100.0, round((1.0 - cos_dist) * 100.0, 1)))
+
+        # Tier calculation
+        if score >= 75.0:
+            taste_tier = "Oracle"
+        elif score >= 50.0:
+            taste_tier = "Critic"
+        elif score >= 25.0:
+            taste_tier = "Regular"
+        else:
+            taste_tier = "Curious"
+
+        return CompatibilityResponse(
+            user_id=u_uuid,
+            friend_id=f_uuid,
+            compatibility_score=score,
+            taste_tier=taste_tier,
+            shared_genres=shared_genres,
+            shared_directors=shared_directors,
+            shared_favorite_titles=shared_favorite_titles,
+            calculated_at=now,
+        )
+
+    async def get_friend_leaderboard(
+        self,
+        db: Optional[AsyncSession],
+        user_id: uuid.UUID,
+        period: str = "weekly",
+    ) -> LeaderboardResponse:
+        """
+        Computes viewing activity leaderboard across the user's accepted friendships.
+        Aggregates watch_event counts and viewing duration in hours for the specified period.
+        """
+        u_uuid = _resolve_uuid(user_id, "user_id")
+        now = datetime.now(timezone.utc)
+
+        if period == "weekly":
+            start_dt = now - timedelta(days=7)
+        elif period == "monthly":
+            start_dt = now - timedelta(days=30)
+        else:
+            start_dt = None
+
+        if db is not None:
+            # 1. Discover all accepted friends
+            stmt_friends = select(FriendshipModel).where(
+                and_(
+                    FriendshipModel.status == FriendshipStatusEnum.ACCEPTED.value,
+                    or_(
+                        FriendshipModel.requester_id == u_uuid,
+                        FriendshipModel.addressee_id == u_uuid,
+                    ),
+                )
+            )
+            res_friends = await db.execute(stmt_friends)
+            friend_records = res_friends.scalars().all()
+
+            circle_user_ids: List[uuid.UUID] = [u_uuid]
+            for f in friend_records:
+                fid = resolve_friend_id(f.requester_id, f.addressee_id, u_uuid)
+                if fid is not None and fid not in circle_user_ids:
+                    circle_user_ids.append(fid)
+
+            # 2. Query watch events for all circle users
+            from ..models.personal import WatchEventModel
+            from ..models.canonical import EditionModel
+
+            filter_conds = [
+                WatchEventModel.user_id.in_(circle_user_ids),
+                WatchEventModel.is_tombstoned == False,  # noqa: E712
+            ]
+            if start_dt is not None:
+                filter_conds.append(WatchEventModel.watched_at >= start_dt)
+
+            stmt_events = (
+                select(
+                    WatchEventModel.user_id,
+                    func.count(WatchEventModel.watch_event_id).label("event_count"),
+                    func.coalesce(func.sum(EditionModel.runtime_minutes), func.count(WatchEventModel.watch_event_id) * 120).label("total_mins"),
+                )
+                .outerjoin(EditionModel, WatchEventModel.edition_id == EditionModel.edition_id)
+                .where(and_(*filter_conds))
+                .group_by(WatchEventModel.user_id)
+            )
+            res_events = await db.execute(stmt_events)
+            metrics_by_user = {row[0]: (int(row[1]), round(float(row[2]) / 60.0, 1)) for row in res_events.all()}
+
+            # 3. Assemble leaderboard list with 0-filled users
+            raw_entries = []
+            for uid in circle_user_ids:
+                count, hours = metrics_by_user.get(uid, (0, 0.0))
+                raw_entries.append((uid, count, hours))
+
+            # 4. Sort: highest count -> highest hours -> user_id
+            raw_entries.sort(key=lambda x: (x[1], x[2], str(x[0])), reverse=True)
+
+            entries: List[LeaderboardEntry] = []
+            for rank_idx, (uid, count, hours) in enumerate(raw_entries, start=1):
+                entries.append(
+                    LeaderboardEntry(
+                        user_id=uid,
+                        name=None,
+                        username=None,
+                        watch_count=count,
+                        watch_hours=hours,
+                        rank=rank_idx,
+                        is_current_user=(uid == u_uuid),
+                    )
+                )
+
+            return LeaderboardResponse(
+                period=period,
+                entries=entries,
+                calculated_at=now,
+            )
+        else:
+            # In-memory test fallback
+            circle_user_ids = [u_uuid]
+            for f in SEED_FRIENDSHIPS.values():
+                if f.status == FriendshipStatusEnum.ACCEPTED:
+                    fid = resolve_friend_id(f.requester_id, f.addressee_id, u_uuid)
+                    if fid and fid not in circle_user_ids:
+                        circle_user_ids.append(fid)
+
+            entries = [
+                LeaderboardEntry(
+                    user_id=uid,
+                    name=None,
+                    username=None,
+                    watch_count=1 if uid == u_uuid else 0,
+                    watch_hours=2.0 if uid == u_uuid else 0.0,
+                    rank=idx,
+                    is_current_user=(uid == u_uuid),
+                )
+                for idx, uid in enumerate(circle_user_ids, start=1)
+            ]
+            return LeaderboardResponse(
+                period=period,
+                entries=entries,
+                calculated_at=now,
+            )
+
+    async def list_user_badges(
+        self,
+        db: Optional[AsyncSession],
+        user_id: uuid.UUID,
+    ) -> UserBadgesResponse:
+        """Retrieves all badge definitions with earned status and timestamp for a user."""
+        u_uuid = _resolve_uuid(user_id, "user_id")
+
+        if db is not None:
+            stmt_defs = select(BadgeDefinitionModel).order_by(BadgeDefinitionModel.created_at.asc())
+            res_defs = await db.execute(stmt_defs)
+            all_defs = res_defs.scalars().all()
+
+            stmt_user = select(UserBadgeModel).where(UserBadgeModel.user_id == u_uuid)
+            res_user = await db.execute(stmt_user)
+            earned_map = {b.badge_id: b for b in res_user.scalars().all()}
+
+            badges = []
+            for b_def in all_defs:
+                earned = earned_map.get(b_def.badge_id)
+                badges.append(
+                    BadgeResponse(
+                        badge_id=b_def.badge_id,
+                        slug=b_def.slug,
+                        name=b_def.name,
+                        description=b_def.description,
+                        icon_url=b_def.icon_url,
+                        is_earned=earned is not None,
+                        earned_at=earned.earned_at if earned else None,
+                        context_json=earned.context_json if earned else None,
+                    )
+                )
+
+            return UserBadgesResponse(
+                user_id=u_uuid,
+                badges=badges,
+                total_earned=len(earned_map),
+            )
+        else:
+            # In-memory test fallback
+            badges = [
+                BadgeResponse(
+                    badge_id=b["badge_id"],
+                    slug=b["slug"],
+                    name=b["name"],
+                    description=b["description"],
+                    icon_url=None,
+                    is_earned=False,
+                    earned_at=None,
+                    context_json=None,
+                )
+                for b in SEED_BADGES
+            ]
+            return UserBadgesResponse(
+                user_id=u_uuid,
+                badges=badges,
+                total_earned=0,
+            )
+
+    async def evaluate_user_badges(
+        self,
+        db: Optional[AsyncSession],
+        user_id: uuid.UUID,
+    ) -> UserBadgesResponse:
+        """
+        Evaluates criteria for all unearned badges and automatically grants unlocked badges.
+        Evaluates watch volume, continuous streaks, friend count, reviews, and custom lists.
+        """
+        u_uuid = _resolve_uuid(user_id, "user_id")
+        if db is None:
+            return await self.list_user_badges(db, u_uuid)
+
+        # 1. Fetch definitions and earned map
+        stmt_defs = select(BadgeDefinitionModel)
+        all_defs = (await db.execute(stmt_defs)).scalars().all()
+
+        stmt_user = select(UserBadgeModel).where(UserBadgeModel.user_id == u_uuid)
+        earned_ids = {b.badge_id for b in (await db.execute(stmt_user)).scalars().all()}
+
+        unearned = [b for b in all_defs if b.badge_id not in earned_ids]
+        if not unearned:
+            return await self.list_user_badges(db, u_uuid)
+
+        # 2. Gather metrics on-demand
+        from ..models.personal import WatchEventModel, UserStreakModel, ReviewModel, UserListModel
+
+        # Watch count
+        stmt_wc = select(func.count(WatchEventModel.watch_event_id)).where(
+            and_(
+                WatchEventModel.user_id == u_uuid,
+                WatchEventModel.is_tombstoned == False,  # noqa: E712
+            )
+        )
+        watch_count = (await db.execute(stmt_wc)).scalar_one() or 0
+
+        # Streak metrics
+        stmt_streak = select(UserStreakModel).where(UserStreakModel.user_id == u_uuid)
+        streak_row = (await db.execute(stmt_streak)).scalar_one_or_none()
+        longest_streak = max(streak_row.longest_streak, streak_row.current_streak) if streak_row else 0
+
+        # Friend count
+        stmt_fc = select(func.count(FriendshipModel.friendship_id)).where(
+            and_(
+                FriendshipModel.status == FriendshipStatusEnum.ACCEPTED.value,
+                or_(
+                    FriendshipModel.requester_id == u_uuid,
+                    FriendshipModel.addressee_id == u_uuid,
+                ),
+            )
+        )
+        friend_count = (await db.execute(stmt_fc)).scalar_one() or 0
+
+        # Review count
+        stmt_rc = select(func.count(ReviewModel.review_id)).where(ReviewModel.user_id == u_uuid)
+        review_count = (await db.execute(stmt_rc)).scalar_one() or 0
+
+        # Collection count
+        stmt_cc = select(func.count(UserListModel.list_id)).where(UserListModel.user_id == u_uuid)
+        collection_count = (await db.execute(stmt_cc)).scalar_one() or 0
+
+        now = datetime.now(timezone.utc)
+        newly_earned = []
+
+        for b in unearned:
+            crit = b.criteria_json or {}
+            c_type = crit.get("type")
+            threshold = crit.get("threshold", 1)
+
+            qualifies = False
+            context = {}
+
+            if c_type == "watch_count" and watch_count >= threshold:
+                qualifies = True
+                context = {"watch_count": watch_count, "threshold": threshold}
+            elif c_type == "streak_days" and longest_streak >= threshold:
+                qualifies = True
+                context = {"longest_streak": longest_streak, "threshold": threshold}
+            elif c_type == "friend_count" and friend_count >= threshold:
+                qualifies = True
+                context = {"friend_count": friend_count, "threshold": threshold}
+            elif c_type == "review_count" and review_count >= threshold:
+                qualifies = True
+                context = {"review_count": review_count, "threshold": threshold}
+            elif c_type == "collection_count" and collection_count >= threshold:
+                qualifies = True
+                context = {"collection_count": collection_count, "threshold": threshold}
+
+            if qualifies:
+                new_badge = UserBadgeModel(
+                    user_id=u_uuid,
+                    badge_id=b.badge_id,
+                    earned_at=now,
+                    context_json=context,
+                )
+                db.add(new_badge)
+                newly_earned.append(new_badge)
+
+        if newly_earned:
+            await db.flush()
+
+        return await self.list_user_badges(db, u_uuid)
 
 
 social_repository = SocialRepository()

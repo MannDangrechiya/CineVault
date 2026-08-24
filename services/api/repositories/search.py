@@ -101,9 +101,14 @@ class SearchRepository:
                         orig_lower = (r.original_title or "").lower()
                         alias_lower = (r.alias_name or "").lower()
 
-                        if clean_q == canon_lower or clean_q == orig_lower:
+                        canon_strip = canon_lower.strip(". !?:;-_~`'\"")
+                        orig_strip = orig_lower.strip(". !?:;-_~`'\"")
+                        alias_strip = alias_lower.strip(". !?:;-_~`'\"")
+                        clean_strip = clean_q.strip(". !?:;-_~`'\"")
+
+                        if clean_q == canon_lower or clean_q == orig_lower or (clean_strip and (clean_strip == canon_strip or clean_strip == orig_strip)):
                             score = 1.00
-                        elif clean_q == alias_lower:
+                        elif clean_q == alias_lower or (clean_strip and clean_strip == alias_strip):
                             score = 0.98
                         elif clean_q in canon_lower or clean_q in orig_lower or clean_q in alias_lower:
                             score = 0.92

@@ -10,7 +10,7 @@
 from ..config import config
 import uuid
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, and_, update, func
 from sqlalchemy.orm import selectinload
@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.personal import (
     LibraryEntryModel, WatchEventModel, UserTitleStateModel,
     RatingModel, NoteModel, ReviewModel, PersonalDataConflictModel,
-    UserListModel, UserListItemModel
+    UserListModel, UserListItemModel, UserStreakModel
 )
 from ..models.canonical import (
     TitleModel, EditionModel, TitleCountryModel, TitleLanguageModel
@@ -42,6 +42,7 @@ from ..schemas.personal import (
     ImportConflictStrategyEnum,
     WatchlistItemResponse,
     WatchlistPageResponse,
+    UserStreakResponse,
 )
 
 # Both values are treated as "on the watchlist" — some pre-existing rows use
@@ -267,6 +268,11 @@ class PersonalRepository:
                     )
                     db.add(st_orm)
 
+                # Maintain streak progression (Part 2 Item 2.3)
+                watch_dt = event_orm.watched_at
+                watch_date = watch_dt.date() if isinstance(watch_dt, datetime) else datetime.now(timezone.utc).date()
+                await self.update_user_streak(db, user_uuid, watch_date)
+
                 return WatchEventResponse(
                     id=str(event_orm.watch_event_id),
                     user_id=user_id,
@@ -302,6 +308,92 @@ class PersonalRepository:
             SEED_WATCH_EVENTS[user_id] = []
         SEED_WATCH_EVENTS[user_id].append(resp)
         return resp
+
+    async def update_user_streak(
+        self,
+        db: AsyncSession,
+        user_uuid: uuid.UUID,
+        watch_date: date,
+    ) -> UserStreakModel:
+        """
+        Maintains consecutive daily viewing streak for a user (ADR-003, Part 2 Item 2.3).
+        - Same day: no-op (streak maintained).
+        - Consecutive day (watch_date == last_watch_date + 1 day): current_streak += 1, longest_streak = max.
+        - Broken streak (watch_date > last_watch_date + 1 day or last_watch_date is None): current_streak = 1, longest_streak = max.
+        """
+        now = datetime.now(timezone.utc)
+        stmt = select(UserStreakModel).where(UserStreakModel.user_id == user_uuid)
+        res = await db.execute(stmt)
+        streak = res.scalar_one_or_none()
+
+        if not streak:
+            streak = UserStreakModel(
+                user_id=user_uuid,
+                current_streak=1,
+                longest_streak=1,
+                last_watch_date=watch_date,
+                updated_at=now,
+            )
+            db.add(streak)
+        else:
+            if streak.last_watch_date is None:
+                streak.current_streak = 1
+                streak.longest_streak = max(streak.longest_streak, 1)
+                streak.last_watch_date = watch_date
+                streak.updated_at = now
+            elif watch_date == streak.last_watch_date:
+                # Same day watch, do not double-increment
+                streak.updated_at = now
+            elif watch_date == streak.last_watch_date + timedelta(days=1):
+                # Consecutive day watch
+                streak.current_streak += 1
+                streak.longest_streak = max(streak.longest_streak, streak.current_streak)
+                streak.last_watch_date = watch_date
+                streak.updated_at = now
+            elif watch_date > streak.last_watch_date + timedelta(days=1):
+                # Broken streak
+                streak.current_streak = 1
+                streak.longest_streak = max(streak.longest_streak, 1)
+                streak.last_watch_date = watch_date
+                streak.updated_at = now
+
+        await db.flush()
+        return streak
+
+    async def get_user_streak(
+        self,
+        db: Optional[AsyncSession],
+        user_id: str,
+    ) -> UserStreakResponse:
+        """Fetches the user's current and longest watch streaks."""
+        user_uuid = _resolve_user_uuid(user_id)
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        if db is not None:
+            try:
+                stmt = select(UserStreakModel).where(UserStreakModel.user_id == user_uuid)
+                res = await db.execute(stmt)
+                streak = res.scalar_one_or_none()
+                if streak:
+                    return UserStreakResponse(
+                        user_id=str(streak.user_id),
+                        current_streak=streak.current_streak,
+                        longest_streak=streak.longest_streak,
+                        last_watch_date=streak.last_watch_date.isoformat() if streak.last_watch_date else None,
+                        updated_at=streak.updated_at.isoformat() if streak.updated_at else now_iso,
+                    )
+            except Exception as exc:
+                logger.error("get_user_streak failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return UserStreakResponse(
+            user_id=user_id,
+            current_streak=0,
+            longest_streak=0,
+            last_watch_date=None,
+            updated_at=now_iso,
+        )
 
     async def get_user_title_state(
         self, db: Optional[AsyncSession], user_id: str, title_id: str

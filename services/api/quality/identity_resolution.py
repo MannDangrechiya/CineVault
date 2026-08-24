@@ -127,7 +127,10 @@ class IdentityResolutionEngine:
         # LEVEL 4: PROBABILISTIC CANDIDATE MATCHING
         # ----------------------------------------------------------------------
         probabilistic_candidates = []
-        STOP_WORDS = {"the", "a", "an", "of", "and", "in", "to", "catalog", "entry", "movie", "series", "season", "episode"}
+        STOP_WORDS = {
+            "the", "a", "an", "of", "and", "in", "to", "catalog", "entry", "movie", "series", "season", "episode",
+            "director", "directors", "cut", "special", "edition", "extended", "remastered", "unrated", "theatrical", "version"
+        }
         words_p = set(key_prop.split()) if key_prop else set()
         words_p_filtered = words_p - STOP_WORDS
         if words_p_filtered:
@@ -162,7 +165,7 @@ class IdentityResolutionEngine:
                 if words_c:
                     common_words = words_p_filtered & words_c
                     if common_words:
-                        token_ratio = len(common_words) / min(len_p, len(words_c))
+                        token_ratio = len(common_words) / max(len_p, len(words_c))
                         if token_ratio >= 0.80:
                             sim_score = 0.70 + (0.15 * token_ratio)
                             if year and c_year and year == c_year:

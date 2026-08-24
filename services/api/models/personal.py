@@ -149,3 +149,14 @@ class UserListItemModel(Base):
 
     user_list: Mapped[UserListModel] = relationship("UserListModel", back_populates="items")
 
+
+class UserStreakModel(Base):
+    __tablename__ = "user_streak"
+    __table_args__ = {"schema": "personal"}
+
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    current_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    longest_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_watch_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
+

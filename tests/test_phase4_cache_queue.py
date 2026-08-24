@@ -121,7 +121,7 @@ class TestPhase4CacheAndQueueInfrastructure(unittest.TestCase):
     # 3. Gateway & Integration Tests
     # -------------------------------------------------------------------------
     def test_kong_valkey_rate_limiting_config_verification(self):
-        with open("config/kong/kong.yml", "r") as f:
+        with open("infra/kong/kong.yml", "r", encoding="utf-8") as f:
             content = f.read()
         self.assertIn("policy: redis", content)
         self.assertIn("redis_host: valkey", content)

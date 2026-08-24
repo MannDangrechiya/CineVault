@@ -186,6 +186,7 @@ class TitleModel(Base):
     synopsis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     poster_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     backdrop_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    status_flag: Mapped[str] = mapped_column(String(32), default="ACTIVE", nullable=False)
     poster_sync_status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
     metadata_synced_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)

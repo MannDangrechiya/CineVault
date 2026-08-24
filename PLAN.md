@@ -356,61 +356,70 @@ effort estimate on the taste-similarity features from "build" to "wire up."
 
 ### Phase 1 — Social Core (ship first, smallest surface area)
 
-**2.1 Taste Match Head-to-Head** — *promoted to first, not third: the vector
-infra already exists.*
-- Backend: `GET /social/friendships/{friend_id}/compatibility` → load both
-  users' `UserTasteProfileModel.taste_vector`, compute
-  `1 - cosine_distance` as a 0–100 score, plus shared top genres/directors
-  (join `watch_event`/`user_title_state` for both users, intersect).
-- No new schema. New repository method in `social_repository`, new response
-  schema `CompatibilityResponse`.
-- Frontend: a shareable card component (used on the friend's profile and
-  the Social page), reusing this same score to finally give `tasteMatch` in
-  1.2 real data instead of a hardcoded `95`.
-- **Effort:** small · **Depends on:** nothing new.
+**2.1 Taste Match Head-to-Head** — [x] done
+- Backend: `GET /social/friendships/{friend_id}/compatibility` (and alias
+  `/social/compatibility/{friend_id}`) loads both users'
+  `UserTasteProfileModel.taste_vector`, computes pgvector cosine distance
+  scaled 0–100, plus dynamically aggregates shared top genres, directors, and
+  mutually loved titles from `personal.watch_event`, `personal.user_title_state`,
+  `canonical.title_genre`, and `canonical.credit`.
+- Implemented `CompatibilityResponse` in `schemas/social.py`,
+  `get_head_to_head_compatibility` in `repositories/social.py`, and endpoint
+  in `routers/social.py`.
+- Automated tests: `tests/test_v2_social_compatibility.py` (3/3 passed).
+- Frontend: Added `CompatibilityResponse` and `getFriendCompatibility` in
+  `apps/web/src/lib/api/personal.ts`, plus interactive `CompatibilityModal` in
+  `apps/web/src/app/social/page.tsx`.
 
-**2.2 Trust Score → "Taste Tier" display**
-- Pure UI: map `FriendshipItem.trust_score` (already returned by
-  `GET /social/friendships`) to a labeled tier (Curious/Regular/Critic/Oracle)
-  with a progress bar.
-- Note from research correction: `trust_score` is a manual/default-50 field,
-  *not* a computed taste metric — label it accordingly in the UI copy
-  ("Trust" not "Compatibility"; compatibility is 2.1).
-- **Effort:** small · **Depends on:** nothing new.
+**2.2 Trust Score → "Taste Tier" display** — [x] done
+- UI: Mapped `FriendshipItem.trust_score` to four labeled tiers:
+  - 76–100: "Oracle" (Gold badge)
+  - 51–75: "Critic" (Purple badge)
+  - 26–50: "Regular" (Blue badge)
+  - 0–25: "Curious" (Gray badge)
+- Displayed Trust badges on friend cards in the AI Taste Matches leaderboard
+  with direct "Compare Taste →" entry into the Head-to-Head modal.
 
-**2.3 Streak tracking**
-- New table (Flyway migration, `personal` schema):
-  `personal.user_streak (user_id UUID PRIMARY KEY, current_streak INT,
-  longest_streak INT, last_watch_date DATE, updated_at TIMESTAMPTZ)`.
-- Update on every `create_watch_event` call in `personal_repository` (extend
-  the existing "automatically maintain user title state" side-effect block to
-  also update the streak row) — avoid a separate nightly job if this hook is
-  cheap enough; only add a scheduled job if streak-breaking (missed a day)
-  needs off-cycle detection.
-- Endpoint: extend `GET /v1/personal/analytics` response with
-  `current_streak`/`longest_streak`, or a dedicated
-  `GET /v1/personal/streak`.
-- **Effort:** small · **Depends on:** nothing new.
 
-**2.4 Weekly friend leaderboard**
-- No new schema needed for v1 — compute on read: `GROUP BY user_id` over
-  `watch_event` for the last 7 days, scoped to the caller's accepted
-  friendships (`social_repository.list_friendships`).
-- New endpoint: `GET /social/leaderboard?period=weekly`.
-- Only add the `leaderboard_snapshots` cache table later if the live query
-  becomes too slow at scale — don't build caching pre-emptively.
-- **Effort:** small · **Depends on:** nothing new.
+**2.3 Streak tracking** — [x] done
+- Added Flyway migration `db/migrations/V3.0__create_user_streak_table.sql`
+  creating `personal.user_streak` with index on `user_id`.
+- Added `UserStreakModel` in `services/api/models/personal.py`.
+- Added `UserStreakResponse` in `services/api/schemas/personal.py`.
+- Implemented `update_user_streak` and `get_user_streak` in `services/api/repositories/personal.py`
+  with automatic hook inside `create_watch_event`.
+- Added `GET /v1/personal/streak` and `GET /v1/me/streak` in `services/api/routers/personal.py`.
+- Added `UserStreakResponse` and `getUserStreak` in `apps/web/src/lib/api/personal.ts`.
+- Automated tests: `tests/test_v2_user_streak.py` (5/5 passed).
 
-**2.5 Core badge system**
-- New tables: `social.badge_definition (id, slug, name, description,
-  icon_url, criteria_json)`, `social.user_badge (user_id UUID, badge_id UUID,
-  earned_at, context_json, PRIMARY KEY (user_id, badge_id))`.
-- Ship with 6–8 seeded badges computable from existing data only (first
-  watch, 100 watches, 7-day streak, 5 friends, genre explorer). Evaluate
-  badge criteria in a small backend job or lazily on relevant write paths
-  (after `create_watch_event`, after `add_friendship`) rather than a cron,
-  to start.
-- **Effort:** small–medium · **Depends on:** 2.3 (for the streak badge).
+
+**2.4 Weekly friend leaderboard** — [x] done
+- Added `LeaderboardEntry` and `LeaderboardResponse` in `services/api/schemas/social.py`.
+- Implemented `get_friend_leaderboard` in `services/api/repositories/social.py`,
+  aggregating viewing count and runtime hours over weekly, monthly, and all-time
+  time windows for caller's accepted friendships.
+- Added `GET /social/leaderboard` in `services/api/routers/social.py` with display
+  name enrichment.
+- Added `LeaderboardResponse` and `getSocialLeaderboard` in `apps/web/src/lib/api/personal.ts`.
+- Integrated interactive Leaderboard tab with time window toggles and rank medals
+  into `apps/web/src/app/social/page.tsx`.
+- Automated tests: `tests/test_v2_social_leaderboard.py` (3/3 passed).
+
+
+**2.5 Core badge system** — [x] done
+- Added Flyway migration `db/migrations/V3.1__create_badge_system_tables.sql`
+  creating `social.badge_definition` and `social.user_badge` tables, plus seeded
+  6 core achievements (`first-watch`, `century-club`, `seven-day-streak`,
+  `inner-circle`, `first-review`, `curator-elite`).
+- Added `BadgeDefinitionModel` and `UserBadgeModel` in `services/api/models/social.py`.
+- Added `BadgeResponse` and `UserBadgesResponse` in `services/api/schemas/social.py`.
+- Implemented `list_user_badges` and `evaluate_user_badges` in `services/api/repositories/social.py`,
+  evaluating viewing metrics, streaks, social networks, reviews, and custom collections.
+- Added `GET /social/badges`, `GET /social/badges/{user_id}`, and `POST /social/badges/evaluate` in `services/api/routers/social.py`.
+- Added `getUserBadges` and `evaluateUserBadges` in `apps/web/src/lib/api/personal.ts`.
+- Added **Cinephile Achievements & Badges Showcase** to `apps/web/src/app/dashboard/page.tsx`.
+- Automated tests: `tests/test_v2_social_badges.py` (4/4 passed).
+
 
 ### Phase 2 — Viral loop
 

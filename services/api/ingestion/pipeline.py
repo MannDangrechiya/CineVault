@@ -1,6 +1,7 @@
 # CineVault OS — Ingestion Pipeline Orchestrator & Matching Engine
 # Executes provider acquisition, raw capture, multi-layer validation, normalization, duplicate matching, conflict detection, candidate staging, and controlled apply (ADR-001, ADR-004, Day 5 Quality Architecture)
 
+import os
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -102,7 +103,7 @@ class IngestionPipelineEngine:
             "catalog_snapshot": [],
             "pending_genres": []
         }
-        CATALOG_SNAPSHOT_LIMIT = 20000
+        CATALOG_SNAPSHOT_LIMIT = int(os.getenv("CATALOG_SNAPSHOT_LIMIT", "200000"))
 
         if db is not None:
             run_orm = IngestionRunModel(
@@ -199,14 +200,19 @@ class IngestionPipelineEngine:
                         select(TitleModel.display_id)
                         .where(TitleModel.display_id.like(f"{pfx}%"))
                         .order_by(TitleModel.display_id.desc())
-                        .limit(1)
+                        .limit(50)
                     )
                     res = await db.execute(stmt)
-                    top_id = res.scalar_one_or_none()
-                    if top_id and "-" in top_id:
-                        run_context["seq_counters"][pfx] = int(top_id.split("-")[1])
-                    else:
-                        run_context["seq_counters"][pfx] = 0
+                    ids = res.scalars().all()
+                    max_num = 0
+                    for d_id in ids:
+                        parts = d_id.split("-")
+                        if len(parts) >= 2 and parts[-1].isdigit():
+                            max_num = max(max_num, int(parts[-1]))
+                    if max_num == 0:
+                        count_stmt = select(func.count()).select_from(TitleModel).where(TitleModel.display_id.like(f"{pfx}%"))
+                        max_num = (await db.execute(count_stmt)).scalar_one()
+                    run_context["seq_counters"][pfx] = max_num
                 except Exception:
                     run_context["seq_counters"][pfx] = 0
 
@@ -768,12 +774,16 @@ class IngestionPipelineEngine:
                         select(TitleModel.display_id)
                         .where(TitleModel.display_id.like(f"{prefix}%"))
                         .order_by(TitleModel.display_id.desc())
-                        .limit(1)
+                        .limit(50)
                     )
                     res = await db.execute(stmt)
-                    top_db_id = res.scalar_one_or_none()
-                    curr = int(top_db_id.split("-")[1]) + 1 if top_db_id and "-" in top_db_id else 1
-                    display_id = f"{prefix}{curr:06d}"
+                    ids = res.scalars().all()
+                    max_num = 0
+                    for d_id in ids:
+                        parts = d_id.split("-")
+                        if len(parts) >= 2 and parts[-1].isdigit():
+                            max_num = max(max_num, int(parts[-1]))
+                    display_id = f"{prefix}{max_num + 1:06d}"
 
                 new_title_id = uuid.uuid4()
 

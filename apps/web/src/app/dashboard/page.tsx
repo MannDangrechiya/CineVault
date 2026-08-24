@@ -18,8 +18,9 @@ import {
   Award,
   UserCheck,
   BarChart3,
+  Trophy,
 } from "lucide-react";
-import { getPersonalAnalytics, getTopRecommendations } from "@/lib/api/personal";
+import { getPersonalAnalytics, getTopRecommendations, getUserBadges } from "@/lib/api/personal";
 import { EmptyState, ErrorState } from "@/components/ui/States";
 
 function MetricSkeleton() {
@@ -57,6 +58,14 @@ export default function DashboardPage() {
     queryKey: ["topRecommendations"],
     queryFn: () => getTopRecommendations(4),
   });
+
+  const { data: badgesData } = useQuery({
+    queryKey: ["userBadges"],
+    queryFn: () => getUserBadges(),
+  });
+
+  const badges = badgesData?.badges || [];
+  const totalBadgesEarned = badgesData?.total_earned || 0;
 
   const recommendations = recsData?.data || [];
 
@@ -479,6 +488,67 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* CineVault Achievements & Badges (Part 2 Item 2.5) */}
+        {badges.length > 0 && (
+          <div className="p-6 rounded-2xl bg-zinc-900/30 border border-zinc-900 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-900">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <h3 className="text-sm font-bold text-zinc-100">
+                  Cinephile Achievements & Badges
+                </h3>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300">
+                {totalBadgesEarned} of {badges.length} Unlocked
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              {badges.map((b) => (
+                <div
+                  key={b.badge_id}
+                  className={`p-4 rounded-2xl border transition-all flex items-start gap-3.5 ${
+                    b.is_earned
+                      ? "bg-gradient-to-br from-amber-950/20 via-zinc-900/40 to-zinc-900/30 border-amber-500/30 shadow-md shadow-amber-950/10"
+                      : "bg-zinc-950/40 border-zinc-800/50 opacity-50 grayscale"
+                  }`}
+                >
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center text-base shrink-0 shadow-md ${
+                      b.is_earned
+                        ? "bg-gradient-to-tr from-amber-600 to-yellow-400 text-black font-extrabold"
+                        : "bg-zinc-800 text-zinc-500"
+                    }`}
+                  >
+                    {b.is_earned ? "🏆" : "🔒"}
+                  </div>
+
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <h4 className="text-xs font-bold text-zinc-100 truncate">
+                        {b.name}
+                      </h4>
+                      {b.is_earned && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-500/20 text-amber-300">
+                          EARNED
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 line-clamp-2 leading-relaxed">
+                      {b.description}
+                    </p>
+                    {b.is_earned && b.earned_at && (
+                      <p className="text-[10px] text-zinc-500">
+                        Unlocked {new Date(b.earned_at).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </PageContainer>
   );

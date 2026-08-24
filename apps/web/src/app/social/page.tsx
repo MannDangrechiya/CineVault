@@ -12,25 +12,176 @@ import {
   X,
   Calendar,
   BookmarkPlus,
-  Share2,
   SlidersHorizontal,
   Users,
+  ShieldCheck,
+  Clapperboard,
+  Film,
+  Award,
+  Trophy,
+  Clock,
 } from "lucide-react";
 import {
   getRecommendations,
   updateRecommendationStatus,
   toggleWatchlistState,
+  getFriendCompatibility,
+  getSocialLeaderboard,
   type RecommendationItem,
+  type CompatibilityResponse,
+  type LeaderboardResponse,
 } from "@/lib/api/personal";
-import { getFriendships, getTasteMatches } from "@/lib/api/ai";
+import { getFriendships, getTasteMatches, type FriendshipItem } from "@/lib/api/ai";
 import { LoadingState } from "@/components/ui/States";
 
 const FALLBACK_POSTER =
   "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80";
 
+function getTrustTier(trustScore: number) {
+  if (trustScore >= 76) return { label: "Oracle", badgeClass: "text-amber-400 bg-amber-500/10 border-amber-500/30", barClass: "bg-amber-400" };
+  if (trustScore >= 51) return { label: "Critic", badgeClass: "text-purple-400 bg-purple-500/10 border-purple-500/30", barClass: "bg-purple-400" };
+  if (trustScore >= 26) return { label: "Regular", badgeClass: "text-blue-400 bg-blue-500/10 border-blue-500/30", barClass: "bg-blue-400" };
+  return { label: "Curious", badgeClass: "text-zinc-400 bg-zinc-500/10 border-zinc-500/30", barClass: "bg-zinc-500" };
+}
+
+function CompatibilityModal({
+  friend,
+  onClose,
+}: {
+  friend: FriendshipItem;
+  onClose: () => void;
+}) {
+  const { data: compat, isLoading } = useQuery<CompatibilityResponse>({
+    queryKey: ["compatibility", friend.friend_id],
+    queryFn: () => getFriendCompatibility(friend.friend_id),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-lg rounded-2xl bg-zinc-950 border border-zinc-800 p-6 shadow-2xl space-y-6">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-100 p-1.5 rounded-lg hover:bg-zinc-900 transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        {/* Modal Header */}
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white shadow-lg text-base font-bold">
+            {(friend.friend_name || "?").charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-zinc-100">
+              {friend.friend_name || "Community Member"}
+            </h3>
+            <p className="text-xs text-zinc-400">
+              {friend.friend_username ? `@${friend.friend_username}` : "Taste Match Profile"}
+            </p>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="py-8">
+            <LoadingState message="Analyzing neural taste overlap..." />
+          </div>
+        ) : compat ? (
+          <div className="space-y-5">
+            {/* Compatibility Hero Score */}
+            <div className="p-4 rounded-xl bg-gradient-to-br from-violet-950/40 via-zinc-900/60 to-zinc-900/40 border border-violet-800/30 flex items-center justify-between">
+              <div className="space-y-1">
+                <span className="text-xs uppercase tracking-wider font-semibold text-zinc-400">
+                  Head-to-Head Compatibility
+                </span>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-extrabold text-white">
+                    {compat.compatibility_score.toFixed(1)}%
+                  </span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-medium border text-violet-300 bg-violet-500/10 border-violet-500/20">
+                    {compat.taste_tier} Tier
+                  </span>
+                </div>
+              </div>
+              <Sparkles className="w-10 h-10 text-violet-400/60" />
+            </div>
+
+            {/* Shared Top Genres */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+                <Clapperboard className="w-3.5 h-3.5 text-violet-400" />
+                Shared Top Genres
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {compat.shared_genres.length > 0 ? (
+                  compat.shared_genres.map((genre) => (
+                    <span
+                      key={genre}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 font-medium"
+                    >
+                      {genre}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-xs text-zinc-500 italic">No common genres watched yet</span>
+                )}
+              </div>
+            </div>
+
+            {/* Shared Directors */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+                <Film className="w-3.5 h-3.5 text-indigo-400" />
+                Shared Directors
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {compat.shared_directors.length > 0 ? (
+                  compat.shared_directors.map((dir) => (
+                    <span
+                      key={dir}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 font-medium"
+                    >
+                      {dir}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-xs text-zinc-500 italic">No common directors in watch history</span>
+                )}
+              </div>
+            </div>
+
+            {/* Mutually Loved Titles */}
+            {compat.shared_favorite_titles.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+                  <Award className="w-3.5 h-3.5 text-amber-400" />
+                  Mutually Loved Titles
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {compat.shared_favorite_titles.map((title) => (
+                    <span
+                      key={title}
+                      className="text-xs px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 font-medium"
+                    >
+                      {title}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-zinc-500 text-center py-4">Unable to compute compatibility profile.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SocialRecommendationsPage() {
-  const [activeTab, setActiveTab] = useState<"inbox" | "ai" | "sent">("inbox");
+  const [activeTab, setActiveTab] = useState<"inbox" | "ai" | "sent" | "leaderboard">("inbox");
   const [filterScore, setFilterScore] = useState<number>(0);
+  const [leaderboardPeriod, setLeaderboardPeriod] = useState<"weekly" | "monthly" | "all_time">("weekly");
+  const [selectedFriendForCompat, setSelectedFriendForCompat] = useState<FriendshipItem | null>(null);
   const queryClient = useQueryClient();
 
   const { data: received = [], isLoading: isLoadingReceived } = useQuery({
@@ -48,9 +199,11 @@ export default function SocialRecommendationsPage() {
     queryFn: getFriendships,
   });
 
-  // Real cosine-similarity taste compatibility (services/api/repositories/social.py's
-  // get_taste_compatibility) -- replaces the old hardcoded 95%/98.4% badges.
-  // Symmetric, so "my score with friend X" also answers "sender X's score with me".
+  const { data: leaderboard, isLoading: isLoadingLeaderboard } = useQuery<LeaderboardResponse>({
+    queryKey: ["social-leaderboard", leaderboardPeriod],
+    queryFn: () => getSocialLeaderboard(leaderboardPeriod),
+  });
+
   const { data: tasteMatches = [] } = useQuery({
     queryKey: ["taste-matches"],
     queryFn: () => getTasteMatches(50),
@@ -65,11 +218,6 @@ export default function SocialRecommendationsPage() {
     mutationFn: ({ id, status }: { id: string; status: "ACCEPTED" | "REJECTED"; titleId: string }) =>
       updateRecommendationStatus(id, status),
     onSuccess: async (_result, variables) => {
-      // Backend doesn't add accepted recommendations to the watchlist as a
-      // side effect -- do it explicitly so "Accept & Watchlist" is true.
-      // Isolated in try/catch: the recommendation status update already
-      // succeeded server-side by this point, so a transient watchlist-toggle
-      // failure must not prevent the UI from refreshing to reflect that.
       if (variables.status === "ACCEPTED") {
         try {
           await toggleWatchlistState(variables.titleId, true);
@@ -118,116 +266,287 @@ export default function SocialRecommendationsPage() {
       subtitle="Curated peer recommendations, social circle exchange, and neural taste vector scores."
       action={
         <Link
-          href="/movies"
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 rounded-full shadow-lg shadow-violet-600/30 transition-all"
+          href="/friends"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-zinc-200 hover:text-white bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 transition-all shadow-sm"
         >
-          <Share2 className="w-3.5 h-3.5" />
-          <span>New Recommendation</span>
+          <Users className="w-3.5 h-3.5 text-violet-400" />
+          <span>Manage Friends ({acceptedFriends.length})</span>
         </Link>
       }
     >
+      {selectedFriendForCompat && (
+        <CompatibilityModal
+          friend={selectedFriendForCompat}
+          onClose={() => setSelectedFriendForCompat(null)}
+        />
+      )}
+
       <div className="space-y-6">
-        {/* Navigation Tabs & Filter Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-900">
-          <div className="flex items-center gap-2">
+        {/* Navigation Tabs */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
+          <div className="flex items-center gap-2 p-1 bg-zinc-900/80 border border-zinc-800 rounded-2xl w-full sm:w-auto">
             <button
               onClick={() => setActiveTab("inbox")}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "inbox"
-                  ? "bg-violet-600/15 text-violet-300 font-semibold border border-violet-500/30 shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
+                  ? "bg-violet-600 text-white shadow-md shadow-violet-600/30"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
               }`}
             >
               <Inbox className="w-3.5 h-3.5" />
-              <span>Incoming Inbox</span>
+              <span>Inbox</span>
               {pendingCount > 0 && (
-                <span className="px-1.5 py-0.2 text-[10px] font-bold bg-violet-600 text-white rounded-full">
+                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-violet-400/20 text-violet-200 border border-violet-300/30">
                   {pendingCount}
                 </span>
               )}
             </button>
 
             <button
-              onClick={() => setActiveTab("ai")}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer ${
-                activeTab === "ai"
-                  ? "bg-emerald-500/15 text-emerald-300 font-semibold border border-emerald-500/30 shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-              <span>AI Taste Matches</span>
-            </button>
-
-            <button
               onClick={() => setActiveTab("sent")}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "sent"
-                  ? "bg-violet-600/15 text-violet-300 font-semibold border border-violet-500/30 shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
+                  ? "bg-violet-600 text-white shadow-md shadow-violet-600/30"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
               }`}
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Sent by You</span>
+              <span>Sent</span>
+              {sent.length > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-zinc-700/50 text-zinc-300">
+                  {sent.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("ai")}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "ai"
+                  ? "bg-violet-600 text-white shadow-md shadow-violet-600/30"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-violet-300" />
+              <span>AI Taste Matches</span>
+              {friendMatches.length > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-violet-400/20 text-violet-200 border border-violet-300/30">
+                  {friendMatches.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("leaderboard")}
+              className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "leaderboard"
+                  ? "bg-violet-600 text-white shadow-md shadow-violet-600/30"
+                  : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50"
+              }`}
+            >
+              <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              <span>Leaderboard</span>
+              {leaderboard && leaderboard.entries.length > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-amber-400/20 text-amber-200 border border-amber-300/30">
+                  {leaderboard.entries.length}
+                </span>
+              )}
             </button>
           </div>
 
-          {activeTab !== "ai" && (
-            <div className="flex items-center gap-2 text-xs text-zinc-400">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-500" />
-              <span>Min Match:</span>
-              <select
+          {/* Optional Filter by Score Slider (Inbox & Sent only) */}
+          {(activeTab === "inbox" || activeTab === "sent") && (
+            <div className="flex items-center gap-3 w-full sm:w-auto bg-zinc-900/40 px-3 py-1.5 rounded-xl border border-zinc-800/60">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-400" />
+              <span className="text-xs text-zinc-400 whitespace-nowrap">
+                Min Match: <strong className="text-zinc-200">{filterScore}%</strong>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="95"
+                step="5"
                 value={filterScore}
                 onChange={(e) => setFilterScore(Number(e.target.value))}
-                className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-violet-500"
-              >
-                <option value={0}>All Scores</option>
-                <option value={90}>90%+ Match</option>
-                <option value={95}>95%+ Match</option>
-              </select>
+                className="w-24 accent-violet-500 cursor-pointer h-1.5 bg-zinc-800 rounded-lg"
+              />
             </div>
           )}
         </div>
 
-        {activeTab === "ai" ? (
-          /* AI TASTE MATCH LEADERBOARD -- real cosine similarity across accepted friends */
+        {/* Tab Content */}
+        {activeTab === "leaderboard" ? (
+          <div className="space-y-4">
+            {/* Period Switcher */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 rounded-2xl bg-zinc-900/50 border border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-zinc-200">Viewing Activity Ranking</span>
+              </div>
+              <div className="flex items-center gap-1 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+                {(["weekly", "monthly", "all_time"] as const).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setLeaderboardPeriod(p)}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      leaderboardPeriod === p
+                        ? "bg-violet-600 text-white shadow-sm"
+                        : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
+                    }`}
+                  >
+                    {p === "weekly" ? "This Week" : p === "monthly" ? "This Month" : "All Time"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {isLoadingLeaderboard ? (
+              <div className="py-12">
+                <LoadingState message="Ranking circle viewing activity..." />
+              </div>
+            ) : !leaderboard || leaderboard.entries.length === 0 ? (
+              <div className="p-12 text-center rounded-2xl bg-zinc-900/40 border border-zinc-900 text-zinc-400 space-y-3">
+                <Trophy className="w-8 h-8 text-zinc-600 mx-auto" />
+                <h3 className="text-sm font-semibold text-zinc-200">No Activity Recorded</h3>
+                <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                  Watch movies and log watch events to climb the circle leaderboard!
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {leaderboard.entries.map((entry) => {
+                  const isTop1 = entry.rank === 1;
+                  const isTop2 = entry.rank === 2;
+                  const isTop3 = entry.rank === 3;
+                  const rankBadge = isTop1
+                    ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                    : isTop2
+                    ? "bg-slate-300/20 text-slate-200 border-slate-300/40"
+                    : isTop3
+                    ? "bg-amber-700/20 text-amber-600 border-amber-700/40"
+                    : "bg-zinc-800 text-zinc-400 border-zinc-700";
+
+                  return (
+                    <div
+                      key={entry.user_id}
+                      className={`p-4 rounded-2xl border transition-all flex items-center justify-between gap-4 ${
+                        entry.is_current_user
+                          ? "bg-violet-950/20 border-violet-500/40 shadow-lg shadow-violet-950/30"
+                          : "bg-zinc-900/40 border-zinc-800/80 hover:border-zinc-700"
+                      }`}
+                    >
+                      {/* Rank & User Info */}
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div
+                          className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-extrabold border shrink-0 ${rankBadge}`}
+                        >
+                          #{entry.rank}
+                        </div>
+
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white shadow-md text-xs font-bold shrink-0">
+                          {(entry.name || "?").charAt(0).toUpperCase()}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-zinc-100 truncate">
+                              {entry.name || "Community Member"}
+                            </span>
+                            {entry.is_current_user && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                                You
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-zinc-500">
+                            {entry.username ? `@${entry.username}` : "Member"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Viewing Metrics */}
+                      <div className="flex items-center gap-4 shrink-0 text-right">
+                        <div>
+                          <div className="text-sm font-extrabold text-zinc-100 flex items-center justify-end gap-1">
+                            <Film className="w-3.5 h-3.5 text-violet-400" />
+                            <span>{entry.watch_count}</span>
+                          </div>
+                          <span className="text-[10px] text-zinc-500">
+                            {entry.watch_count === 1 ? "title" : "titles"}
+                          </span>
+                        </div>
+
+                        <div className="border-l border-zinc-800 pl-4">
+                          <div className="text-sm font-extrabold text-zinc-100 flex items-center justify-end gap-1">
+                            <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>{entry.watch_hours.toFixed(1)}h</span>
+                          </div>
+                          <span className="text-[10px] text-zinc-500">viewing</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : activeTab === "ai" ? (
           friendMatches.length === 0 ? (
             <div className="p-12 text-center rounded-2xl bg-zinc-900/40 border border-zinc-900 text-zinc-400 space-y-3">
-              <Sparkles className="w-8 h-8 text-zinc-600 mx-auto" />
-              <h3 className="text-sm font-semibold text-zinc-200">No Taste Matches Yet</h3>
+              <Users className="w-8 h-8 text-zinc-600 mx-auto" />
+              <h3 className="text-sm font-semibold text-zinc-200">No Friends Connected Yet</h3>
               <p className="text-xs text-zinc-500 max-w-sm mx-auto">
-                Add accepted friends and build up your watch history to see real taste
-                compatibility scores here.
+                Add friends to CineVault to see your vector-based taste compatibility scores here.
               </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {friendMatches.map(({ friend, score }) => (
-                <div
-                  key={friend.friend_id}
-                  className="p-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md flex items-center gap-3"
-                >
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white shadow-md text-xs font-bold shrink-0">
-                    {(friend.friend_name || "?").charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-zinc-100 truncate">
-                      {friend.friend_name || "Unknown Member"}
-                    </p>
-                    <p className="text-[10px] text-zinc-500">
-                      {friend.friend_username ? `@${friend.friend_username}` : "No taste vector yet"}
-                    </p>
-                  </div>
-                  {score !== undefined ? (
-                    <div className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0">
-                      <Sparkles className="w-3 h-3" />
-                      {score.toFixed(1)}%
+              {friendMatches.map(({ friend, score }) => {
+                const tier = getTrustTier(friend.trust_score ?? 50);
+                return (
+                  <div
+                    key={friend.friend_id}
+                    onClick={() => setSelectedFriendForCompat(friend)}
+                    className="group p-4 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 backdrop-blur-md hover:border-violet-600/50 hover:bg-zinc-900/70 transition-all duration-300 flex flex-col justify-between gap-3 cursor-pointer shadow-sm hover:shadow-lg hover:shadow-violet-950/20"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white shadow-md text-xs font-bold shrink-0">
+                        {(friend.friend_name || "?").charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-zinc-100 truncate group-hover:text-violet-300 transition-colors">
+                          {friend.friend_name || "Unknown Member"}
+                        </p>
+                        <p className="text-[10px] text-zinc-500">
+                          {friend.friend_username ? `@${friend.friend_username}` : "Member"}
+                        </p>
+                      </div>
+                      {score !== undefined ? (
+                        <div className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0">
+                          <Sparkles className="w-3 h-3" />
+                          {score.toFixed(1)}%
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-zinc-600 shrink-0">No vector</span>
+                      )}
                     </div>
-                  ) : (
-                    <span className="text-[10px] text-zinc-600 shrink-0">No score yet</span>
-                  )}
-                </div>
-              ))}
+
+                    {/* Trust Tier & Progress Display */}
+                    <div className="pt-2 border-t border-zinc-800/60 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
+                        <span className="text-[10px] text-zinc-400">Trust:</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${tier.badgeClass}`}>
+                          {tier.label}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-violet-400 font-medium group-hover:underline">
+                        Compare Taste →
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )
         ) : filteredItems.length === 0 ? (

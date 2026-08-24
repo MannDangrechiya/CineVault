@@ -45,6 +45,19 @@ export interface RecommendationItem {
   updated_at: string;
 }
 
+export interface CompatibilityResponse {
+  user_id: string;
+  friend_id: string;
+  friend_name: string | null;
+  friend_username: string | null;
+  compatibility_score: number;
+  taste_tier: "Oracle" | "Critic" | "Regular" | "Curious" | string;
+  shared_genres: string[];
+  shared_directors: string[];
+  shared_favorite_titles: string[];
+  calculated_at: string;
+}
+
 // ── Watchlist ─────────────────────────────────────────────────────────────
 // Maps onto the backend's title-state system: "add" sets manual_status_override
 // to PLAN_TO_WATCH, "remove" sends it as explicit null, which the backend now
@@ -115,6 +128,12 @@ export async function updateRecommendationStatus(
   });
 }
 
+export async function getFriendCompatibility(friendId: string): Promise<CompatibilityResponse> {
+  return await apiFetch<CompatibilityResponse>(
+    `/social/friendships/${encodeURIComponent(friendId)}/compatibility`
+  );
+}
+
 
 // ── Watch History ─────────────────────────────────────────────────────────
 
@@ -143,7 +162,72 @@ export async function getPersonalAnalytics(): Promise<import("./types").Personal
   return await apiFetch<import("./types").PersonalAnalyticsData>("/v1/personal/analytics");
 }
 
+export interface UserStreakResponse {
+  user_id: string;
+  current_streak: number;
+  longest_streak: number;
+  last_watch_date: string | null;
+  updated_at: string;
+}
+
+export async function getUserStreak(): Promise<UserStreakResponse> {
+  return await apiFetch<UserStreakResponse>("/v1/personal/streak");
+}
+
+export interface LeaderboardEntry {
+  user_id: string;
+  name: string | null;
+  username: string | null;
+  watch_count: number;
+  watch_hours: number;
+  rank: number;
+  is_current_user: boolean;
+}
+
+export interface LeaderboardResponse {
+  period: "weekly" | "monthly" | "all_time";
+  entries: LeaderboardEntry[];
+  calculated_at: string;
+}
+
+export async function getSocialLeaderboard(
+  period: "weekly" | "monthly" | "all_time" = "weekly"
+): Promise<LeaderboardResponse> {
+  return await apiFetch<LeaderboardResponse>(`/social/leaderboard?period=${period}`);
+}
+
 export async function getTopRecommendations(limit: number = 5): Promise<import("./types").RecommendationListResponse> {
   return await apiFetch<import("./types").RecommendationListResponse>(`/v1/recommendations?limit=${limit}`);
 }
+
+export interface BadgeResponse {
+  badge_id: string;
+  slug: string;
+  name: string;
+  description: string;
+  icon_url: string | null;
+  is_earned: boolean;
+  earned_at: string | null;
+  context_json: Record<string, unknown> | null;
+}
+
+export interface UserBadgesResponse {
+  user_id: string;
+  badges: BadgeResponse[];
+  total_earned: number;
+}
+
+export async function getUserBadges(userId?: string): Promise<UserBadgesResponse> {
+  const endpoint = userId ? `/social/badges/${encodeURIComponent(userId)}` : "/social/badges";
+  return await apiFetch<UserBadgesResponse>(endpoint);
+}
+
+export async function evaluateUserBadges(): Promise<UserBadgesResponse> {
+  return await apiFetch<UserBadgesResponse>("/social/badges/evaluate", {
+    method: "POST",
+  });
+}
+
+
+
 

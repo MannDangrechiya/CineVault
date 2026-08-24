@@ -51,24 +51,23 @@ def load_local_user_store() -> Dict[str, dict]:
             ),
             "roles": ["authenticated_user", "curator"],
         },
-        os.getenv("DEV_ADMIN_EMAIL", "admin@cinevault.local"): {
-            "hash": os.getenv(
-                "DEV_ADMIN_PASSWORD_HASH",
-                # Hash for password "adminpass"
-                "$2b$12$1sKUHElH5Mf0mTw74DbiXeKQUJsMxmVNAqDwXb2LCwkMfGtyFJ71W",
-            ),
+    }
+
+    # Admin account is strictly opt-in via DEV_ADMIN_PASSWORD_HASH
+    admin_hash = os.getenv("DEV_ADMIN_PASSWORD_HASH")
+    if admin_hash:
+        admin_email = os.getenv("DEV_ADMIN_EMAIL", "admin@cinevault.local")
+        store[admin_email] = {
+            "hash": admin_hash,
             "user_id": os.getenv(
                 "DEV_ADMIN_UUID",
                 "018f0000-0000-7000-8000-000000000003",
             ),
             "roles": ["authenticated_user", "curator", "system_admin"],
-        },
-    }
-
-    # Also support dev_admin alias if configured
-    dev_admin_email = os.getenv("DEV_ADMIN_ALT_EMAIL", "dev_admin@cinevault.local")
-    if dev_admin_email not in store:
-        store[dev_admin_email] = store[os.getenv("DEV_ADMIN_EMAIL", "admin@cinevault.local")]
+        }
+        alt_admin_email = os.getenv("DEV_ADMIN_ALT_EMAIL")
+        if alt_admin_email and alt_admin_email not in store:
+            store[alt_admin_email] = store[admin_email]
 
     return store
 

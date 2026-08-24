@@ -185,7 +185,7 @@ async def _load_catalog_from_db(
             .options(selectinload(TitleModel.editions))
             .where(TitleModel.status_flag != "DELETED")
             .limit(limit)
-            .order_by(TitleModel.created_at.desc())
+            .order_by(TitleModel.created_at.desc(), TitleModel.title_id.desc())
         )
 
         title_result = await db.execute(title_query)
@@ -667,7 +667,7 @@ class RecommendationRepository:
             ranked_items.append(rec_item)
 
         # 11. Diversity & MMR-inspired Re-ranking
-        candidates = sorted(ranked_items, key=lambda x: x.recommendation_score, reverse=True)
+        candidates = sorted(ranked_items, key=lambda x: (x.recommendation_score, str(x.title_id)), reverse=True)
         final_ranked: List[RecommendationItemResponse] = []
         genre_frequency: Dict[str, int] = {}
 
@@ -684,7 +684,7 @@ class RecommendationRepository:
             for g in cand.genres:
                 genre_frequency[g] = genre_frequency.get(g, 0) + 1
 
-        final_ranked.sort(key=lambda x: x.recommendation_score, reverse=True)
+        final_ranked.sort(key=lambda x: (x.recommendation_score, str(x.title_id)), reverse=True)
 
         return RecommendationListResponse(
             mode=mode,
