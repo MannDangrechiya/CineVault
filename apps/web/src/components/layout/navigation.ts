@@ -10,6 +10,7 @@ import {
   Sparkles,
   Bot,
   UploadCloud,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ export const navigationItems: NavigationItem[] = [
   { name: "Movies", href: "/movies", icon: Film },
   { name: "Series", href: "/series", icon: Tv },
   { name: "Social & Match", href: "/social", icon: Sparkles, badge: "AI" },
+  { name: "Watch Clubs", href: "/clubs", icon: Users, badge: "Club" },
   { name: "Library", href: "/library", icon: Library },
   { name: "Watchlist", href: "/watchlist", icon: Bookmark },
   { name: "History", href: "/history", icon: History },
