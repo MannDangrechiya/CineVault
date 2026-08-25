@@ -80,6 +80,7 @@ class IngestionPipelineEngine:
         run_orm = None
         run_context: Dict[str, Any] = {
             "seq_counters": {},
+            "used_display_ids": set(),
             "cached_content_types": set(),
             "genre_lookup": {},
             "external_id_map": {},
@@ -163,6 +164,8 @@ class IngestionPipelineEngine:
                         o_title = t[3]
                         norm_c = normalize_for_matching(c_title)
                         norm_o = normalize_for_matching(o_title)
+                        if t[1]:
+                            run_context["used_display_ids"].add(t[1])
                         item_dict = {
                             "id": str(t[0]),
                             "title_id": str(t[0]),
@@ -199,8 +202,8 @@ class IngestionPipelineEngine:
                     stmt = (
                         select(TitleModel.display_id)
                         .where(TitleModel.display_id.like(f"{pfx}%"))
-                        .order_by(TitleModel.display_id.desc())
-                        .limit(50)
+                        .order_by(func.length(TitleModel.display_id).desc(), TitleModel.display_id.desc())
+                        .limit(500)
                     )
                     res = await db.execute(stmt)
                     ids = res.scalars().all()
@@ -766,15 +769,22 @@ class IngestionPipelineEngine:
 
                 # Generate next display ID using sequence counter
                 if run_context and "seq_counters" in run_context:
-                    curr = run_context["seq_counters"].get(prefix, 0) + 1
-                    run_context["seq_counters"][prefix] = curr
-                    display_id = f"{prefix}{curr:06d}"
+                    while True:
+                        curr = run_context["seq_counters"].get(prefix, 0) + 1
+                        run_context["seq_counters"][prefix] = curr
+                        display_id = f"{prefix}{curr:06d}"
+                        if "used_display_ids" in run_context:
+                            if display_id not in run_context["used_display_ids"]:
+                                run_context["used_display_ids"].add(display_id)
+                                break
+                        else:
+                            break
                 else:
                     stmt = (
                         select(TitleModel.display_id)
                         .where(TitleModel.display_id.like(f"{prefix}%"))
-                        .order_by(TitleModel.display_id.desc())
-                        .limit(50)
+                        .order_by(func.length(TitleModel.display_id).desc(), TitleModel.display_id.desc())
+                        .limit(500)
                     )
                     res = await db.execute(stmt)
                     ids = res.scalars().all()
