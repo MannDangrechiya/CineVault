@@ -156,6 +156,34 @@ export async function deleteHistoryItem(id: string): Promise<void> {
   });
 }
 
+// ── Personal Media Library ────────────────────────────────────────────────
+
+export async function getLibrary(
+  params: import("./types").LibraryParams = {}
+): Promise<import("./types").LibraryPageResponse> {
+  const searchParams = new URLSearchParams();
+  if (params.limit !== undefined) searchParams.append("limit", params.limit.toString());
+  if (params.offset !== undefined) searchParams.append("offset", params.offset.toString());
+  if (params.type && params.type !== "ALL") searchParams.append("type", params.type);
+
+  const qs = searchParams.toString();
+  const endpoint = `/v1/personal/library${qs ? `?${qs}` : ""}`;
+  return await apiFetch<import("./types").LibraryPageResponse>(endpoint);
+}
+
+export async function addToLibrary(titleId: string): Promise<import("./types").LibraryItem> {
+  return await apiFetch<import("./types").LibraryItem>("/v1/personal/library", {
+    method: "POST",
+    body: JSON.stringify({ title_id: titleId }),
+  });
+}
+
+export async function removeFromLibrary(titleId: string): Promise<void> {
+  await apiFetch(`/v1/personal/library/${encodeURIComponent(titleId)}`, {
+    method: "DELETE",
+  });
+}
+
 // ── Personal Analytics & Dashboard ────────────────────────────────────────
 
 export async function getPersonalAnalytics(): Promise<import("./types").PersonalAnalyticsData> {

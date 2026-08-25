@@ -442,8 +442,8 @@ async def get_smart_watchlist(
                     "runtime_minutes": runtime,
                     "production_year": t.production_year,
                     "genres": genres,
-                    "poster_url": f"https://cdn.cinevault.org/artwork/posters/{t.display_id.lower()}.jpg",
-                    "backdrop_url": f"https://cdn.cinevault.org/artwork/backdrops/{t.display_id.lower()}.jpg",
+                    "poster_url": t.poster_url,
+                    "backdrop_url": t.backdrop_url,
                 }
         except Exception as exc:
             logger.warning(f"Error querying titles from DB: {exc}")

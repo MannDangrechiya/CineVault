@@ -11,7 +11,7 @@ from ..config import config
 import uuid
 import logging
 from datetime import datetime, date, timezone, timedelta
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy import select, and_, update, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +22,7 @@ from ..models.personal import (
     UserListModel, UserListItemModel, UserStreakModel
 )
 from ..models.canonical import (
-    TitleModel, EditionModel, TitleCountryModel, TitleLanguageModel
+    TitleModel, EditionModel, TitleCountryModel, TitleLanguageModel, CreditModel
 )
 from ..schemas.personal import (
     WatchEventCreate, WatchEventResponse,
@@ -44,6 +44,15 @@ from ..schemas.personal import (
     WatchlistItemResponse,
     WatchlistPageResponse,
     UserStreakResponse,
+    GenreAffinityItem,
+    CreatorAffinityItem,
+    MonthlyTrendItem,
+    HistoryItemResponse,
+    HistoryPageResponse,
+    CollectionItemResponse,
+    CollectionCreateRequest,
+    LibraryItemResponse,
+    LibraryPageResponse,
 )
 
 # Both values are treated as "on the watchlist" — some pre-existing rows use
@@ -607,6 +616,402 @@ class PersonalRepository:
 
         return WatchlistPageResponse(items=[], total=0, limit=limit, offset=offset)
 
+    async def list_history(
+        self,
+        db: Optional[AsyncSession],
+        user_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        content_type: Optional[str] = None,
+    ) -> HistoryPageResponse:
+        """Lists paginated real watch history for the user (personal.watch_event),
+        joined with canonical title metadata and the user's own rating for that
+        title when one exists. Mirrors list_watchlist's join/pagination/fallback shape."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                where_clause = and_(
+                    WatchEventModel.user_id == user_uuid,
+                    WatchEventModel.is_tombstoned == False,  # noqa: E712
+                )
+                base_query = select(WatchEventModel).where(where_clause)
+                count_query = select(func.count()).select_from(WatchEventModel).where(where_clause)
+
+                # Optional content-type filter (e.g. "MOVIE"/"TV_SERIES") requires a join
+                # against canonical.title, matched case-insensitively like list_titles().
+                if content_type and content_type != "ALL":
+                    base_query = base_query.join(
+                        TitleModel, TitleModel.title_id == WatchEventModel.title_id
+                    ).where(TitleModel.content_type_id.ilike(content_type))
+                    count_query = count_query.join(
+                        TitleModel, TitleModel.title_id == WatchEventModel.title_id
+                    ).where(TitleModel.content_type_id.ilike(content_type))
+
+                total = (await db.execute(count_query)).scalar_one()
+
+                stmt = (
+                    base_query
+                    .order_by(WatchEventModel.watched_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+                events = (await db.execute(stmt)).scalars().all()
+
+                title_ids = [e.title_id for e in events]
+                title_map: Dict[uuid.UUID, TitleModel] = {}
+                rating_map: Dict[uuid.UUID, RatingModel] = {}
+                if title_ids:
+                    titles = (
+                        await db.execute(select(TitleModel).where(TitleModel.title_id.in_(title_ids)))
+                    ).scalars().all()
+                    title_map = {t.title_id: t for t in titles}
+
+                    ratings = (
+                        await db.execute(
+                            select(RatingModel).where(
+                                and_(
+                                    RatingModel.user_id == user_uuid,
+                                    RatingModel.title_id.in_(title_ids),
+                                )
+                            )
+                        )
+                    ).scalars().all()
+                    rating_map = {r.title_id: r for r in ratings}
+
+                items = [
+                    HistoryItemResponse(
+                        id=str(e.watch_event_id),
+                        title_id=str(e.title_id),
+                        canonical_title=(title_map[e.title_id].canonical_title if e.title_id in title_map else "Unknown Title"),
+                        production_year=(title_map[e.title_id].production_year if e.title_id in title_map else None),
+                        content_type=((title_map[e.title_id].content_type_id if e.title_id in title_map else None) or "MOVIE").upper(),
+                        poster_url=(title_map[e.title_id].poster_url if e.title_id in title_map else None),
+                        watched_at=e.watched_at.isoformat() if e.watched_at else datetime.now(timezone.utc).isoformat(),
+                        rating_value=(rating_map[e.title_id].rating_value if e.title_id in rating_map else None),
+                        device_type=e.device_type,
+                        progress_percentage=100.0,
+                    )
+                    for e in events
+                ]
+
+                return HistoryPageResponse(items=items, total=total, limit=limit, offset=offset)
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("list_history failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return HistoryPageResponse(items=[], total=0, limit=limit, offset=offset)
+
+    async def delete_watch_event(
+        self, db: Optional[AsyncSession], user_id: str, watch_event_id: str
+    ) -> bool:
+        """Tombstones (soft-deletes) a watch history event owned by the user.
+        Uses is_tombstoned rather than a hard delete, matching ADR-003's append-only
+        watch event log design. Returns False (not a crash) for a bad UUID or a
+        not-found/not-owned event."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                try:
+                    event_uuid = uuid.UUID(watch_event_id)
+                except ValueError:
+                    return False
+
+                stmt = select(WatchEventModel).where(
+                    and_(
+                        WatchEventModel.watch_event_id == event_uuid,
+                        WatchEventModel.user_id == user_uuid,
+                    )
+                )
+                event = (await db.execute(stmt)).scalar_one_or_none()
+                if not event:
+                    return False
+
+                event.is_tombstoned = True
+                await db.flush()
+                return True
+            except Exception as exc:
+                await db.rollback()
+                logger.error("delete_watch_event failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+                return False
+
+        return False
+
+    async def list_collections(
+        self, db: Optional[AsyncSession], user_id: str
+    ) -> List[CollectionItemResponse]:
+        """Lists user-owned collections (personal.user_list), enriched with real item
+        counts. curator/tags/is_custom have no backing columns on UserListModel, so
+        they fall through to the Pydantic schema's own static field defaults."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                stmt = (
+                    select(UserListModel)
+                    .options(selectinload(UserListModel.items))
+                    .where(UserListModel.user_id == user_uuid)
+                    .order_by(UserListModel.created_at.desc())
+                )
+                lists = (await db.execute(stmt)).scalars().all()
+                return [
+                    CollectionItemResponse(
+                        id=str(ul.list_id),
+                        name=ul.title,
+                        description=ul.description,
+                        item_count=len(ul.items),
+                        banner_url=None,
+                        is_private=ul.is_private,
+                        created_at=ul.created_at.isoformat() if ul.created_at else datetime.now(timezone.utc).isoformat(),
+                    )
+                    for ul in lists
+                ]
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("list_collections failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return []
+
+    async def create_collection(
+        self, db: Optional[AsyncSession], user_id: str, body: CollectionCreateRequest
+    ) -> CollectionItemResponse:
+        """Creates a new user-owned collection (personal.user_list)."""
+        created_iso = datetime.now(timezone.utc).isoformat()
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                now = datetime.now(timezone.utc)
+                ul = UserListModel(
+                    list_id=uuid.uuid4(),
+                    user_id=user_uuid,
+                    title=body.name,
+                    description=body.description,
+                    is_private=body.is_private,
+                    created_at=now,
+                    updated_at=now,
+                )
+                db.add(ul)
+                await db.flush()
+                return CollectionItemResponse(
+                    id=str(ul.list_id),
+                    name=ul.title,
+                    description=ul.description,
+                    item_count=0,
+                    banner_url=None,
+                    is_private=ul.is_private,
+                    created_at=ul.created_at.isoformat(),
+                )
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("create_collection failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return CollectionItemResponse(
+            id=str(uuid.uuid4()),
+            name=body.name,
+            description=body.description,
+            item_count=0,
+            is_private=body.is_private,
+            created_at=created_iso,
+        )
+
+    async def delete_collection(
+        self, db: Optional[AsyncSession], user_id: str, list_id: str
+    ) -> bool:
+        """Deletes a user-owned collection (personal.user_list), scoped to the
+        requesting user so one user cannot delete another user's collection."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                try:
+                    list_uuid = uuid.UUID(list_id)
+                except ValueError:
+                    return False
+
+                stmt = select(UserListModel).where(
+                    and_(
+                        UserListModel.list_id == list_uuid,
+                        UserListModel.user_id == user_uuid,
+                    )
+                )
+                ul = (await db.execute(stmt)).scalar_one_or_none()
+                if not ul:
+                    return False
+
+                await db.delete(ul)
+                await db.flush()
+                return True
+            except Exception as exc:
+                await db.rollback()
+                logger.error("delete_collection failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+                return False
+
+        return False
+
+    async def list_library(
+        self,
+        db: Optional[AsyncSession],
+        user_id: str,
+        limit: int = 20,
+        offset: int = 0,
+        content_type: Optional[str] = None,
+    ) -> LibraryPageResponse:
+        """Lists titles the user has added to their personal library (personal.library_entry),
+        joined with canonical title metadata. Same join/pagination/fallback shape as list_history."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                where_clause = LibraryEntryModel.user_id == user_uuid
+                base_query = select(LibraryEntryModel).where(where_clause)
+                count_query = select(func.count()).select_from(LibraryEntryModel).where(where_clause)
+
+                if content_type and content_type != "ALL":
+                    base_query = base_query.join(
+                        TitleModel, TitleModel.title_id == LibraryEntryModel.title_id
+                    ).where(TitleModel.content_type_id.ilike(content_type))
+                    count_query = count_query.join(
+                        TitleModel, TitleModel.title_id == LibraryEntryModel.title_id
+                    ).where(TitleModel.content_type_id.ilike(content_type))
+
+                total = (await db.execute(count_query)).scalar_one()
+
+                stmt = (
+                    base_query
+                    .order_by(LibraryEntryModel.added_at.desc())
+                    .limit(limit)
+                    .offset(offset)
+                )
+                entries = (await db.execute(stmt)).scalars().all()
+
+                title_ids = [e.title_id for e in entries]
+                title_map: Dict[uuid.UUID, TitleModel] = {}
+                if title_ids:
+                    titles = (
+                        await db.execute(select(TitleModel).where(TitleModel.title_id.in_(title_ids)))
+                    ).scalars().all()
+                    title_map = {t.title_id: t for t in titles}
+
+                items = [
+                    LibraryItemResponse(
+                        id=f"{e.user_id}:{e.title_id}",
+                        title_id=str(e.title_id),
+                        canonical_title=(title_map[e.title_id].canonical_title if e.title_id in title_map else "Unknown Title"),
+                        production_year=(title_map[e.title_id].production_year if e.title_id in title_map else None),
+                        content_type=((title_map[e.title_id].content_type_id if e.title_id in title_map else None) or "MOVIE").upper(),
+                        poster_url=(title_map[e.title_id].poster_url if e.title_id in title_map else None),
+                        added_at=e.added_at.isoformat() if e.added_at else datetime.now(timezone.utc).isoformat(),
+                    )
+                    for e in entries
+                ]
+
+                return LibraryPageResponse(items=items, total=total, limit=limit, offset=offset)
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("list_library failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return LibraryPageResponse(items=[], total=0, limit=limit, offset=offset)
+
+    async def add_to_library(
+        self, db: Optional[AsyncSession], user_id: str, title_id: str
+    ) -> LibraryItemResponse:
+        """Adds a title to the user's personal library (personal.library_entry).
+        Idempotent: re-adding an already-present title returns the existing entry."""
+        added_iso = datetime.now(timezone.utc).isoformat()
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                title_uuid = _resolve_title_uuid(title_id)
+
+                stmt = select(LibraryEntryModel).where(
+                    and_(
+                        LibraryEntryModel.user_id == user_uuid,
+                        LibraryEntryModel.title_id == title_uuid,
+                    )
+                )
+                entry = (await db.execute(stmt)).scalar_one_or_none()
+                if not entry:
+                    entry = LibraryEntryModel(
+                        user_id=user_uuid,
+                        title_id=title_uuid,
+                        added_at=datetime.now(timezone.utc),
+                    )
+                    db.add(entry)
+                    await db.flush()
+
+                title = await db.get(TitleModel, title_uuid)
+                return LibraryItemResponse(
+                    id=f"{user_uuid}:{title_uuid}",
+                    title_id=title_id,
+                    canonical_title=title.canonical_title if title else "Unknown Title",
+                    production_year=title.production_year if title else None,
+                    content_type=((title.content_type_id if title else None) or "MOVIE").upper(),
+                    poster_url=title.poster_url if title else None,
+                    added_at=entry.added_at.isoformat() if entry.added_at else added_iso,
+                )
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("add_to_library failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return LibraryItemResponse(
+            id=f"{user_id}:{title_id}",
+            title_id=title_id,
+            canonical_title="Unknown Title",
+            added_at=added_iso,
+        )
+
+    async def remove_from_library(
+        self, db: Optional[AsyncSession], user_id: str, title_id: str
+    ) -> bool:
+        """Removes a title from the user's personal library, scoped to the requesting user."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                title_uuid = _resolve_title_uuid(title_id)
+                stmt = select(LibraryEntryModel).where(
+                    and_(
+                        LibraryEntryModel.user_id == user_uuid,
+                        LibraryEntryModel.title_id == title_uuid,
+                    )
+                )
+                entry = (await db.execute(stmt)).scalar_one_or_none()
+                if not entry:
+                    return False
+
+                await db.delete(entry)
+                await db.flush()
+                return True
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("remove_from_library failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+                return False
+
+        return False
+
     async def list_ratings(
         self, db: Optional[AsyncSession], user_id: str
     ) -> List[RatingResponse]:
@@ -1061,6 +1466,122 @@ class PersonalRepository:
             annual_watch_count=0,
             average_personal_rating=None
         )
+
+    async def get_user_taste_breakdown(
+        self, db: Optional[AsyncSession], user_id: str
+    ) -> Tuple[List[GenreAffinityItem], List[CreatorAffinityItem], List[CreatorAffinityItem], List[MonthlyTrendItem]]:
+        """Derives genre/director/actor affinity and a 6-month viewing trend from the user's
+        real watch history joined against canonical genres & credits. Returns empty lists
+        when there is no watch history or no genre/credit data — no fabricated fallback."""
+        empty_result: Tuple[List, List, List, List] = ([], [], [], [])
+        if db is None:
+            return empty_result
+
+        try:
+            user_uuid = _resolve_user_uuid(user_id)
+            now = datetime.now(timezone.utc)
+
+            stmt_ev = select(WatchEventModel).where(
+                and_(
+                    WatchEventModel.user_id == user_uuid,
+                    WatchEventModel.is_tombstoned == False,  # noqa: E712
+                )
+            )
+            watch_events = (await db.execute(stmt_ev)).scalars().all()
+            watched_title_ids = list({e.title_id for e in watch_events if e.title_id})
+            if not watch_events or not watched_title_ids:
+                return empty_result
+
+            stmt_titles = (
+                select(TitleModel)
+                .options(
+                    selectinload(TitleModel.editions),
+                    selectinload(TitleModel.genres),
+                    selectinload(TitleModel.credits).selectinload(CreditModel.person),
+                )
+                .where(TitleModel.title_id.in_(watched_title_ids))
+            )
+            titles_data = (await db.execute(stmt_titles)).scalars().all()
+            title_map = {t.title_id: t for t in titles_data}
+
+            # Top genres: count genre-tag occurrences across the user's watched titles
+            genre_counts: Dict[str, int] = {}
+            for t in titles_data:
+                for g in t.genres:
+                    genre_counts[g.name] = genre_counts.get(g.name, 0) + 1
+            total_genre_tags = sum(genre_counts.values())
+            top_genres = [
+                GenreAffinityItem(genre=name, count=count, percentage=round(count / total_genre_tags * 100, 1))
+                for name, count in sorted(genre_counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
+            ] if total_genre_tags else []
+
+            # Top directors / actors: count real credits across the user's watched titles
+            director_counts: Dict[str, int] = {}
+            actor_counts: Dict[str, int] = {}
+            for t in titles_data:
+                for c in t.credits:
+                    if not c.person:
+                        continue
+                    if c.credit_role_id == "DIRECTOR":
+                        director_counts[c.person.canonical_name] = director_counts.get(c.person.canonical_name, 0) + 1
+                    elif c.credit_role_id == "ACTOR":
+                        actor_counts[c.person.canonical_name] = actor_counts.get(c.person.canonical_name, 0) + 1
+
+            top_directors = [
+                CreatorAffinityItem(name=name, role="Director", count=count)
+                for name, count in sorted(director_counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
+            ]
+            top_actors = [
+                CreatorAffinityItem(name=name, role="Actor", count=count)
+                for name, count in sorted(actor_counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
+            ]
+
+            # Monthly trend: last 6 calendar months (oldest to newest), counts + hours from real watch events
+            month_abbr = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            months_seq: List[Tuple[int, int]] = []
+            y, m = now.year, now.month
+            for _ in range(6):
+                months_seq.append((y, m))
+                m -= 1
+                if m == 0:
+                    m, y = 12, y - 1
+            months_seq.reverse()
+
+            month_counts = {key: 0 for key in months_seq}
+            month_minutes = {key: 0 for key in months_seq}
+            for e in watch_events:
+                if not e.watched_at:
+                    continue
+                key = (e.watched_at.year, e.watched_at.month)
+                if key not in month_counts:
+                    continue
+                month_counts[key] += 1
+                runtime = 120
+                t = title_map.get(e.title_id)
+                if t and t.editions:
+                    primary_ed = next((ed for ed in t.editions if ed.is_primary), t.editions[0])
+                    if primary_ed.runtime_minutes:
+                        runtime = primary_ed.runtime_minutes
+                month_minutes[key] += runtime
+
+            monthly_trend = [
+                MonthlyTrendItem(
+                    month=month_abbr[month - 1],
+                    count=month_counts[(year, month)],
+                    hours=round(month_minutes[(year, month)] / 60.0, 1),
+                )
+                for year, month in months_seq
+            ]
+
+            return top_genres, top_directors, top_actors, monthly_trend
+        except ValueError:
+            raise
+        except Exception as exc:
+            await db.rollback()
+            logger.error("get_user_taste_breakdown failed: %s", exc, exc_info=True)
+            if not config.allow_seed_fallback:
+                raise
+            return empty_result
 
     async def export_user_data(
         self,

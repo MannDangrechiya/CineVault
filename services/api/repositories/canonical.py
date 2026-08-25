@@ -301,10 +301,10 @@ class CanonicalRepository:
                             original_title=t.original_title,
                             content_type=(t.content_type_id or "MOVIE").upper(),
                             production_year=t.production_year,
-                            origin_country="KR",
+                            origin_country=None,
                             has_licensed_artwork=bool(t.poster_url),
-                            poster_url=t.poster_url or f"https://cdn.cinevault.org/artwork/posters/{t.display_id.lower()}.jpg",
-                            backdrop_url=t.backdrop_url or f"https://cdn.cinevault.org/artwork/backdrops/{t.display_id.lower()}.jpg"
+                            poster_url=t.poster_url,
+                            backdrop_url=t.backdrop_url,
                         ))
                     return summaries
             except Exception as e:
@@ -424,10 +424,10 @@ class CanonicalRepository:
                         original_title=t.original_title,
                         content_type=(t.content_type_id or "MOVIE").upper(),
                         production_year=t.production_year,
-                        origin_country="KR",
+                        origin_country=None,
                         has_licensed_artwork=bool(t.poster_url),
-                        poster_url=t.poster_url or f"https://cdn.cinevault.org/artwork/posters/{t.display_id.lower()}.jpg",
-                        backdrop_url=t.backdrop_url or f"https://cdn.cinevault.org/artwork/backdrops/{t.display_id.lower()}.jpg",
+                        poster_url=t.poster_url,
+                        backdrop_url=t.backdrop_url,
                     )
                     for t in db_titles
                 ]
@@ -672,7 +672,7 @@ class CanonicalRepository:
                     keyword_summaries = [KeywordSummary(keyword_id=kw.keyword_id, name=kw.name) for kw in title_orm.keywords]
                     lang_codes = [l.language_code for l in title_orm.languages]
                     country_codes = [c.country_code for c in title_orm.countries]
-                    origin_c = country_codes[0] if country_codes else "US"
+                    origin_c = country_codes[0] if country_codes else None
 
                     return TitleDetail(
                         id=str(title_orm.title_id),
@@ -695,9 +695,9 @@ class CanonicalRepository:
                         companies=company_summaries,
                         awards=award_summaries,
                         festival_participations=fest_summaries,
-                        has_licensed_artwork=True,
-                        poster_url=f"https://cdn.cinevault.org/artwork/posters/{title_orm.display_id.lower()}.jpg",
-                        backdrop_url=f"https://cdn.cinevault.org/artwork/backdrops/{title_orm.display_id.lower()}.jpg",
+                        has_licensed_artwork=bool(title_orm.poster_url),
+                        poster_url=title_orm.poster_url,
+                        backdrop_url=title_orm.backdrop_url,
                         primary_edition=primary_ed,
                         editions=edition_summaries,
                         seasons=season_summaries,

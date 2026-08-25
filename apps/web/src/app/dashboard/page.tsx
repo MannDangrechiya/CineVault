@@ -294,13 +294,13 @@ export default function DashboardPage() {
             <div className="p-5 rounded-2xl bg-zinc-900/40 border border-zinc-900 flex items-center justify-between">
               <div>
                 <span className="text-xs font-medium text-zinc-400">
-                  Total Catalog Titles
+                  My Tracked Titles
                 </span>
                 <h3 className="text-2xl font-bold text-zinc-100 mt-1">
                   {totalTitles.toLocaleString()}
                 </h3>
-                <span className="text-[11px] text-emerald-400 flex items-center gap-1 mt-1">
-                  <TrendingUp className="w-3 h-3" /> +12 added this week
+                <span className="text-[11px] text-zinc-500 flex items-center gap-1 mt-1">
+                  <TrendingUp className="w-3 h-3" /> In your personal library
                 </span>
               </div>
               <div className="w-10 h-10 rounded-xl bg-violet-600/10 border border-violet-500/20 flex items-center justify-center text-violet-400">

@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Sparkles,
   Calendar,
   Clock,
   Globe,
@@ -154,13 +153,8 @@ export default function MovieDetailPage() {
 
           {/* Title & Primary Actions Over Gradient */}
           <div className="flex-1 space-y-4">
-            {/* AI Taste Match & Content Badges */}
+            {/* Content Badges */}
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 backdrop-blur-md shadow-lg shadow-emerald-950/30">
-                <Sparkles className="w-3.5 h-3.5" />
-                98% AI Taste Match
-              </span>
-
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-zinc-900/80 text-zinc-300 border border-zinc-800 backdrop-blur-md">
                 <Film className="w-3.5 h-3.5 text-zinc-400" />
                 {title?.content_type || "Feature Film"}
@@ -283,80 +277,42 @@ export default function MovieDetailPage() {
               </div>
               <div>
                 <span className="text-zinc-500 block mb-1">Audio / Master</span>
-                <span className="text-zinc-300 font-medium">Dolby Atmos • 7.1 TrueHD</span>
+                {title?.primary_edition?.sound_mix ? (
+                  <span className="text-zinc-300 font-medium">{title.primary_edition.sound_mix}</span>
+                ) : (
+                  <span className="text-zinc-500 font-medium">Not available</span>
+                )}
               </div>
               <div>
                 <span className="text-zinc-500 block mb-1">Aspect Ratio</span>
-                <span className="text-zinc-300 font-medium">2.39:1 Anamorphic</span>
+                {title?.primary_edition?.aspect_ratio ? (
+                  <span className="text-zinc-300 font-medium">{title.primary_edition.aspect_ratio}</span>
+                ) : (
+                  <span className="text-zinc-500 font-medium">Not available</span>
+                )}
               </div>
               <div>
                 <span className="text-zinc-500 block mb-1">Color Grading</span>
-                <span className="text-zinc-300 font-medium">HDR10+ / Dolby Vision</span>
+                {title?.primary_edition?.color_format ? (
+                  <span className="text-zinc-300 font-medium">{title.primary_edition.color_format}</span>
+                ) : (
+                  <span className="text-zinc-500 font-medium">Not available</span>
+                )}
               </div>
               <div>
                 <span className="text-zinc-500 block mb-1">Artwork Source</span>
-                <span className="text-emerald-400 font-medium">Licensed TMDB / CineVault Verified</span>
-              </div>
-              <div>
-                <span className="text-zinc-500 block mb-1">Vector Embedding</span>
-                <span className="text-violet-400 font-mono">1536-dim (cosine: 0.984)</span>
+                {title?.has_licensed_artwork ? (
+                  <span className="text-emerald-400 font-medium">Licensed Artwork</span>
+                ) : (
+                  <span className="text-zinc-500 font-medium">Artwork Pending Sync</span>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Column: AI Taste Breakdown & Friend Recommendations Widget */}
+        {/* Right Column: Friend Recommendations Widget */}
         <div className="space-y-6">
-          {/* AI Taste Vector Card */}
-          <div className="p-6 rounded-2xl bg-gradient-to-b from-zinc-900/80 to-zinc-950 border border-zinc-800/80 space-y-4 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full blur-2xl pointer-events-none" />
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-sm font-bold text-zinc-100">AI Taste Match Vector</h3>
-              </div>
-              <span className="text-xs font-mono font-bold text-emerald-400">98.4%</span>
-            </div>
-
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Grounds heavily with your high-affinity nodes: <em>Cyberpunk Noir, Philosophical Sci-Fi, and Atmospheric Sound Design</em>.
-            </p>
-
-            {/* Affinity Meters */}
-            <div className="space-y-3 pt-2 text-xs">
-              <div>
-                <div className="flex justify-between text-zinc-400 mb-1">
-                  <span>Visual & Cinematography</span>
-                  <span className="text-zinc-200">99%</span>
-                </div>
-                <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-400 rounded-full w-[99%]" />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-zinc-400 mb-1">
-                  <span>Narrative Complexity</span>
-                  <span className="text-zinc-200">94%</span>
-                </div>
-                <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-violet-400 rounded-full w-[94%]" />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-zinc-400 mb-1">
-                  <span>Pacing Affinity</span>
-                  <span className="text-zinc-200">89%</span>
-                </div>
-                <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-purple-400 rounded-full w-[89%]" />
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* Social Quick Share Prompt */}
           <div className="p-6 rounded-2xl bg-zinc-900/40 border border-zinc-900 space-y-3">
             <div className="flex items-center gap-2 text-sm font-semibold text-zinc-200">

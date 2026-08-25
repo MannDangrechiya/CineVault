@@ -19,12 +19,31 @@ export interface EditionSummary {
   edition_name: string;
   runtime_minutes?: number | null;
   format?: string | null;
+  aspect_ratio?: string | null;
+  color_format?: string | null;
+  sound_mix?: string | null;
+}
+
+export interface EpisodeSummary {
+  id: string;
+  season_id: string;
+  episode_number: number;
+  episode_name?: string | null;
+}
+
+export interface SeasonSummary {
+  id: string;
+  title_id: string;
+  season_number: number;
+  season_name?: string | null;
+  episodes: EpisodeSummary[];
 }
 
 export interface TitleDetail extends TitleSummary {
   synopsis?: string | null;
   genres: string[];
   primary_edition?: EditionSummary | null;
+  seasons?: SeasonSummary[];
 }
 
 export interface APIErrorDetail {
@@ -93,6 +112,31 @@ export interface HistoryParams {
 
 export interface HistoryPageResponse {
   items: HistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// ── Personal Media Library Types ────────────────────────────────────────
+
+export interface LibraryItem {
+  id: string;
+  title_id: string;
+  canonical_title: string;
+  production_year?: number | null;
+  content_type: "MOVIE" | "TV_SERIES" | "ANIME" | string;
+  poster_url?: string | null;
+  added_at: string;
+}
+
+export interface LibraryParams {
+  limit?: number;
+  offset?: number;
+  type?: string;
+}
+
+export interface LibraryPageResponse {
+  items: LibraryItem[];
   total: number;
   limit: number;
   offset: number;

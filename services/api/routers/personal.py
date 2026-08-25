@@ -22,7 +22,8 @@ from ..schemas.personal import (
     ImportApplyRequest, ImportApplyResponse,
     HistoryItemResponse, HistoryPageResponse,
     CollectionItemResponse, CollectionCreateRequest,
-    PersonalAnalyticsResponse, GenreAffinityItem, CreatorAffinityItem, MonthlyTrendItem,
+    LibraryItemResponse, LibraryPageResponse, LibraryAddRequest,
+    PersonalAnalyticsResponse,
     WatchlistPageResponse, UserStreakResponse
 )
 from ..auth.dependencies import require_authenticated_user, get_optional_claims
@@ -33,6 +34,7 @@ from ..repositories.personal import personal_repository
 from ..repositories.social import social_repository
 from ..models.personal import UserListModel, WatchEventModel
 from ..models.canonical import TitleModel
+from ..schemas.social import RecommendationStatusEnum
 
 logger = logging.getLogger("cinevault.personal")
 
@@ -46,97 +48,6 @@ def _extract_user_id(claims: Optional[SecurityTokenClaims]) -> str:
         return str(claims.sub)
     return "00000000-0000-0000-0000-000000000001"
 
-# In-memory store for user-created collections & history in local dev
-SEED_USER_COLLECTIONS: List[dict] = [
-    {
-        "id": "dune-saga",
-        "name": "Dune: The Arrakis Chronicle",
-        "description": "Denis Villeneuve's complete epic saga tracking Paul Atreides and the Fremen resistance.",
-        "item_count": 2,
-        "banner_url": "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=1200&q=80",
-        "curator": "CineVault Curators",
-        "tags": ["Sci-Fi", "Frank Herbert", "IMAX 70mm"],
-        "is_private": False,
-        "is_custom": False,
-        "created_at": "2026-08-01T10:00:00Z"
-    },
-    {
-        "id": "cyberpunk-essentials",
-        "name": "Cyberpunk & Neo-Noir Canon",
-        "description": "Atmospheric, rain-slicked cityscapes, rogue replicants, and synthetic consciousness.",
-        "item_count": 4,
-        "banner_url": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=1200&q=80",
-        "curator": "AI Neural Curations",
-        "tags": ["Cyberpunk", "Dystopian", "Synthesizer"],
-        "is_private": False,
-        "is_custom": False,
-        "created_at": "2026-08-05T14:30:00Z"
-    },
-    {
-        "id": "nolan-non-linear",
-        "name": "Christopher Nolan Chronology",
-        "description": "Time dilation, practical in-camera effects, and 70mm cinematic spectacles.",
-        "item_count": 5,
-        "banner_url": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=1200&q=80",
-        "curator": "Christopher Nolan Canon",
-        "tags": ["Time-Bending", "Hans Zimmer", "70mm"],
-        "is_private": False,
-        "is_custom": False,
-        "created_at": "2026-08-10T09:15:00Z"
-    }
-]
-
-SEED_USER_HISTORY: List[dict] = [
-    {
-        "id": "018f2e4a-7b31-7000-8000-000000000001",
-        "title_id": "018f2e4a-7b31-7000-8000-123456789abc",
-        "canonical_title": "Dune: Part Two",
-        "production_year": 2024,
-        "content_type": "MOVIE",
-        "poster_url": "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
-        "watched_at": "2026-08-20T15:15:00Z",
-        "rating_value": 5.0,
-        "device_type": "Living Room Apple TV 4K",
-        "progress_percentage": 100.0
-    },
-    {
-        "id": "018f2e4a-7b31-7000-8000-000000000002",
-        "title_id": "018f2e4a-7b31-7000-8000-223456789abc",
-        "canonical_title": "Blade Runner 2049",
-        "production_year": 2017,
-        "content_type": "MOVIE",
-        "poster_url": "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80",
-        "watched_at": "2026-08-19T16:45:00Z",
-        "rating_value": 5.0,
-        "device_type": "Home Theater OLED 65\"",
-        "progress_percentage": 100.0
-    },
-    {
-        "id": "018f2e4a-7b31-7000-8000-000000000003",
-        "title_id": "018f2e4a-7b31-7000-8000-323456789abc",
-        "canonical_title": "Severance — S1:E9 'The We We Are'",
-        "production_year": 2022,
-        "content_type": "TV_SERIES",
-        "poster_url": "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80",
-        "watched_at": "2026-08-17T14:30:00Z",
-        "rating_value": 5.0,
-        "device_type": "iPad Pro",
-        "progress_percentage": 100.0
-    },
-    {
-        "id": "018f2e4a-7b31-7000-8000-000000000004",
-        "title_id": "018f2e4a-7b31-7000-8000-423456789abc",
-        "canonical_title": "Oppenheimer",
-        "production_year": 2023,
-        "content_type": "MOVIE",
-        "poster_url": "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=600&q=80",
-        "watched_at": "2026-08-13T12:00:00Z",
-        "rating_value": 4.5,
-        "device_type": "Plex Server (Living Room)",
-        "progress_percentage": 100.0
-    }
-]
-
 # ── /v1/personal/history ───────────────────────────────────────────────────
 
 @personal_router.get("/history", response_model=HistoryPageResponse)
@@ -148,17 +59,9 @@ async def get_personal_history(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Retrieves paginated personal watch history with enriched title metadata."""
-    items = list(SEED_USER_HISTORY)
-    if type and type != "ALL":
-        items = [i for i in items if i.get("content_type") == type]
-    
-    total = len(items)
-    paged = items[offset: offset + limit]
-    return HistoryPageResponse(
-        items=[HistoryItemResponse(**i) for i in paged],
-        total=total,
-        limit=limit,
-        offset=offset
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    return await personal_repository.list_history(
+        db=db, user_id=user_id, limit=limit, offset=offset, content_type=type
     )
 
 @personal_router.delete("/history/{id}", status_code=status.HTTP_200_OK)
@@ -167,9 +70,11 @@ async def delete_personal_history_item(
     claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
-    """Deletes a watch history event by ID."""
-    global SEED_USER_HISTORY
-    SEED_USER_HISTORY = [i for i in SEED_USER_HISTORY if i["id"] != id]
+    """Tombstones a watch history event by ID, scoped to the requesting user."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    deleted = await personal_repository.delete_watch_event(db=db, user_id=user_id, watch_event_id=id)
+    if not deleted:
+        return {"status": "not_found", "deleted_id": id}
     return {"status": "success", "deleted_id": id}
 
 # ── /v1/personal/watchlist ─────────────────────────────────────────────────
@@ -188,6 +93,45 @@ async def get_personal_watchlist(
         db=db, user_id=user_id, limit=limit, offset=offset, sort=sort
     )
 
+# ── /v1/personal/library ───────────────────────────────────────────────────
+
+@personal_router.get("/library", response_model=LibraryPageResponse)
+async def get_personal_library(
+    limit: int = 20,
+    offset: int = 0,
+    type: Optional[str] = None,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Lists titles the user has added to their personal media library, enriched with canonical title metadata."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    return await personal_repository.list_library(
+        db=db, user_id=user_id, limit=limit, offset=offset, content_type=type
+    )
+
+@personal_router.post("/library", response_model=LibraryItemResponse, status_code=status.HTTP_201_CREATED)
+async def add_personal_library_item(
+    body: LibraryAddRequest,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Adds a title to the user's personal media library."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    return await personal_repository.add_to_library(db=db, user_id=user_id, title_id=body.title_id)
+
+@personal_router.delete("/library/{title_id}", status_code=status.HTTP_200_OK)
+async def remove_personal_library_item(
+    title_id: str,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Removes a title from the user's personal media library, scoped to the requesting user."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    removed = await personal_repository.remove_from_library(db=db, user_id=user_id, title_id=title_id)
+    if not removed:
+        return {"status": "not_found", "title_id": title_id}
+    return {"status": "success", "title_id": title_id}
+
 # ── /v1/personal/collections ───────────────────────────────────────────────
 
 @personal_router.get("/collections", response_model=List[CollectionItemResponse])
@@ -195,8 +139,9 @@ async def get_personal_collections(
     claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
-    """Retrieves user curated and franchise collections."""
-    return [CollectionItemResponse(**c) for c in SEED_USER_COLLECTIONS]
+    """Retrieves user-owned collections."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    return await personal_repository.list_collections(db=db, user_id=user_id)
 
 @personal_router.post("/collections", response_model=CollectionItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_personal_collection(
@@ -204,21 +149,9 @@ async def create_personal_collection(
     claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
-    """Creates a new user-curated collection list."""
-    new_col = {
-        "id": f"custom-{len(SEED_USER_COLLECTIONS) + 1}",
-        "name": body.name,
-        "description": body.description or "User curated film set",
-        "item_count": 0,
-        "banner_url": body.banner_url or "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1200&q=80",
-        "curator": "My Collection",
-        "tags": body.tags or ["Personal"],
-        "is_private": body.is_private,
-        "is_custom": True,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    SEED_USER_COLLECTIONS.insert(0, new_col)
-    return CollectionItemResponse(**new_col)
+    """Creates a new user-owned collection."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    return await personal_repository.create_collection(db=db, user_id=user_id, body=body)
 
 @personal_router.delete("/collections/{id}", status_code=status.HTTP_200_OK)
 async def delete_personal_collection(
@@ -226,9 +159,11 @@ async def delete_personal_collection(
     claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
-    """Deletes a custom collection."""
-    global SEED_USER_COLLECTIONS
-    SEED_USER_COLLECTIONS = [c for c in SEED_USER_COLLECTIONS if c["id"] != id]
+    """Deletes a user-owned collection, scoped to the requesting user."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    deleted = await personal_repository.delete_collection(db=db, user_id=user_id, list_id=id)
+    if not deleted:
+        return {"status": "not_found", "deleted_id": id}
     return {"status": "success", "deleted_id": id}
 
 # ── /v1/personal/analytics ─────────────────────────────────────────────────
@@ -264,6 +199,27 @@ async def get_personal_analytics(
         if taste_matches else 0.0
     )
 
+    # Genre/director/actor affinity + 6-month trend, derived from real watch history joined
+    # against canonical genres & credits (services/api/repositories/personal.py
+    # get_user_taste_breakdown). Empty lists when there's no watch history yet — no
+    # fabricated fallback, same "genuinely zero vs no data yet" fix as the metrics above.
+    top_genres, top_directors, top_actors, monthly_trend = await personal_repository.get_user_taste_breakdown(
+        db=db, user_id=user_id
+    )
+
+    # Pending recommendations = received recommendations still in the initial 'SENT'
+    # state (not yet ACCEPTED/REJECTED/WATCHED/RATED). Same allow_seed_fallback pattern
+    # as taste_match_score above: 0 friends/recommendations or a real failure both
+    # correctly yield 0 rather than a fabricated count.
+    try:
+        received_recs = await social_repository.list_recommendations(db=db, user_id=user_id, role="received")
+        pending_recommendations_count = sum(1 for r in received_recs if r.status == RecommendationStatusEnum.SENT)
+    except Exception as exc:
+        logger.error("list_recommendations failed: %s", exc, exc_info=True)
+        if not config.allow_seed_fallback:
+            raise
+        pending_recommendations_count = 0
+
     return PersonalAnalyticsResponse(
         total_watch_hours=metrics.total_watch_hours,
         watched_count=metrics.watched_count,
@@ -275,41 +231,11 @@ async def get_personal_analytics(
         movies_watched=metrics.movies_watched,
         series_completed=metrics.series_completed,
         anime_completed=metrics.anime_completed,
-        # TODO(PLAN.md 1.4 follow-up): pending_recommendations_count and the
-        # top_genres/top_directors/top_actors/monthly_trend breakdowns below are
-        # still fully fabricated literals with no backing computation at all (not
-        # even a real-metric-that-happens-to-be-zero) — out of scope for this fix,
-        # flagged separately since it's a bigger lift (genre/credit joins).
-        pending_recommendations_count=5,
-        top_genres=[
-            GenreAffinityItem(genre="Sci-Fi", count=48, percentage=33.8),
-            GenreAffinityItem(genre="Cyberpunk / Neo-Noir", count=32, percentage=22.5),
-            GenreAffinityItem(genre="Drama / Psychological", count=28, percentage=19.7),
-            GenreAffinityItem(genre="Thriller", count=20, percentage=14.1),
-            GenreAffinityItem(genre="Anime / Animation", count=14, percentage=9.9),
-        ],
-        top_directors=[
-            CreatorAffinityItem(name="Denis Villeneuve", role="Director", count=9),
-            CreatorAffinityItem(name="Christopher Nolan", role="Director", count=8),
-            CreatorAffinityItem(name="Ridley Scott", role="Director", count=7),
-            CreatorAffinityItem(name="David Fincher", role="Director", count=6),
-            CreatorAffinityItem(name="Hayao Miyazaki", role="Director", count=5),
-        ],
-        top_actors=[
-            CreatorAffinityItem(name="Timothée Chalamet", role="Actor", count=6),
-            CreatorAffinityItem(name="Ryan Gosling", role="Actor", count=5),
-            CreatorAffinityItem(name="Cillian Murphy", role="Actor", count=5),
-            CreatorAffinityItem(name="Rebecca Ferguson", role="Actor", count=4),
-            CreatorAffinityItem(name="Christian Bale", role="Actor", count=4),
-        ],
-        monthly_trend=[
-            MonthlyTrendItem(month="Mar", count=12, hours=28.0),
-            MonthlyTrendItem(month="Apr", count=15, hours=34.5),
-            MonthlyTrendItem(month="May", count=19, hours=42.0),
-            MonthlyTrendItem(month="Jun", count=14, hours=31.0),
-            MonthlyTrendItem(month="Jul", count=22, hours=51.5),
-            MonthlyTrendItem(month="Aug", count=18, hours=41.0),
-        ]
+        pending_recommendations_count=pending_recommendations_count,
+        top_genres=top_genres,
+        top_directors=top_directors,
+        top_actors=top_actors,
+        monthly_trend=monthly_trend,
     )
 
 
@@ -408,21 +334,9 @@ async def apply_personal_import(
     user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
 
     if db is None:
-        # Update in-memory seed history
-        for item in body.items:
-            if item.canonical_title:
-                SEED_USER_HISTORY.insert(0, {
-                    "id": f"imp-{len(SEED_USER_HISTORY) + 1}",
-                    "title_id": item.title_id or f"imp-title-{len(SEED_USER_HISTORY) + 1}",
-                    "canonical_title": item.canonical_title,
-                    "production_year": item.production_year or 2024,
-                    "content_type": "MOVIE",
-                    "poster_url": "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=600&q=80",
-                    "watched_at": item.watched_at or datetime.now(timezone.utc).isoformat(),
-                    "rating_value": float(item.rating_value) if item.rating_value else None,
-                    "device_type": "Imported Record",
-                    "progress_percentage": item.progress_percentage or 100.0
-                })
+        # No database connection at all (local dev without DB) -- nothing can be
+        # persisted, so just report the would-be-applied count. No fabricated
+        # in-memory history rows.
         return ImportApplyResponse(
             applied_count=len(body.items),
             conflicts_resolved=0,

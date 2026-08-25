@@ -5,20 +5,22 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { Plus } from "lucide-react";
-import { getCatalogPage } from "@/lib/api/titles";
+import { getLibrary } from "@/lib/api/personal";
 import { LoadingState } from "@/components/ui/States";
 
 export default function LibraryPage() {
   const [tab, setTab] = useState<"ALL" | "MOVIE" | "TV_SERIES">("ALL");
 
+  // Real per-user library data (personal.library_entry), not the general catalog --
+  // a brand-new user correctly sees an empty library here (no fabricated fallback).
   const { data: moviesRes, isLoading: isLoadingMovies } = useQuery({
     queryKey: ["library", "movies"],
-    queryFn: () => getCatalogPage({ content_type: "MOVIE", limit: 6 }),
+    queryFn: () => getLibrary({ type: "MOVIE", limit: 100 }),
   });
 
   const { data: seriesRes, isLoading: isLoadingSeries } = useQuery({
     queryKey: ["library", "series"],
-    queryFn: () => getCatalogPage({ content_type: "TV_SERIES", limit: 4 }),
+    queryFn: () => getLibrary({ type: "TV_SERIES", limit: 100 }),
   });
 
   const libraryMovies = moviesRes?.items || [];
@@ -97,7 +99,7 @@ export default function LibraryPage() {
           {displayed.map((item) => (
             <Link
               key={item.id}
-              href={`/movies/${item.id}`}
+              href={`/movies/${item.title_id}`}
               className="group relative flex flex-col rounded-2xl overflow-hidden bg-zinc-900/40 hover:bg-zinc-900/70 border border-zinc-900 hover:border-zinc-800 transition-all p-3"
             >
               <div className="relative aspect-[2/3] w-full bg-zinc-950 rounded-xl overflow-hidden mb-2.5">

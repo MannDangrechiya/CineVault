@@ -40,7 +40,12 @@ export async function POST(request: Request) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
-        signal: AbortSignal.timeout(1500),
+        // Was 1500ms — too aggressive: a cold-started or briefly busy backend
+        // (e.g. right after a dev server restart) would miss this window and
+        // silently fall back to an unvalidatable synthetic token below, which
+        // then made every strictly-authenticated endpoint 401 with no visible
+        // error. 8s gives the real backend handshake a fair chance first.
+        signal: AbortSignal.timeout(8000),
       });
 
       if (backendRes.ok) {

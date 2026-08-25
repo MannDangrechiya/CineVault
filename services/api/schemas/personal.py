@@ -204,6 +204,26 @@ class WatchlistPageResponse(BaseModel):
     limit: int
     offset: int
 
+# ── Personal Media Library (backed by personal.library_entry) ──────────────
+
+class LibraryItemResponse(BaseModel):
+    id: str
+    title_id: str
+    canonical_title: str
+    production_year: Optional[int] = None
+    content_type: str = "MOVIE"
+    poster_url: Optional[str] = None
+    added_at: str
+
+class LibraryPageResponse(BaseModel):
+    items: List[LibraryItemResponse]
+    total: int
+    limit: int
+    offset: int
+
+class LibraryAddRequest(BaseModel):
+    title_id: str
+
 class CollectionItemResponse(BaseModel):
     id: str
     name: str
