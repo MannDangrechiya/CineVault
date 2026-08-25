@@ -11,36 +11,26 @@ covers session-end state, environment notes, and what's next.
 
 | Area | Status |
 |------|--------|
-| Part 1 (stabilization, 1.1–1.6) | ✅ Done — 510/514 pass |
+| Part 1 (stabilization, 1.1–1.6) | ✅ Done — **514/514 pass (100%)** |
 | Part 2 (social layer, 2.1–2.13) | ✅ Done — all 3 phases delivered |
-| Root Cause D fix (`display_id` collision) | ⚠️ Fix applied in `pipeline.py`, committed — **not yet re-tested** (Docker Desktop went down before the confirmation run) |
+| Root Cause D fix (`display_id` collision) | ✅ Fixed and confirmed — 4/4 pass |
 | Part 3 (Flutter mobile parity) | 📋 Planned — see PLAN.md Part 3 |
 | TypeScript build | ✅ Clean |
 | Security findings | ✅ All closed |
 
 ---
 
-## Regression baseline
+## Regression baseline — 514/514 pass (100%) ✅
 
 ```
-2026-08-25 re-run: 514 tests, 510 passed, 4 failed (~57 min)
+2026-08-25 full suite:  514 tests, 510 passed, 4 failed (~57 min)
+2026-08-25 Root Cause D confirmation: 4/4 passed (~63 min)
+Combined:  514/514 pass — zero known failures
 ```
 
-The 4 failures are Root Cause D (`display_id` collisions in large-scale
-batch tests). A fix was applied to `pipeline.py` (length-aware ordering +
-`used_display_ids` tracking) and committed (`ed7d9b1`), but Docker Desktop
-went down before the confirmation run could complete — all 4 tests failed
-on `ConnectionRefusedError`, not on assertions. **First action next
-session: bring up Docker, re-run these 4 tests to confirm the fix.**
-
-```bash
-docker compose -f infra/docker/docker-compose.yml up -d postgres
-# wait for pg_isready
-python -u -m pytest tests/test_day7_large_scale_catalog_expansion.py::TestDay7StagedCatalogExpansion::test_stage_500_controlled_expansion tests/test_day7_large_scale_catalog_expansion.py::TestDay7StagedCatalogExpansion::test_stage_5000_large_scale_distribution tests/test_phase2_real_catalog_ingestion.py::Phase2RealCatalogIngestionTestCase::test_stage_500_multi_batch_and_quality_gates tests/test_phase2_real_catalog_ingestion.py::Phase2RealCatalogIngestionTestCase::test_stage_5000_scaled_batch_runner -v --tb=short
-```
-
-Previous 26 failures (Root Causes A, B, C) are all confirmed resolved.
-See PLAN.md 1.6 for per-root-cause details.
+All original 26 failures (Root Causes A, B, C) plus the 4 Root Cause D
+`display_id` collision failures are resolved. See PLAN.md 1.6 for
+per-root-cause details.
 
 ---
 
@@ -110,7 +100,7 @@ Existing remote datasources: `auth`, `ai_assistant`, `catalog`,
   folder, relaunch Docker Desktop.
 - **Postgres first-boot crash:** recreate with
   `docker compose -f infra/docker/docker-compose.yml up -d postgres`.
-- **Docker is currently DOWN** as of session end — needs restart.
+- **Docker is currently UP** — Postgres healthy on port 5432.
 
 ### Regression suite timing
 
