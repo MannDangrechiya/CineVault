@@ -537,14 +537,100 @@ effort estimate on the taste-similarity features from "build" to "wire up."
 
 ---
 
-## Suggested execution order
+## ~~Suggested execution order~~ (completed)
 
-1. **Part 1, in full** (1.1 → 1.4 → 1.3 → 1.2 → 1.6, defer 1.5).
-2. **Phase 1** (2.1 → 2.2 → 2.3 → 2.4 → 2.5) — each is small and independent;
-   2.1 first since it also fixes the `tasteMatch` hardcode from 1.2.
-3. **Phase 2** (2.6 → 2.7 → 2.8 → 2.9).
-4. **Phase 3** only after real usage data says a persistent-club feature is
-   worth the schema commitment.
+All items done. Part 1 (1.1–1.6) and Part 2 (Phases 1–3, items 2.1–2.13)
+delivered and verified. Regression baseline: **510/514 pass** (4 remaining
+are Root Cause D `display_id` test-data collisions — fix applied, pending
+re-confirmation).
 
-Each numbered item above is sized to be a single focused PR — plan/execute
-one at a time rather than batching.
+---
+
+## Part 3 — Flutter Mobile App Feature Parity
+
+The Flutter mobile app (`apps/mobile/`) has 10 screens and 48 Dart files
+covering: login, catalog browsing, search, title detail, recommendations,
+AI assistant, library, control room, swipe discovery, and sync status.
+
+**All Part 2 social features and several Part 1 personal features exist
+only in the Next.js web app.** The backend APIs are fully built — this
+part is purely Flutter UI + data layer work, calling the same endpoints.
+
+Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
+
+### 3.1 Flutter data layer — social API client `[ ]`
+- [ ] Create `social_remote_datasource.dart` in `data/remote/` with all
+      `/social/*` endpoint calls (friendships, recommendations, taste
+      matches, compatibility, leaderboard, badges, invites, pick rooms,
+      recap, clubs, challenges).
+- [ ] Create `social.dart` entities in `domain/entities/`.
+- [ ] Create `social_repository.dart` in `domain/repositories/`.
+- [ ] Create `social_provider.dart` in `presentation/providers/`.
+- **Effort:** medium — the web app's `personal.ts` API client is the
+  reference implementation; port the types and calls to Dart.
+
+### 3.2 Social hub screen `[ ]`
+- [ ] Friends list with trust-tier badges (Oracle/Critic/Regular/Curious).
+- [ ] Incoming/sent recommendations tabs with real title data.
+- [ ] Taste match leaderboard.
+- [ ] "Compare Taste →" entry into head-to-head compatibility modal.
+- [ ] Send recommendation via friend picker (not free-text).
+- **Web reference:** `apps/web/src/app/social/page.tsx`
+
+### 3.3 Dashboard enhancements `[ ]`
+- [ ] Streak display (current/longest/last activity).
+- [ ] Badge showcase (earned + locked badges with progress).
+- [ ] Cinema recap modal (archetype banner, stats grid, genre DNA bars,
+      friend circle percentile, period toggle, shareable summary).
+- **Web reference:** `apps/web/src/app/dashboard/page.tsx`
+
+### 3.4 Watch history & watchlist screens `[ ]`
+- [ ] Watch history screen (watch events list, filters).
+- [ ] Watchlist screen (titles in watchlist, add/remove).
+- **Web reference:** `apps/web/src/app/history/page.tsx`,
+  `apps/web/src/app/watchlist/page.tsx`
+
+### 3.5 Collections screen `[ ]`
+- [ ] User collections (create, rename, reorder, delete).
+- [ ] Add/remove titles from collections.
+- **Web reference:** `apps/web/src/app/collections/page.tsx`
+
+### 3.6 Invite flow `[ ]`
+- [ ] Create invite link + copy to clipboard.
+- [ ] Deep-link handling for `/invite/{token}` — taste preview + accept.
+- [ ] Referral stats display (milestone progress).
+- **Web reference:** `apps/web/src/app/invite/[token]/page.tsx`
+
+### 3.7 Group pick room `[ ]`
+- [ ] Create room with candidates from search/watchlist.
+- [ ] Share room link.
+- [ ] Vote ballot UI with live percentage bars.
+- [ ] Winner celebration banner.
+- **Web reference:** `apps/web/src/app/pick/[slug]/page.tsx`
+
+### 3.8 Clubs & challenges hub `[ ]`
+- [ ] Watch clubs list (create, join, browse).
+- [ ] Club detail with activity feed.
+- [ ] Active challenges list (join, track progress).
+- [ ] Challenge detail with participants and leaderboard.
+- **Web reference:** `apps/web/src/app/clubs/page.tsx`
+
+### 3.9 Import wizard `[ ]`
+- [ ] File picker (CSV/JSON).
+- [ ] Preview with per-item confidence badges (Exact/Probable/Unmatched).
+- [ ] Disambiguation re-preview flow.
+- [ ] Apply import with progress.
+- **Web reference:** `apps/web/src/app/import/page.tsx`
+
+### Suggested execution order
+
+1. **3.1** (data layer) — unblocks everything else.
+2. **3.4** (history + watchlist) — core personal features, high usage.
+3. **3.5** (collections) — completes the personal data surface.
+4. **3.2** (social hub) — the biggest screen, most new UI.
+5. **3.3** (dashboard enhancements) — adds to existing screen.
+6. **3.6 → 3.7 → 3.8** (invite, pick rooms, clubs) — viral/group features.
+7. **3.9** (import) — least mobile-critical, can defer.
+
+Each item is one focused PR. The data layer (3.1) is the only hard
+dependency; after that, items 3.2–3.9 can be done in any order.
