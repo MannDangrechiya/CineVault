@@ -8,12 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..schemas.ai import GroupMatchRequest, GroupMatchResponse
+from ..schemas.ai_assistant import AIIntentExtraction
 from ..auth.dependencies import require_authenticated_user
 from ..auth.jwt_validator import SecurityTokenClaims
 from ..rate_limiter import enforce_rate_limit
 from ..database import get_db
 from ..repositories.social import social_repository, _resolve_uuid
-from ..ai.ollama_client import OllamaClient
+from ..repositories.recommendations import recommendation_repository
+from ..ai.provider import AIProviderFactory
 
 logger = logging.getLogger("cinevault.routers.ai")
 
@@ -71,8 +73,9 @@ async def group_matchmaking(
     1. Ensures all requested friend_ids have an ACCEPTED friendship with current user.
     2. Fetches taste_vector for current user and all requested friends.
     3. Calculates the Average Group Vector (mathematical mean).
-    4. Retrieves candidate movie titles (currently mocked).
-    5. Calls Ollama AI Brain to generate grounded natural language group recommendations.
+    4. Retrieves real candidate movie titles via the recommendations pipeline.
+    5. Calls the configured AI provider (mock/openai/gemini) to generate a
+       grounded natural language group recommendation.
     """
     current_user_id = _extract_user_id(claims)
 
@@ -119,25 +122,55 @@ async def group_matchmaking(
         # Fallback 384-dimensional zero vector if no members have profiles yet
         group_vector = [0.0] * 384
 
-    # 5. Candidate selection (Mocked DB Step before pgvector canonical linkage)
-    mock_titles = ["Inception", "Interstellar", "Blade Runner 2049"]
-
-    # 6. Construct strict LLM Prompt
-    titles_str = ", ".join(mock_titles)
-    prompt = (
-        f"You are CineVault Oracle. Recommend these 3 movies: {titles_str} "
-        f"based on the group's mood: {body.mood}. Explain why they will like it."
+    # 5. Candidate selection — real catalog titles grounded in the requesting
+    # user's actual recommendation pipeline (get_recommendations already has
+    # its own real cold-start handling for a brand-new account), not the
+    # 3 hardcoded movie names this endpoint used to return for every group
+    # regardless of mood or who was in it. Titles don't carry an embedding
+    # vector of their own (only user taste_vector does, see
+    # compute_average_group_vector above), so a literal group-vector nearest-
+    # neighbor title search isn't possible without a real ingestion source —
+    # this is the closest honest approximation available today.
+    rec_res = await recommendation_repository.get_recommendations(
+        db=db,
+        user_id=str(current_user_id),
+        limit=3,
     )
+    candidate_titles = [
+        {
+            "title_id": item.title_id,
+            "display_id": item.display_id,
+            "canonical_title": item.canonical_title,
+            "release_year": item.release_year,
+            "content_type": item.content_type,
+            "genres": item.genres,
+        }
+        for item in rec_res.data
+    ]
+    recommended_title_names = [c["canonical_title"] for c in candidate_titles]
 
-    # 7. Generate chat completion via Ollama AI Brain
+    # 6. Generate grounded natural language response via the same provider
+    # abstraction (mock/openai/gemini) the Conversational Oracle chat uses —
+    # this endpoint used to call a local Ollama server directly, which meant
+    # it stayed broken regardless of any OPENAI_API_KEY/GEMINI_API_KEY
+    # configured for the rest of the app.
     try:
-        ollama = OllamaClient()
-        ai_response_text = await ollama.generate_chat(prompt=prompt)
+        provider = AIProviderFactory.get_provider()
+        intent = AIIntentExtraction(
+            raw_query=f"group movie night, mood: {body.mood}",
+            sanitized_query=f"group movie night, mood: {body.mood}",
+            detected_intent_mode="RECOMMENDATION",
+        )
+        ai_response_text = await provider.generate_assistant_response(
+            sanitized_query=f"Recommend a movie night pick for a group of {len(all_member_ids)} in the mood for: {body.mood}",
+            intent=intent,
+            matched_titles=candidate_titles,
+        )
     except Exception as exc:
-        logger.error(f"Ollama chat generation failed during group matchmaking: {exc}", exc_info=True)
+        logger.error(f"AI provider failed during group matchmaking: {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Ollama AI chat generation failed: {str(exc)}",
+            detail=f"AI group matchmaking generation failed: {str(exc)}",
         ) from exc
 
     return GroupMatchResponse(
@@ -145,7 +178,7 @@ async def group_matchmaking(
         mood=body.mood,
         group_size=len(all_member_ids),
         group_member_ids=all_member_ids,
-        recommended_titles=mock_titles,
+        recommended_titles=recommended_title_names,
         ai_recommendation=ai_response_text,
         group_vector_preview=group_vector[:5] if group_vector else None,
     )

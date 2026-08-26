@@ -2473,31 +2473,82 @@ class SocialRepository:
             return ChallengeDetailResponse(challenge=ch_resp, participants=participants)
 
     async def list_active_challenges(
-        self, db: Optional[AsyncSession],
+        self, db: Optional[AsyncSession], user_id: Optional[uuid.UUID] = None,
     ) -> List[ChallengeResponse]:
-        """List all currently active challenges."""
+        """List all currently active challenges, with the caller's own
+        progress attached (my_progress/my_completed) when user_id is given."""
         now = datetime.now(timezone.utc)
         if db is not None:
-            from ..models.social import ChallengeModel
+            from ..models.social import ChallengeModel, ChallengeParticipantModel
             stmt = (
                 select(ChallengeModel)
                 .where(and_(ChallengeModel.starts_at <= now, ChallengeModel.ends_at > now))
                 .order_by(ChallengeModel.ends_at.asc())
             )
             challenges = (await db.execute(stmt)).scalars().all()
+
+            # Real participant counts, one grouped query for the whole page
+            # rather than N+1 -- previously omitted entirely here (unlike
+            # get_challenge_detail, which does compute it), so every
+            # challenge always showed "0 Cinephiles" on the list/browse view
+            # regardless of how many people had actually joined.
+            count_map: Dict[uuid.UUID, int] = {}
+            # Caller's own progress per challenge -- previously nothing in
+            # this list response carried per-user progress at all, so the
+            # frontend's "goal progress" bar was a hardcoded 40%-width div
+            # (explicitly commented "Progress Bar Demo") for every challenge,
+            # every user, regardless of anyone's real progress.
+            my_progress_map: Dict[uuid.UUID, Tuple[int, bool]] = {}
+            if challenges:
+                challenge_ids = [c.challenge_id for c in challenges]
+                count_stmt = (
+                    select(ChallengeParticipantModel.challenge_id, func.count())
+                    .where(ChallengeParticipantModel.challenge_id.in_(challenge_ids))
+                    .group_by(ChallengeParticipantModel.challenge_id)
+                )
+                count_map = dict((await db.execute(count_stmt)).all())
+
+                if user_id is not None:
+                    my_stmt = select(
+                        ChallengeParticipantModel.challenge_id,
+                        ChallengeParticipantModel.progress,
+                        ChallengeParticipantModel.completed,
+                    ).where(
+                        and_(
+                            ChallengeParticipantModel.challenge_id.in_(challenge_ids),
+                            ChallengeParticipantModel.user_id == user_id,
+                        )
+                    )
+                    my_progress_map = {
+                        row[0]: (row[1], row[2]) for row in (await db.execute(my_stmt)).all()
+                    }
+
             return [
                 ChallengeResponse(
                     challenge_id=c.challenge_id, title=c.title, description=c.description,
                     challenge_type=c.challenge_type, club_id=c.club_id,
                     criteria_json=c.criteria_json, goal_count=c.goal_count,
                     starts_at=c.starts_at, ends_at=c.ends_at, created_at=c.created_at,
+                    participant_count=count_map.get(c.challenge_id, 0),
+                    my_progress=my_progress_map.get(c.challenge_id, (None, False))[0],
+                    my_completed=my_progress_map.get(c.challenge_id, (None, False))[1],
                 ) for c in challenges
             ]
         else:
+            # Seed-fallback dicts already carry participant_count (kept in
+            # sync by join_challenge's seed branch above), so **c picks it
+            # up correctly here -- only the real-DB path above was missing it.
             active = [
                 ChallengeResponse(**c) for c in SEED_CHALLENGES.values()
                 if c["starts_at"] <= now < c["ends_at"]
             ]
+            if user_id is not None:
+                for resp in active:
+                    for p in SEED_CHALLENGE_PARTICIPANTS:
+                        if p["challenge_id"] == resp.challenge_id and p["user_id"] == user_id:
+                            resp.my_progress = p["progress"]
+                            resp.my_completed = p["completed"]
+                            break
             return active
 
 

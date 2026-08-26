@@ -41,6 +41,12 @@ export interface AssistantQueryResponse {
 export interface FriendshipItem {
   friendship_id: string;
   friend_id: string;
+  // Present on the raw EnrichedFriendshipResponse (it extends FriendshipResponse,
+  // which carries these) even though earlier code never needed them -- the
+  // Friends management page uses them to tell "I sent this request" apart
+  // from "they sent it to me" for PENDING rows.
+  requester_id: string;
+  addressee_id: string;
   // Best-effort only: the backend has no user-profile table, so these
   // resolve to null for any account outside the fixed local-dev credential
   // store (see services/api/auth/user_directory.py). Callers must render a
@@ -88,6 +94,16 @@ export async function queryAssistant(
 
 export async function getFriendships(): Promise<FriendshipItem[]> {
   return await apiFetch<FriendshipItem[]>("/social/friendships");
+}
+
+export async function updateFriendshipStatus(
+  friendshipId: string,
+  status: "ACCEPTED" | "BLOCKED"
+): Promise<FriendshipItem> {
+  return await apiFetch<FriendshipItem>(`/social/friendships/${encodeURIComponent(friendshipId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
 }
 
 export interface TasteMatch {
