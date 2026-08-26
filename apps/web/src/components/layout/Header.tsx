@@ -3,12 +3,37 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Bell, User, LogOut, Sparkles } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { getRecommendations } from "@/lib/api/personal";
+import { getFriendships } from "@/lib/api/ai";
 
 export const Header: React.FC = () => {
   const pathname = usePathname();
   const { user, isAuthenticated, logout } = useAuth();
+
+  // The notification dot used to be a hardcoded <span>, permanently visible
+  // whether or not there was actually anything pending -- an "you have a
+  // notification" claim shown to every user on every page regardless of
+  // real state. Shares its queryKey/cache with the Social and Friends pages
+  // (same underlying data), so this adds no extra request on pages that
+  // already loaded them.
+  const { data: receivedRecs = [] } = useQuery({
+    queryKey: ["recommendations", "received"],
+    queryFn: () => getRecommendations({ role: "received" }),
+    enabled: isAuthenticated,
+  });
+  const { data: friendships = [] } = useQuery({
+    queryKey: ["friendships"],
+    queryFn: getFriendships,
+    enabled: isAuthenticated,
+  });
+  const pendingRecCount = receivedRecs.filter((r) => r.status === "SENT").length;
+  const pendingFriendCount = friendships.filter(
+    (f) => f.status === "PENDING" && user?.sub && f.requester_id !== user.sub
+  ).length;
+  const hasPendingNotifications = pendingRecCount + pendingFriendCount > 0;
 
   if (pathname === "/login") return null;
 
@@ -30,7 +55,9 @@ export const Header: React.FC = () => {
           className="relative p-2 text-zinc-400 hover:text-zinc-100 rounded-xl hover:bg-zinc-900/80 transition-colors"
         >
           <Bell className="w-4 h-4" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-violet-500 shadow-sm shadow-violet-500" />
+          {hasPendingNotifications && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-violet-500 shadow-sm shadow-violet-500" />
+          )}
         </Link>
 
         {/* User Profile / Auth Control */}

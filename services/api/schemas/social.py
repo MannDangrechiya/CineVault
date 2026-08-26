@@ -502,6 +502,11 @@ class ChallengeResponse(BaseModel):
     ends_at: datetime
     created_at: datetime
     participant_count: int = 0
+    # Caller-relative: the requesting user's own progress toward goal_count,
+    # if they've joined. None (not 0) means "haven't joined yet" -- the
+    # frontend needs to tell that apart from "joined, zero progress logged".
+    my_progress: Optional[int] = None
+    my_completed: bool = False
 
 
 class ChallengeParticipantResponse(BaseModel):

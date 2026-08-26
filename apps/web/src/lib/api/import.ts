@@ -189,8 +189,13 @@ export function parseImportText(
       notes = parts.slice(1).join(" - ").trim();
     }
 
-    // Strip trailing commas, colons
-    clean = clean.replace(/[,:;]+$/, "").trim();
+    // Strip trailing commas, colons, and a dangling "-" left over when the
+    // " - " note-separator above matched with nothing after it (e.g.
+    // "Parasite (2019) - 5/5" -- once the year and the "5/5" score are both
+    // consumed, "Parasite (2019) -" has no space-dash-space left to split
+    // on, so a bare trailing "-" survived into the parsed title and broke
+    // canonical matching for an otherwise-real, otherwise-exact title).
+    clean = clean.replace(/[,:;-]+$/, "").trim();
 
     if (clean.length > 0) {
       items.push({

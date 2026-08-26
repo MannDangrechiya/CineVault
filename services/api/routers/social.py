@@ -799,7 +799,11 @@ async def create_watch_club(
 ):
     """Create a new watch club."""
     user_id = _extract_user_id(claims)
-    return await social_repository.create_watch_club(db=db, creator_id=user_id, payload=payload)
+    club = await social_repository.create_watch_club(db=db, creator_id=user_id, payload=payload)
+    name, username = resolve_display_names([user_id]).get(str(user_id), (None, None))
+    club.creator_name = name
+    club.creator_username = username
+    return club
 
 
 @router.get(
@@ -814,9 +818,26 @@ async def get_watch_club(
 ):
     """Retrieve a watch club by slug with members."""
     try:
-        return await social_repository.get_watch_club(db=db, slug=slug)
+        detail = await social_repository.get_watch_club(db=db, slug=slug)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    # Resolve creator + every member's display name in one batch -- this
+    # endpoint (and list_my_clubs/create_watch_club below) never called
+    # resolve_display_names at all, unlike every other social endpoint in
+    # this file (recap, pick-rooms, recommendations, invites...), so every
+    # club creator and member always rendered as the generic "CineVault
+    # Member" / "Club Member" fallback on the frontend.
+    ids_to_resolve = [detail.club.created_by] + [m.user_id for m in detail.members]
+    name_map = resolve_display_names(ids_to_resolve)
+    c_name, c_username = name_map.get(str(detail.club.created_by), (None, None))
+    detail.club.creator_name = c_name
+    detail.club.creator_username = c_username
+    for m in detail.members:
+        m_name, m_username = name_map.get(str(m.user_id), (None, None))
+        m.user_name = m_name
+        m.user_username = m_username
+    return detail
 
 
 @router.post(
@@ -848,7 +869,14 @@ async def list_my_clubs(
 ):
     """List all watch clubs the authenticated user belongs to."""
     user_id = _extract_user_id(claims)
-    return await social_repository.list_user_clubs(db=db, user_id=user_id)
+    clubs = await social_repository.list_user_clubs(db=db, user_id=user_id)
+    if clubs:
+        name_map = resolve_display_names([c.created_by for c in clubs])
+        for c in clubs:
+            name, username = name_map.get(str(c.created_by), (None, None))
+            c.creator_name = name
+            c.creator_username = username
+    return clubs
 
 
 # ── Phase 3: Club Activity Feed (2.12) ──────────────────────────────────────
@@ -898,7 +926,8 @@ async def list_active_challenges(
     db: Optional[AsyncSession] = Depends(get_db),
 ):
     """List all currently active challenges."""
-    return await social_repository.list_active_challenges(db=db)
+    user_id = _extract_user_id(claims)
+    return await social_repository.list_active_challenges(db=db, user_id=user_id)
 
 
 @router.get(

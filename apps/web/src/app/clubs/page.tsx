@@ -15,6 +15,8 @@ import {
   Clapperboard,
   X,
   ArrowRight,
+  Share2,
+  CheckCheck,
 } from "lucide-react";
 import {
   listMyClubs,
@@ -38,6 +40,7 @@ export default function WatchClubsPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"clubs" | "challenges">("clubs");
   const [selectedClubSlug, setSelectedClubSlug] = useState<string | null>(null);
+  const [copiedClubLink, setCopiedClubLink] = useState(false);
 
   // Modal States
   const [isCreateClubOpen, setIsCreateClubOpen] = useState(false);
@@ -348,14 +351,41 @@ export default function WatchClubsPage() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => joinClubMutation.mutate(selectedClub.club.slug)}
-                      disabled={joinClubMutation.isPending}
-                      className="px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/30 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <Users className="w-3.5 h-3.5" />
-                      <span>{joinClubMutation.isPending ? "Joining..." : "Join Watch Club"}</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => {
+                          if (typeof window !== "undefined") {
+                            navigator.clipboard.writeText(
+                              `${window.location.origin}/clubs/${selectedClub.club.slug}`
+                            );
+                            setCopiedClubLink(true);
+                            setTimeout(() => setCopiedClubLink(false), 2500);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 transition-all cursor-pointer shadow-sm"
+                      >
+                        {copiedClubLink ? (
+                          <>
+                            <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Link Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Share2 className="w-3.5 h-3.5 text-violet-400" />
+                            <span>Share Club</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => joinClubMutation.mutate(selectedClub.club.slug)}
+                        disabled={joinClubMutation.isPending}
+                        className="px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 transition-all shadow-lg shadow-violet-600/30 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Users className="w-3.5 h-3.5" />
+                        <span>{joinClubMutation.isPending ? "Joining..." : "Join Watch Club"}</span>
+                      </button>
+                    </div>
                   </div>
 
                   {selectedClub.club.description && (
@@ -541,6 +571,10 @@ export default function WatchClubsPage() {
                     0,
                     Math.ceil((new Date(ch.ends_at).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
                   );
+                  const hasJoined = ch.my_progress !== null && ch.my_progress !== undefined;
+                  const progressPct = hasJoined
+                    ? Math.min(100, Math.round(((ch.my_progress || 0) / Math.max(1, ch.goal_count)) * 100))
+                    : 0;
 
                   return (
                     <div
@@ -564,14 +598,22 @@ export default function WatchClubsPage() {
                           </p>
                         </div>
 
-                        {/* Progress Bar Demo */}
+                        {/* Real per-user progress -- was a hardcoded 40%-width
+                            bar for every challenge/user regardless of anyone's
+                            actual progress; now driven by the caller's real
+                            my_progress from GET /social/challenges. */}
                         <div className="space-y-1.5 pt-2">
                           <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-zinc-400">Target Goal</span>
+                            <span className="text-zinc-400">
+                              {hasJoined ? `${ch.my_progress} / ${ch.goal_count} Logged` : "Not Joined Yet"}
+                            </span>
                             <span className="font-bold text-amber-400">{ch.goal_count} Films</span>
                           </div>
                           <div className="h-2 w-full bg-zinc-950 rounded-full overflow-hidden">
-                            <div className="h-full bg-amber-500 rounded-full w-2/5 transition-all" />
+                            <div
+                              className="h-full bg-amber-500 rounded-full transition-all"
+                              style={{ width: `${progressPct}%` }}
+                            />
                           </div>
                         </div>
                       </div>
@@ -583,18 +625,27 @@ export default function WatchClubsPage() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => progressChallengeMutation.mutate({ challengeId: ch.challenge_id, increment: 1 })}
-                            className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 transition-colors cursor-pointer"
-                          >
-                            +1 Log
-                          </button>
-                          <button
-                            onClick={() => joinChallengeMutation.mutate(ch.challenge_id)}
-                            className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 transition-all shadow-md shadow-amber-600/20 cursor-pointer"
-                          >
-                            Join
-                          </button>
+                          {hasJoined ? (
+                            <>
+                              <button
+                                onClick={() => progressChallengeMutation.mutate({ challengeId: ch.challenge_id, increment: 1 })}
+                                disabled={ch.my_completed}
+                                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                +1 Log
+                              </button>
+                              <span className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-emerald-300 bg-emerald-500/10 border border-emerald-500/20">
+                                {ch.my_completed ? "Completed!" : "Joined"}
+                              </span>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => joinChallengeMutation.mutate(ch.challenge_id)}
+                              className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 transition-all shadow-md shadow-amber-600/20 cursor-pointer"
+                            >
+                              Join
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
