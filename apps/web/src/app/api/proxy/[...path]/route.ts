@@ -13,7 +13,15 @@
 // actually logged in.
 
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth/session";
+import { cookies } from "next/headers";
+import {
+  getSession,
+  SESSION_COOKIE_NAME,
+  SessionData,
+  decryptSessionUnchecked,
+  encryptSession,
+} from "@/lib/auth/session";
+import { exchangeRefreshToken } from "@/lib/auth/keycloak";
 
 function getBackendBaseUrl(): string {
   const url = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -30,6 +38,52 @@ const HOP_BY_HOP_RESPONSE_HEADERS = new Set([
   "connection",
 ]);
 
+// Most of the app fetches data client-side (react-query calls straight
+// through this proxy) rather than via a fresh page navigation, so
+// middleware.ts's refresh-on-expiry logic (which only runs at page-load
+// time for a fixed list of routes) never gets a chance to fire for those
+// calls — a tab left open past the access token's real lifetime would keep
+// sending a dead token to every endpoint this proxy touches, forever,
+// until the next full navigation. Attempt the same refresh here, right
+// where the token is actually attached, so it's covered no matter how the
+// request was triggered. Returns the token to use (possibly freshly
+// refreshed) and, if a refresh happened, the new session to persist on the
+// outgoing response's cookie.
+async function resolveAccessToken(): Promise<{
+  accessToken: string | null;
+  refreshedSession: SessionData | null;
+}> {
+  const session = await getSession();
+  if (session?.access_token) {
+    return { accessToken: session.access_token, refreshedSession: null };
+  }
+
+  const cookieStore = await cookies();
+  const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
+  if (!sessionCookie?.value) {
+    return { accessToken: null, refreshedSession: null };
+  }
+
+  const expiredSession = await decryptSessionUnchecked(sessionCookie.value);
+  if (!expiredSession?.refresh_token) {
+    return { accessToken: null, refreshedSession: null };
+  }
+
+  const refreshed = await exchangeRefreshToken(expiredSession.refresh_token);
+  if (!refreshed) {
+    return { accessToken: null, refreshedSession: null };
+  }
+
+  const accessTokenExpiresAt = Date.now() + (refreshed.expires_in || 3600) * 1000;
+  const newSession: SessionData = {
+    access_token: refreshed.access_token,
+    refresh_token: refreshed.refresh_token || expiredSession.refresh_token,
+    user: expiredSession.user,
+    expires_at: accessTokenExpiresAt,
+  };
+  return { accessToken: newSession.access_token, refreshedSession: newSession };
+}
+
 async function forward(request: Request, pathSegments: string[]): Promise<NextResponse> {
   const backendBaseUrl = getBackendBaseUrl();
   const targetPath = pathSegments.map(encodeURIComponent).join("/");
@@ -43,9 +97,9 @@ async function forward(request: Request, pathSegments: string[]): Promise<NextRe
     }
   });
 
-  const session = await getSession();
-  if (session?.access_token) {
-    forwardedHeaders.set("Authorization", `Bearer ${session.access_token}`);
+  const { accessToken, refreshedSession } = await resolveAccessToken();
+  if (accessToken) {
+    forwardedHeaders.set("Authorization", `Bearer ${accessToken}`);
   }
 
   const hasBody = !["GET", "HEAD", "OPTIONS"].includes(request.method);
@@ -80,11 +134,27 @@ async function forward(request: Request, pathSegments: string[]): Promise<NextRe
   });
 
   const responseBody = await backendResponse.arrayBuffer();
-  return new NextResponse(responseBody, {
+  const response = new NextResponse(responseBody, {
     status: backendResponse.status,
     statusText: backendResponse.statusText,
     headers: responseHeaders,
   });
+
+  // If resolveAccessToken() had to refresh, persist the new session now —
+  // otherwise every subsequent request keeps hitting the same expired
+  // cookie and re-refreshing from scratch instead of reusing this one.
+  if (refreshedSession) {
+    const encrypted = await encryptSession(refreshedSession);
+    response.cookies.set(SESSION_COOKIE_NAME, encrypted, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
+  }
+
+  return response;
 }
 
 interface RouteParams {

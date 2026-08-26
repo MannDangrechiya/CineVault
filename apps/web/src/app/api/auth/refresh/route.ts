@@ -47,8 +47,12 @@ export async function POST() {
     );
   }
 
-  const expiresInMs = (refreshed.expires_in || 3600) * 1000;
-  const expiresAt = Date.now() + expiresInMs;
+  // Same two-expiry split as local-login/route.ts and middleware.ts:
+  // `expires_at` inside the session tracks the real (short) access-token
+  // lifetime; the cookie's own browser-level `expires` slides forward by
+  // the longer window so it's still present to refresh from again later.
+  const accessTokenExpiresAt = Date.now() + (refreshed.expires_in || 3600) * 1000;
+  const cookieExpiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
 
   const newSession: SessionData = {
     access_token: refreshed.access_token,
@@ -56,7 +60,7 @@ export async function POST() {
     // one only if the response didn't include a new one.
     refresh_token: refreshed.refresh_token || existingSession.refresh_token,
     user: existingSession.user,
-    expires_at: expiresAt,
+    expires_at: accessTokenExpiresAt,
   };
 
   const encrypted = await encryptSession(newSession);
@@ -65,8 +69,8 @@ export async function POST() {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    expires: new Date(expiresAt),
+    expires: new Date(cookieExpiresAt),
   });
 
-  return NextResponse.json({ ok: true, expires_at: expiresAt });
+  return NextResponse.json({ ok: true, expires_at: accessTokenExpiresAt });
 }

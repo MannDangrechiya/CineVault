@@ -205,6 +205,104 @@ async def login(body: LoginRequest):
     )
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh", response_model=LoginResponse)
+async def refresh(body: RefreshRequest):
+    """
+    Exchanges a still-valid refresh token for a fresh access token, without
+    requiring the user to re-enter credentials.
+
+    This endpoint didn't exist at all until now: the Next.js BFF's refresh
+    flow (middleware.ts / api/proxy) was built to call it (or the real
+    Keycloak token endpoint) once an access token expired, but real Keycloak
+    has been down in this environment (`docker ps` shows it Exited days ago)
+    and there was nowhere else for a local-dev-issued `rt_local_*` refresh
+    token to be redeemed. Combined with a separate bug where the session
+    cookie's own expiry never actually reflected the real ~24h access-token
+    lifetime, the refresh path never even got a chance to fire -- every
+    authenticated call after ~24h silently sent an already-expired token:
+    endpoints requiring auth 401'd, endpoints with an optional-auth fallback
+    ran as the anonymous default user instead (looked like success, wrote to
+    nobody's real account). See WEB_FEATURE_AUDIT.md.
+
+    - In local_development: validates the `rt_local_{user_id}_{issued_at}`
+      opaque reference format (not cryptographically significant, matching
+      how /login mints it -- this endpoint's whole reason to exist is local
+      dev without a running Keycloak), re-resolves that user_id against the
+      local credential store, and mints a fresh JWT + refresh token pair.
+    - In staging / production: 501, same as /login -- real deployments use
+      Keycloak's own token endpoint directly, never this one.
+    """
+    if config.environment not in ("local_development",):
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=(
+                "Local refresh-token exchange is only available in local development. "
+                "Use the Keycloak OIDC token endpoint in staging and production."
+            ),
+        )
+
+    if not _JOSE_AVAILABLE:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="python-jose is not installed. Cannot issue JWT tokens.",
+        )
+
+    token = (body.refresh_token or "").strip()
+    parts = token.split("_")
+    if len(parts) < 4 or parts[0] != "rt" or parts[1] != "local":
+        logger.warning("Refresh attempted with malformed/foreign refresh token.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or unrecognized refresh token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    # user_id (a UUID, hyphens not underscores) is everything between the
+    # "rt_local_" prefix and the final "_<issued_at timestamp>" segment.
+    user_id = "_".join(parts[2:-1])
+
+    local_users = _load_local_user_store()
+    user_record = next(
+        (rec for rec in local_users.values() if rec.get("user_id") == user_id),
+        None,
+    )
+    if not user_record:
+        logger.warning("Refresh token references unknown user_id=%s", user_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token no longer maps to a known account. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    email = next(
+        (addr for addr, rec in local_users.items() if rec.get("user_id") == user_id),
+        f"{user_id}@cinevault.local",
+    )
+    username = email.split("@")[0]
+    roles = user_record["roles"]
+
+    access_token = _generate_local_dev_jwt(
+        user_id=user_id,
+        email=email,
+        username=username,
+        roles=roles,
+    )
+    new_refresh_token = f"rt_local_{user_id}_{int(time.time())}"
+
+    logger.info("Refreshed access token for user_id=%s via local refresh flow", user_id)
+
+    return LoginResponse(
+        access_token=access_token,
+        refresh_token=new_refresh_token,
+        user_id=user_id,
+        email=email,
+        roles=roles,
+    )
+
+
 class UserIdentityResponse(BaseModel):
     sub: str
     email: Optional[str] = None

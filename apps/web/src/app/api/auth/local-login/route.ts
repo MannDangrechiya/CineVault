@@ -30,6 +30,11 @@ export async function POST(request: Request) {
       roles: ["authenticated_user"],
     };
     let accessToken = `dev_jwt_${sessionUser.username}_${Date.now()}`;
+    let refreshToken = `rt_${sessionUser.sub}`;
+    // Real token lifetime from the backend, NOT the session cookie's own
+    // shelf life -- see the expiresInMs fix below for why conflating the
+    // two silently broke every authenticated action after ~24h.
+    let tokenExpiresInSeconds = 7 * 24 * 60 * 60;
 
     // 1. First attempt to authenticate against FastAPI backend /v1/auth/login if online
     const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
@@ -57,6 +62,22 @@ export async function POST(request: Request) {
           roles: backendData.roles || ["authenticated_user"],
         };
         accessToken = backendData.access_token;
+        refreshToken = backendData.refresh_token || refreshToken;
+        // The real JWT's own `exp` claim is set to this many seconds from
+        // now by the backend (86400s / 24h today) -- was previously
+        // ignored entirely in favor of a hardcoded 7-day cookie, so the
+        // session cookie kept claiming "still valid" for 6 days after the
+        // actual access_token inside it had expired. Every authenticated
+        // call in that window silently sent a dead token: endpoints
+        // requiring auth 401'd, endpoints with an optional-auth fallback
+        // silently ran as the anonymous default user instead (a request
+        // that looked like it succeeded, but wrote to nobody's real
+        // account). The refresh flow in middleware.ts/api/proxy already
+        // existed to handle exactly this, but never fired because
+        // getSession() never saw the cookie as expired.
+        if (typeof backendData.expires_in === "number" && backendData.expires_in > 0) {
+          tokenExpiresInSeconds = backendData.expires_in;
+        }
         backendSuccess = true;
       }
     } catch {
@@ -95,17 +116,37 @@ export async function POST(request: Request) {
         roles: preset.roles,
       };
       accessToken = `dev_jwt_${sessionUser.username}_${Date.now()}`;
+      refreshToken = `rt_${sessionUser.sub}`;
+      // No real backend to honor an expiry from in this offline fallback
+      // path, and no real refresh endpoint to renew against either --
+      // tokenExpiresInSeconds keeps its 7-day default from above.
     }
 
-    // 3. Establish 7-day session cookie
-    const expiresInMs = 7 * 24 * 60 * 60 * 1000;
-    const expiresAt = Date.now() + expiresInMs;
+    // 3. Two separate expiries, deliberately different:
+    //   - `expires_at` (inside the encrypted session payload) now tracks the
+    //     REAL access token lifetime returned by the backend, instead of
+    //     always claiming 7 days regardless of what's actually inside it.
+    //     decryptSession() checks this to decide "is my access token still
+    //     good", and middleware.ts/api/proxy's refresh logic only fires once
+    //     this check goes false.
+    //   - the browser cookie's own `expires` attribute stays at the longer
+    //     7-day window on purpose: the cookie (and the refresh_token inside
+    //     it) must still be PRESENT for decryptSessionUnchecked() to recover
+    //     and refresh from, once the access token itself has gone stale at
+    //     the shorter window above. Collapsing these into one value was the
+    //     bug -- it made the encrypted blob disappear from the browser at
+    //     the same moment a refresh should have kicked in, or (as it was
+    //     before this fix) let a dead access token keep getting sent for
+    //     days because neither expiry ever actually reflected the token.
+    const accessTokenExpiresAt = Date.now() + tokenExpiresInSeconds * 1000;
+    const cookieMaxAgeMs = 7 * 24 * 60 * 60 * 1000;
+    const cookieExpiresAt = Date.now() + cookieMaxAgeMs;
 
     const session: SessionData = {
       access_token: accessToken,
-      refresh_token: `rt_${sessionUser.sub}`,
+      refresh_token: refreshToken,
       user: sessionUser,
-      expires_at: expiresAt,
+      expires_at: accessTokenExpiresAt,
     };
 
     const encryptedSession = await encryptSession(session);
@@ -116,7 +157,7 @@ export async function POST(request: Request) {
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      expires: new Date(expiresAt),
+      expires: new Date(cookieExpiresAt),
     });
 
     return NextResponse.json({
