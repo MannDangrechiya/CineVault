@@ -165,6 +165,22 @@ export interface CreateCollectionPayload {
   is_private?: boolean;
 }
 
+export interface CollectionTitleItem {
+  item_id: string;
+  title_id: string;
+  canonical_title: string;
+  production_year?: number | null;
+  content_type: string;
+  poster_url?: string | null;
+  notes?: string | null;
+  added_at: string;
+}
+
+export interface CollectionDetail {
+  collection: CollectionItem;
+  items: CollectionTitleItem[];
+}
+
 // ── Personal Analytics & Dashboard Types ────────────────────────────────
 
 export interface GenreAffinityItem {

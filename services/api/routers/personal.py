@@ -22,6 +22,7 @@ from ..schemas.personal import (
     ImportApplyRequest, ImportApplyResponse,
     HistoryItemResponse, HistoryPageResponse,
     CollectionItemResponse, CollectionCreateRequest,
+    CollectionDetailResponse, CollectionItemAddRequest,
     LibraryItemResponse, LibraryPageResponse, LibraryAddRequest,
     PersonalAnalyticsResponse,
     WatchlistPageResponse, UserStreakResponse
@@ -165,6 +166,51 @@ async def delete_personal_collection(
     if not deleted:
         return {"status": "not_found", "deleted_id": id}
     return {"status": "success", "deleted_id": id}
+
+@personal_router.get("/collections/{id}", response_model=CollectionDetailResponse)
+async def get_personal_collection_detail(
+    id: str,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Retrieves a single collection with its real title items. A collection
+    could previously be created and deleted but never populated or viewed --
+    personal.user_list_item existed but nothing exposed it."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    detail = await personal_repository.get_collection_detail(db=db, user_id=user_id, list_id=id)
+    if not detail:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Collection {id} not found.")
+    return detail
+
+@personal_router.post("/collections/{id}/items", response_model=CollectionDetailResponse, status_code=status.HTTP_201_CREATED)
+async def add_personal_collection_item(
+    id: str,
+    body: CollectionItemAddRequest,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Adds a real canonical title to a collection the requesting user owns."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    detail = await personal_repository.add_collection_item(
+        db=db, user_id=user_id, list_id=id, title_id=body.title_id, notes=body.notes
+    )
+    if not detail:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Collection {id} not found.")
+    return detail
+
+@personal_router.delete("/collections/{id}/items/{title_id}", status_code=status.HTTP_200_OK)
+async def remove_personal_collection_item(
+    id: str,
+    title_id: str,
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Removes a title from a collection the requesting user owns."""
+    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    removed = await personal_repository.remove_collection_item(db=db, user_id=user_id, list_id=id, title_id=title_id)
+    if not removed:
+        return {"status": "not_found", "collection_id": id, "title_id": title_id}
+    return {"status": "success", "collection_id": id, "title_id": title_id}
 
 # ── /v1/personal/analytics ─────────────────────────────────────────────────
 

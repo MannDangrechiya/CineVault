@@ -243,6 +243,27 @@ class CollectionCreateRequest(BaseModel):
     banner_url: Optional[str] = None
     is_private: bool = True
 
+class CollectionTitleItem(BaseModel):
+    """A single real title inside a collection -- previously nothing
+    exposed personal.user_list_item at all: a collection could be created
+    and deleted but never actually populated with any titles."""
+    item_id: str
+    title_id: str
+    canonical_title: str
+    production_year: Optional[int] = None
+    content_type: str = "MOVIE"
+    poster_url: Optional[str] = None
+    notes: Optional[str] = None
+    added_at: str
+
+class CollectionDetailResponse(BaseModel):
+    collection: CollectionItemResponse
+    items: List[CollectionTitleItem] = []
+
+class CollectionItemAddRequest(BaseModel):
+    title_id: str
+    notes: Optional[str] = None
+
 class GenreAffinityItem(BaseModel):
     genre: str
     count: int

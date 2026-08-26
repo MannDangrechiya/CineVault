@@ -51,6 +51,8 @@ from ..schemas.personal import (
     HistoryPageResponse,
     CollectionItemResponse,
     CollectionCreateRequest,
+    CollectionDetailResponse,
+    CollectionTitleItem,
     LibraryItemResponse,
     LibraryPageResponse,
 )
@@ -855,6 +857,176 @@ class PersonalRepository:
             except Exception as exc:
                 await db.rollback()
                 logger.error("delete_collection failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+                return False
+
+        return False
+
+    async def get_collection_detail(
+        self, db: Optional[AsyncSession], user_id: str, list_id: str
+    ) -> Optional[CollectionDetailResponse]:
+        """Retrieves a single collection with its real title items, joined
+        against canonical.title. personal.user_list_item has always existed
+        and list_collections already loaded it (for the item_count), but
+        nothing ever exposed the actual items -- a collection could be
+        created and deleted but never populated or viewed."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                try:
+                    list_uuid = uuid.UUID(list_id)
+                except ValueError:
+                    return None
+
+                stmt = (
+                    select(UserListModel)
+                    .options(selectinload(UserListModel.items))
+                    .where(
+                        and_(
+                            UserListModel.list_id == list_uuid,
+                            UserListModel.user_id == user_uuid,
+                        )
+                    )
+                )
+                ul = (await db.execute(stmt)).scalar_one_or_none()
+                if not ul:
+                    return None
+
+                title_ids = [it.title_id for it in ul.items]
+                title_map: Dict[uuid.UUID, TitleModel] = {}
+                if title_ids:
+                    titles = (
+                        await db.execute(select(TitleModel).where(TitleModel.title_id.in_(title_ids)))
+                    ).scalars().all()
+                    title_map = {t.title_id: t for t in titles}
+
+                items = [
+                    CollectionTitleItem(
+                        item_id=str(it.item_id),
+                        title_id=str(it.title_id),
+                        canonical_title=(title_map[it.title_id].canonical_title if it.title_id in title_map else "Unknown Title"),
+                        production_year=(title_map[it.title_id].production_year if it.title_id in title_map else None),
+                        content_type=((title_map[it.title_id].content_type_id if it.title_id in title_map else None) or "MOVIE").upper(),
+                        poster_url=(title_map[it.title_id].poster_url if it.title_id in title_map else None),
+                        notes=it.notes,
+                        added_at=it.added_at.isoformat() if it.added_at else datetime.now(timezone.utc).isoformat(),
+                    )
+                    for it in sorted(ul.items, key=lambda i: i.position)
+                ]
+
+                return CollectionDetailResponse(
+                    collection=CollectionItemResponse(
+                        id=str(ul.list_id),
+                        name=ul.title,
+                        description=ul.description,
+                        item_count=len(ul.items),
+                        banner_url=None,
+                        is_private=ul.is_private,
+                        created_at=ul.created_at.isoformat() if ul.created_at else datetime.now(timezone.utc).isoformat(),
+                    ),
+                    items=items,
+                )
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("get_collection_detail failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return None
+
+    async def add_collection_item(
+        self, db: Optional[AsyncSession], user_id: str, list_id: str, title_id: str, notes: Optional[str] = None
+    ) -> Optional[CollectionDetailResponse]:
+        """Adds a real title to a collection the requesting user owns."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                try:
+                    list_uuid = uuid.UUID(list_id)
+                    title_uuid = uuid.UUID(title_id)
+                except ValueError:
+                    return None
+
+                stmt = select(UserListModel).where(
+                    and_(UserListModel.list_id == list_uuid, UserListModel.user_id == user_uuid)
+                )
+                ul = (await db.execute(stmt)).scalar_one_or_none()
+                if not ul:
+                    return None
+
+                existing_stmt = select(UserListItemModel).where(
+                    and_(
+                        UserListItemModel.list_id == list_uuid,
+                        UserListItemModel.title_id == title_uuid,
+                    )
+                )
+                existing = (await db.execute(existing_stmt)).scalar_one_or_none()
+                if not existing:
+                    count_stmt = select(func.count()).select_from(UserListItemModel).where(
+                        UserListItemModel.list_id == list_uuid
+                    )
+                    position = (await db.execute(count_stmt)).scalar_one()
+                    db.add(
+                        UserListItemModel(
+                            item_id=uuid.uuid4(),
+                            list_id=list_uuid,
+                            title_id=title_uuid,
+                            position=position,
+                            notes=notes,
+                            added_at=datetime.now(timezone.utc),
+                        )
+                    )
+                    await db.commit()
+
+                return await self.get_collection_detail(db=db, user_id=user_id, list_id=list_id)
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("add_collection_item failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        return None
+
+    async def remove_collection_item(
+        self, db: Optional[AsyncSession], user_id: str, list_id: str, title_id: str
+    ) -> bool:
+        """Removes a title from a collection the requesting user owns."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                try:
+                    list_uuid = uuid.UUID(list_id)
+                    title_uuid = uuid.UUID(title_id)
+                except ValueError:
+                    return False
+
+                owner_stmt = select(UserListModel.list_id).where(
+                    and_(UserListModel.list_id == list_uuid, UserListModel.user_id == user_uuid)
+                )
+                if (await db.execute(owner_stmt)).scalar_one_or_none() is None:
+                    return False
+
+                item_stmt = select(UserListItemModel).where(
+                    and_(
+                        UserListItemModel.list_id == list_uuid,
+                        UserListItemModel.title_id == title_uuid,
+                    )
+                )
+                item = (await db.execute(item_stmt)).scalar_one_or_none()
+                if not item:
+                    return False
+
+                await db.delete(item)
+                await db.commit()
+                return True
+            except Exception as exc:
+                await db.rollback()
+                logger.error("remove_collection_item failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
                 return False

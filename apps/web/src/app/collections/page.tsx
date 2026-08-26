@@ -227,7 +227,7 @@ export default function CollectionsPage() {
                   {/* Action */}
                   <div className="p-5 pt-0">
                     <Link
-                      href="/movies"
+                      href={`/collections/${col.id}`}
                       className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-violet-300 bg-violet-600/10 hover:bg-violet-600/20 border border-violet-500/30 transition-all flex items-center justify-center gap-2"
                     >
                       <span>Explore Collection</span>
