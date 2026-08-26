@@ -2,21 +2,20 @@
 
 import { APIClientError, APIErrorResponse } from "./types";
 
-const getBaseUrl = (): string => {
-  const url = process.env.NEXT_PUBLIC_API_BASE_URL;
-  if (url) {
-    return url.replace(/\/+$/, "");
-  }
-  return "http://localhost:8000";
-};
+// Every call is routed through the Next.js BFF proxy (src/app/api/proxy/[...path]/route.ts)
+// rather than hitting the FastAPI backend directly. The proxy runs server-side, where it can
+// read the real access token out of the encrypted HttpOnly session cookie and attach it as a
+// Bearer header — the browser itself never has the token, so apiFetch has nothing to attach.
+// Calling FastAPI directly from here would (and previously did) send every request with no
+// auth at all, silently degrading every endpoint to its anonymous/unauthenticated fallback.
+const PROXY_BASE_PATH = "/api/proxy";
 
 export async function apiFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const baseUrl = getBaseUrl();
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-  const url = `${baseUrl}${cleanEndpoint}`;
+  const url = `${PROXY_BASE_PATH}${cleanEndpoint}`;
 
   const headers: HeadersInit = {
     "Content-Type": "application/json",

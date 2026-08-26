@@ -142,10 +142,16 @@ export default function WatchClubsPage() {
     const now = new Date();
     const endsAt = new Date(now.getTime() + challengeDays * 24 * 60 * 60 * 1000);
 
+    // The "Challenge Type" dropdown (challengeType state) picks a scoring
+    // metric — Genre Exploration, Director Retrospective, etc. — which the
+    // backend expects under criteria_json, not challenge_type. challenge_type
+    // is a different field entirely: it's the challenge's *scope*, GLOBAL
+    // (personal, any user can join) or CLUB (tied to the currently open club).
     createChallengeMutation.mutate({
       title: challengeTitle.trim(),
       description: challengeDescription.trim() || undefined,
-      challenge_type: challengeType,
+      challenge_type: selectedClubSlug && selectedClub ? "CLUB" : "GLOBAL",
+      criteria_json: { metric: challengeType },
       goal_count: Number(challengeGoal) || 5,
       starts_at: now.toISOString(),
       ends_at: endsAt.toISOString(),
@@ -377,7 +383,7 @@ export default function WatchClubsPage() {
                           <div>
                             <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Total Watches</p>
                             <h5 className="text-lg font-bold text-zinc-100">
-                              {(selectedClub.taste_profile?.total_watches as number) || selectedClub.members.length * 12} Logged
+                              {(selectedClub.taste_profile?.total_watches as number) || 0} Logged
                             </h5>
                           </div>
                           <div className="p-2.5 rounded-xl bg-violet-600/10 text-violet-400">
@@ -385,27 +391,15 @@ export default function WatchClubsPage() {
                           </div>
                         </div>
 
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-semibold text-zinc-300">Club Affinity Breakdown</p>
-                          <div className="space-y-1.5">
-                            {[
-                              { genre: "Sci-Fi / Cyberpunk", pct: 88, color: "bg-violet-500" },
-                              { genre: "Psychological Thriller", pct: 76, color: "bg-indigo-500" },
-                              { genre: "Arthouse Drama", pct: 64, color: "bg-amber-500" },
-                              { genre: "Neo-Noir", pct: 52, color: "bg-emerald-500" },
-                            ].map((g) => (
-                              <div key={g.genre} className="space-y-1">
-                                <div className="flex items-center justify-between text-[10px]">
-                                  <span className="text-zinc-400">{g.genre}</span>
-                                  <span className="font-mono text-zinc-300">{g.pct}%</span>
-                                </div>
-                                <div className="h-1.5 w-full bg-zinc-950 rounded-full overflow-hidden">
-                                  <div className={`h-full ${g.color} rounded-full`} style={{ width: `${g.pct}%` }} />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
+                        {/* Club Affinity Breakdown: no real per-club genre-affinity
+                            computation exists yet (would need to aggregate members'
+                            watch history against canonical genres), so there is
+                            nothing honest to show here until members actually log
+                            watches. Matches the "no activity yet" tone of the
+                            LIVE CLUB ACTIVITY STREAM panel below. */}
+                        <p className="text-[11px] text-zinc-500 text-center py-2">
+                          Taste affinity will appear once members start logging watches.
+                        </p>
                       </div>
                     </div>
 

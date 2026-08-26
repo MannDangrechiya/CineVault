@@ -1,10 +1,17 @@
-# Web App Feature Audit — 2026-08-25
+# Web App Feature Audit — 2026-08-25 / 2026-08-26
 
 Session goal: user reported the web app showing only 9 movies / 1 series, broken
 filters, and missing images. This audit found the root cause (a dead DB
 connection silently falling back to 10-row seed data) plus several deeper bugs
 uncovered while verifying every page. Fixed items are checked; remaining gaps
 are listed with exact fix paths so the next session can pick up immediately.
+
+**2026-08-26 follow-up session:** resumed the remaining checklist items
+(Import wizard, Invite, Pick rooms, Watch Club creation, Challenges) and found
+the most severe bug of the whole audit — see "CRITICAL" entry below. All
+"Known gaps" from the previous pass that were about untested flows are now
+resolved; only the ones needing an external API key or real ingestion source
+remain.
 
 ## Root cause of the original report
 
@@ -84,6 +91,58 @@ real 88,979-title catalog.
   401 with no visible error (`/v1/recommendations`, `/social/badges`, etc.),
   while endpoints using optional auth silently ran as an anonymous default
   user instead of erroring. Raised the timeout to 8000ms.
+- [x] **CRITICAL — the browser never actually sent auth to the backend, at
+  all, for anything.** `apiFetch` (`src/lib/api/client.ts`) called the
+  FastAPI backend directly from the browser (`http://localhost:8000/...`)
+  and never attached an `Authorization` header — it only ever set
+  `Content-Type`/`Accept`. This is architecturally impossible to fix by
+  attaching a header client-side: the real access token lives only in an
+  encrypted, intentionally-HttpOnly session cookie precisely so client JS
+  can never read it (see the explicit comment to that effect in
+  `src/app/api/auth/me/route.ts`). The result: every `require_authenticated_user`
+  endpoint (watch clubs, challenges, recommendations, badges, taste-matches,
+  leaderboard, friendships...) 401'd unconditionally, and every
+  `get_optional_claims` endpoint (personal history/library/collections/
+  analytics) silently ran as the shared anonymous fallback user
+  (`00000000-...-000000000001`) regardless of who was actually logged in —
+  meaning last session's "watch history now shows real data" verification
+  was real, but scoped to that shared anonymous bucket, not actually to the
+  logged-in dev user. Root cause confirmed by testing directly: a token
+  minted straight from `/v1/auth/login` worked perfectly against
+  `/social/clubs` (201 Created), while the browser's own session — for the
+  same user — got 401 on the identical call.
+
+  **Fix:** added `src/app/api/proxy/[...path]/route.ts`, a catch-all
+  Next.js route handler that runs server-side, reads the real access token
+  out of the session cookie, and forwards the request to FastAPI with
+  `Authorization: Bearer <token>` attached — the token still never reaches
+  client JS, the security boundary is preserved. Changed `apiFetch`'s base
+  URL from the FastAPI origin to `/api/proxy`, so every existing call site
+  (the entire `src/lib/api/*.ts` surface) is fixed with zero call-site
+  changes. Verified via network log: `/social/clubs`, `/social/challenges`,
+  `/social/recommendations`, `/social/friendships`, `/social/leaderboard`,
+  `/social/taste-matches`, `/social/invites`, `/social/referrals` all now
+  return 200/201 through the real logged-in session where they previously
+  401'd or silently ran anonymous.
+- [x] **Challenge creation sent the wrong field** — the "Challenge Type"
+  dropdown (Genre Exploration Marathon / Director Retrospective / etc., a
+  scoring *metric*) was being sent as the backend's `challenge_type` field,
+  which actually means challenge *scope* (`GLOBAL` vs `CLUB`, validated by a
+  strict regex) — every challenge creation 422'd. Fixed
+  `apps/web/src/app/clubs/page.tsx`: the metric now goes into
+  `criteria_json.metric`, and `challenge_type` is correctly derived as
+  `"CLUB"` when created from within a club or `"GLOBAL"` otherwise. Verified
+  live: challenge creation now returns 201 and appears in the list.
+- [x] **Fake watch-club "Taste DNA" stats** — a brand-new club with zero
+  members' worth of watch history showed "12 Logged" watches
+  (`member_count * 12`, a literal fabricated formula) and a hardcoded genre
+  breakdown (`Sci-Fi/Cyberpunk 88%, Psychological Thriller 76%...`) —
+  byte-identical for every club, `ClubDetailResponse` has no backing fields
+  for either. Removed the fake breakdown, "Total Watches" now shows the
+  real (currently always-zero, since no real aggregation exists yet) count
+  with an honest "will appear once members start logging watches" message,
+  matching the tone of the already-correct "no activity yet" empty state
+  right below it on the same page.
 
 ## Verified working, no changes needed
 
@@ -97,8 +156,28 @@ real 88,979-title catalog.
   reasoning backend") when no LLM provider key is configured, rather than
   crashing or faking a response
 - [x] Settings page — static config/info display, nothing fabricated found
-- [x] Import wizard — loads and renders its 3-step UI correctly (not
-  exhaustively tested end-to-end with a real file upload)
+- [x] **Import wizard — full end-to-end verified.** Parsed the default
+  6-item Samsung Notes sample, all 6 titles matched EXACT (100%) against the
+  real catalog, applied to the vault, and the 6 real `watch_event` rows
+  correctly appeared on the real Watch History page afterward. (My first
+  attempt looked broken — turned out to be my own test methodology, not the
+  app: I typed into the textarea without clearing its pre-filled sample
+  text first, corrupting the input. On a clean run it works correctly.)
+- [x] **Invite flow** — "Invite Friends" panel generates a real shareable
+  link and referral stats via real `POST /social/invites` +
+  `GET /social/referrals` calls (both 200 OK), not hardcoded.
+- [x] **Watch Club creation & Monthly Challenges — now fully working** (both
+  were silently broken by the auth bug above until this session's fix).
+  Created a real club and a real challenge through the UI end-to-end.
+- [x] **Pick Rooms — view/vote path confirmed working**, degrades correctly
+  to a "Ballot Not Found" page for an invalid/expired slug. Note: there is
+  **no UI entry point to create one** — `createPickRoom` exists in
+  `src/lib/api/personal.ts` and the backend endpoint works, but no page or
+  button in the app actually calls it. Pick rooms can currently only be
+  reached via a direct `/pick/{slug}` link if one already exists. Worth a
+  product decision: is this an intentional "invite-only via external share"
+  design, or a missing "Create Pick Room" button somewhere (e.g. on the
+  Social or Clubs page)?
 
 ## Known gaps / requires your input (not fixed — needs a decision or a key)
 
@@ -134,13 +213,23 @@ real 88,979-title catalog.
   `docker compose -f infra/docker/docker-compose.yml up -d postgres pgbouncer`.
   Worth investigating Docker Desktop's resource/idle settings if it keeps
   recurring.
-- [ ] **Import wizard** was only smoke-tested (page loads, 3-step UI
-  renders) — not exercised end-to-end with a real file upload/parse/apply
-  cycle in this session.
-- [ ] **Invite flow / Pick rooms / Watch Club creation / Challenges** — not
-  clicked through in this session (ran out of time); the backend for all of
-  these was built and regression-tested in earlier sessions per PLAN.md
-  Part 2, but wasn't re-verified against the live UI in this pass.
+- [ ] **Pick Rooms have no "Create" UI** — see note above under Verified
+  Working. Needs a product decision on where a "Create Pick Room" entry
+  point should live before it's worth building.
+- [ ] **Import wizard's file-upload path** (as opposed to paste-text, which
+  is fully verified) wasn't exercised with a real file — only the textarea
+  input path was tested end-to-end.
+
+## Test residue in the dev account
+
+While verifying the fixes above, real test data was created under the `dev`
+user's own account (not the shared catalog — this is isolated per-user data,
+unlike last session's catalog pollution, so it's harmless to leave, but worth
+knowing about): a "Test Club" and "Neo-Noir Society" watch club, an "Audit
+Test Challenge", and 6 watch-history entries from the Import wizard test
+(Dune: Part Two, Blade Runner 2049, Oppenheimer, Severance, Arrival,
+Interstellar). Delete these from the UI if you want the dev account clean,
+or leave them — they don't affect anyone else.
 
 ## How to resume the dev environment
 
