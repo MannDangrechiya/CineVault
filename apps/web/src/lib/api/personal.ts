@@ -1,5 +1,31 @@
 import { apiFetch } from "./client";
 
+// ── Watch Events ──────────────────────────────────────────────────────────
+// POST /v1/me/watch-events exists and works on the backend, but the movie/
+// series detail pages' "Mark as Watched" heart button had no onClick at all
+// -- a completely dead button, clicking it did nothing.
+
+export interface WatchEventResponse {
+  id: string;
+  user_id: string;
+  title_id: string;
+  edition_id?: string | null;
+  watched_at: string;
+  progress_percentage: number;
+  notes?: string | null;
+}
+
+export async function logWatchEvent(titleId: string): Promise<WatchEventResponse> {
+  return await apiFetch<WatchEventResponse>("/v1/me/watch-events", {
+    method: "POST",
+    body: JSON.stringify({
+      title_id: titleId,
+      watched_at: new Date().toISOString(),
+      progress_percentage: 100.0,
+    }),
+  });
+}
+
 export interface WatchlistStateResponse {
   in_watchlist: boolean;
   status: string;
@@ -551,6 +577,10 @@ export interface ChallengeResponse {
   ends_at: string;
   created_at: string;
   participant_count: number;
+  // Caller-relative: the current user's own progress, if they've joined.
+  // null means "haven't joined yet" -- distinct from "joined, 0 logged".
+  my_progress?: number | null;
+  my_completed?: boolean;
 }
 
 export interface ChallengeParticipantResponse {

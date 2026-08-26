@@ -26,7 +26,7 @@ import {
 import {
   getPersonalAnalytics,
   getTopRecommendations,
-  getUserBadges,
+  evaluateUserBadges,
   getUserRecap,
 } from "@/lib/api/personal";
 import { EmptyState, ErrorState } from "@/components/ui/States";
@@ -228,9 +228,16 @@ export default function DashboardPage() {
     queryFn: () => getTopRecommendations(4),
   });
 
+  // Badge unlocks are computed server-side by POST /social/badges/evaluate,
+  // not derived automatically from activity -- nothing in the app ever
+  // called it, so no user could ever actually unlock a badge no matter how
+  // much real watch history/collections/friends they built up (GET
+  // /social/badges only lists already-persisted earned rows). Evaluating on
+  // every dashboard visit keeps this simple and self-healing rather than
+  // trying to hook every action that could unlock one.
   const { data: badgesData } = useQuery({
     queryKey: ["userBadges"],
-    queryFn: () => getUserBadges(),
+    queryFn: () => evaluateUserBadges(),
   });
 
   const badges = badgesData?.badges || [];

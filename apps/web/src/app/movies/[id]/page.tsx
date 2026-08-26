@@ -17,10 +17,13 @@ import {
   X,
   Layers,
   UserCheck,
+  LibraryBig,
+  FolderPlus,
 } from "lucide-react";
 import { getTitleById } from "@/lib/api/titles";
-import { toggleWatchlistState, sendRecommendation } from "@/lib/api/personal";
+import { toggleWatchlistState, sendRecommendation, addToLibrary, logWatchEvent } from "@/lib/api/personal";
 import { getFriendships, type FriendshipItem } from "@/lib/api/ai";
+import { getCollections, addCollectionItem } from "@/lib/api/collections";
 import { LoadingState } from "@/components/ui/States";
 
 export default function MovieDetailPage() {
@@ -33,6 +36,10 @@ export default function MovieDetailPage() {
   const [personalNote, setPersonalNote] = useState("");
   const [recommendSent, setRecommendSent] = useState(false);
   const [isSavedToWatchlist, setIsSavedToWatchlist] = useState(false);
+  const [isAddedToLibrary, setIsAddedToLibrary] = useState(false);
+  const [isMarkedWatched, setIsMarkedWatched] = useState(false);
+  const [isCollectionModalOpen, setIsCollectionModalOpen] = useState(false);
+  const [addedCollectionIds, setAddedCollectionIds] = useState<string[]>([]);
 
   // Fetch title details from API
   const { data: title, isLoading } = useQuery({
@@ -51,6 +58,29 @@ export default function MovieDetailPage() {
     },
   });
 
+  // Personal Media Library had a backend + a listing page, but no entry point
+  // anywhere actually called POST /v1/personal/library (see WEB_FEATURE_AUDIT.md).
+  const libraryMutation = useMutation({
+    mutationFn: () => addToLibrary(titleId),
+    onSuccess: () => {
+      setIsAddedToLibrary(true);
+      queryClient.invalidateQueries({ queryKey: ["library"] });
+    },
+  });
+
+  // "Mark as Watched" heart button had no onClick at all -- a fully dead
+  // button, even though POST /v1/me/watch-events already works and powers
+  // the real Watch History page.
+  const watchEventMutation = useMutation({
+    mutationFn: () => logWatchEvent(titleId),
+    onSuccess: () => {
+      setIsMarkedWatched(true);
+      queryClient.invalidateQueries({ queryKey: ["history"] });
+      queryClient.invalidateQueries({ queryKey: ["personalAnalytics"] });
+      queryClient.invalidateQueries({ queryKey: ["userBadges"] });
+    },
+  });
+
   // Friend picker: the backend requires a real recipient_id UUID, so recommending
   // to a free-text email/@handle always failed validation. Reuse the same
   // friendship list the Oracle page's group matchmaker uses.
@@ -62,6 +92,23 @@ export default function MovieDetailPage() {
   const acceptedFriends = friendships.filter((f: FriendshipItem) => f.status === "ACCEPTED");
   const selectedFriend = acceptedFriends.find((f: FriendshipItem) => f.friend_id === friendId);
 
+  // Add to Collection: a collection could previously be created but never
+  // actually populated -- there was no add-item endpoint at all (see
+  // WEB_FEATURE_AUDIT.md). Reuses the user's real collection list.
+  const { data: myCollections = [] } = useQuery({
+    queryKey: ["collections"],
+    queryFn: getCollections,
+    enabled: isCollectionModalOpen,
+  });
+  const addToCollectionMutation = useMutation({
+    mutationFn: (collectionId: string) => addCollectionItem(collectionId, titleId),
+    onSuccess: (_data, collectionId) => {
+      setAddedCollectionIds((prev) => [...prev, collectionId]);
+      queryClient.invalidateQueries({ queryKey: ["collection-detail"] });
+      queryClient.invalidateQueries({ queryKey: ["collections"] });
+    },
+  });
+
   const recommendMutation = useMutation({
     mutationFn: (msg: string) => sendRecommendation(titleId, friendId, msg),
     onSuccess: () => {
@@ -69,23 +116,18 @@ export default function MovieDetailPage() {
     },
   });
 
-  // Fallback cinematic metadata if direct API backend isn't populated for this ID
-  const displayTitle = title?.canonical_title || "Blade Runner 2049";
-  const displayYear = title?.production_year || 2017;
-  const displayCountry = title?.origin_country || "USA";
-  const displaySynopsis =
-    title?.synopsis ||
-    "Thirty years after the events of the first film, a new blade runner, LAPD Officer K, unearths a long-buried secret that has the potential to plunge what's left of society into chaos. K's discovery leads him on a quest to find Rick Deckard, a former LAPD blade runner who has been missing for 30 years.";
-  const displayGenres =
-    title?.genres && title.genres.length > 0
-      ? title.genres
-      : ["Sci-Fi", "Mystery", "Cyberpunk", "Drama"];
-  const displayBackdrop =
-    title?.backdrop_url ||
-    "https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=2000&q=80";
-  const displayPoster =
-    title?.poster_url ||
-    "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80";
+  // Honest display values — real API data only. No fabricated placeholder
+  // title/genres/country/synopsis: the catalog legitimately has null/empty
+  // fields for most titles (see WEB_FEATURE_AUDIT.md), so these render
+  // conditionally or with a plain "not available" note instead of inventing
+  // Blade Runner 2049 metadata for whatever title happens to be missing data.
+  const displayTitle = title?.canonical_title || "Untitled";
+  const displayYear = title?.production_year;
+  const displayCountry = title?.origin_country;
+  const displaySynopsis = title?.synopsis;
+  const displayGenres = title?.genres && title.genres.length > 0 ? title.genres : [];
+  const displayBackdrop = title?.backdrop_url || null;
+  const displayPoster = title?.poster_url || null;
 
   const handleSendRecommendation = (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,13 +169,19 @@ export default function MovieDetailPage() {
 
       {/* TOP 60VH HERO BANNER */}
       <div className="relative w-full h-[60vh] min-h-[460px] overflow-hidden bg-zinc-950">
-        {/* Backdrop Image */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={displayBackdrop}
-          alt={displayTitle}
-          className="w-full h-full object-cover object-center scale-105 filter brightness-[0.75] contrast-[1.05]"
-        />
+        {/* Backdrop Image (honest placeholder when no real artwork has synced) */}
+        {displayBackdrop ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={displayBackdrop}
+            alt={displayTitle}
+            className="w-full h-full object-cover object-center scale-105 filter brightness-[0.75] contrast-[1.05]"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-zinc-900 via-zinc-950 to-black flex items-center justify-center">
+            <Film className="w-16 h-16 text-zinc-800" />
+          </div>
+        )}
 
         {/* Flawless Gradient Overlays: Bottom fade to OLED Black + Left lateral shadow */}
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent" />
@@ -143,12 +191,18 @@ export default function MovieDetailPage() {
         <div className="absolute bottom-0 left-0 right-0 max-w-7xl mx-auto px-6 sm:px-10 pb-8 flex flex-col md:flex-row items-end gap-8 z-20">
           {/* Floating Poster */}
           <div className="hidden sm:block shrink-0 w-44 md:w-52 aspect-[2/3] rounded-2xl overflow-hidden bg-zinc-900 shadow-2xl shadow-violet-950/40 ring-1 ring-white/10 group">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={displayPoster}
-              alt={displayTitle}
-              className="w-full h-full object-cover"
-            />
+            {displayPoster ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={displayPoster}
+                alt={displayTitle}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-zinc-900 to-zinc-950">
+                <Film className="w-10 h-10 text-zinc-700" />
+              </div>
+            )}
           </div>
 
           {/* Title & Primary Actions Over Gradient */}
@@ -160,10 +214,12 @@ export default function MovieDetailPage() {
                 {title?.content_type || "Feature Film"}
               </span>
 
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono text-zinc-400 bg-zinc-900/60 border border-zinc-800">
-                <Globe className="w-3 h-3 text-zinc-500" />
-                {displayCountry}
-              </span>
+              {displayCountry && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono text-zinc-400 bg-zinc-900/60 border border-zinc-800">
+                  <Globe className="w-3 h-3 text-zinc-500" />
+                  {displayCountry}
+                </span>
+              )}
             </div>
 
             {/* Canonical Title */}
@@ -173,18 +229,27 @@ export default function MovieDetailPage() {
 
             {/* Quick Meta Row */}
             <div className="flex flex-wrap items-center gap-4 text-xs sm:text-sm text-zinc-400 font-medium">
-              <span className="flex items-center gap-1.5 text-zinc-300">
-                <Calendar className="w-4 h-4 text-zinc-400" />
-                {displayYear}
-              </span>
-              <span className="text-zinc-600">•</span>
-              <span className="flex items-center gap-1.5 text-zinc-300">
-                <Clock className="w-4 h-4 text-zinc-400" />
-                {title?.primary_edition?.runtime_minutes || 164} mins
-              </span>
-              <span className="text-zinc-600">•</span>
+              {displayYear && (
+                <>
+                  <span className="flex items-center gap-1.5 text-zinc-300">
+                    <Calendar className="w-4 h-4 text-zinc-400" />
+                    {displayYear}
+                  </span>
+                  <span className="text-zinc-600">•</span>
+                </>
+              )}
+              {title?.primary_edition?.runtime_minutes ? (
+                <>
+                  <span className="flex items-center gap-1.5 text-zinc-300">
+                    <Clock className="w-4 h-4 text-zinc-400" />
+                    {title.primary_edition.runtime_minutes} mins
+                  </span>
+                  <span className="text-zinc-600">•</span>
+                </>
+              ) : null}
               <span className="text-zinc-300">
-                {title?.primary_edition?.edition_name || "Theatrical Release 4K UHD"}
+                {title?.primary_edition?.edition_name ||
+                  (title?.primary_edition?.runtime_minutes ? "" : "Runtime & edition not available")}
               </span>
             </div>
 
@@ -226,12 +291,50 @@ export default function MovieDetailPage() {
                 )}
               </button>
 
+              {/* Add to Library Button */}
+              <button
+                onClick={() => libraryMutation.mutate()}
+                disabled={libraryMutation.isPending || isAddedToLibrary}
+                className={`inline-flex items-center gap-2 px-5 py-3 text-xs sm:text-sm font-medium rounded-full border backdrop-blur-md transition-all cursor-pointer ${
+                  isAddedToLibrary
+                    ? "bg-violet-500/20 border-violet-500/40 text-violet-300"
+                    : "bg-zinc-900/80 hover:bg-zinc-800 border-zinc-800 text-zinc-200"
+                } ${libraryMutation.isPending ? "opacity-50 cursor-not-allowed" : ""}`}
+              >
+                {isAddedToLibrary ? (
+                  <>
+                    <Check className="w-4 h-4 text-violet-400" />
+                    <span>In Library</span>
+                  </>
+                ) : (
+                  <>
+                    <LibraryBig className="w-4 h-4 text-zinc-400" />
+                    <span>Add to Library</span>
+                  </>
+                )}
+              </button>
+
+              {/* Add to Collection Button */}
+              <button
+                onClick={() => setIsCollectionModalOpen(true)}
+                title="Add to Collection"
+                className="p-3 rounded-full bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-violet-400 transition-colors"
+              >
+                <FolderPlus className="w-4 h-4" />
+              </button>
+
               {/* Log / Mark Watched Button */}
               <button
-                title="Mark as Watched"
-                className="p-3 rounded-full bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-rose-400 transition-colors"
+                onClick={() => watchEventMutation.mutate()}
+                disabled={watchEventMutation.isPending || isMarkedWatched}
+                title={isMarkedWatched ? "Logged to Watch History" : "Mark as Watched"}
+                className={`p-3 rounded-full border transition-colors disabled:cursor-not-allowed ${
+                  isMarkedWatched
+                    ? "bg-rose-500/20 border-rose-500/40 text-rose-400"
+                    : "bg-zinc-900/80 hover:bg-zinc-800 border-zinc-800 text-zinc-400 hover:text-rose-400"
+                }`}
               >
-                <Heart className="w-4 h-4" />
+                <Heart className={`w-4 h-4 ${isMarkedWatched ? "fill-rose-400" : ""}`} />
               </button>
             </div>
           </div>
@@ -243,22 +346,26 @@ export default function MovieDetailPage() {
         {/* Left 2 Columns: Synopsis, Genres, Editions */}
         <div className="lg:col-span-2 space-y-8">
           {/* Genre Badges */}
-          <div className="flex flex-wrap gap-2">
-            {displayGenres.map((genre) => (
-              <span
-                key={genre}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-medium bg-zinc-900/80 border border-zinc-800 text-zinc-300"
-              >
-                {genre}
-              </span>
-            ))}
-          </div>
+          {displayGenres.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {displayGenres.map((genre) => (
+                <span
+                  key={genre}
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-medium bg-zinc-900/80 border border-zinc-800 text-zinc-300"
+                >
+                  {genre}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-zinc-500 italic">No genre data available for this title.</p>
+          )}
 
           {/* Synopsis */}
           <div className="space-y-3">
             <h2 className="text-lg font-bold text-zinc-100 tracking-tight">Overview & Storyline</h2>
             <p className="text-sm sm:text-base text-zinc-300 leading-relaxed font-normal">
-              {displaySynopsis}
+              {displaySynopsis || "No synopsis available for this title yet."}
             </p>
           </div>
 
@@ -272,7 +379,7 @@ export default function MovieDetailPage() {
               <div>
                 <span className="text-zinc-500 block mb-1">Catalog ID</span>
                 <span className="font-mono text-zinc-300 font-medium">
-                  {title?.display_id || titleId || "MV-2017-0842"}
+                  {title?.display_id || titleId || "Unknown"}
                 </span>
               </div>
               <div>
@@ -435,6 +542,71 @@ export default function MovieDetailPage() {
                   </button>
                 </div>
               </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ADD TO COLLECTION MODAL */}
+      {isCollectionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
+            onClick={() => setIsCollectionModalOpen(false)}
+          />
+          <div className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
+              <div className="flex items-center gap-2">
+                <FolderPlus className="w-4 h-4 text-violet-400" />
+                <h3 className="text-sm font-bold text-zinc-100">Add to Collection</h3>
+              </div>
+              <button
+                onClick={() => setIsCollectionModalOpen(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {myCollections.length === 0 ? (
+              <p className="text-xs text-zinc-500 text-center py-6">
+                You don&apos;t have any collections yet.{" "}
+                <a href="/collections" className="text-violet-400 hover:underline">
+                  Create one first
+                </a>
+                .
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                {myCollections.map((c) => {
+                  const isAdded = addedCollectionIds.includes(c.id);
+                  const isThisPending =
+                    addToCollectionMutation.isPending && addToCollectionMutation.variables === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => addToCollectionMutation.mutate(c.id)}
+                      disabled={isAdded || isThisPending}
+                      className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl border text-left transition-all cursor-pointer disabled:cursor-not-allowed ${
+                        isAdded
+                          ? "bg-violet-600/10 border-violet-500/30"
+                          : "bg-zinc-900/60 border-zinc-800 hover:border-zinc-700"
+                      }`}
+                    >
+                      <div>
+                        <p className="text-xs font-bold text-zinc-100">{c.name}</p>
+                        <p className="text-[10px] text-zinc-500">{c.item_count} titles</p>
+                      </div>
+                      {isAdded ? (
+                        <Check className="w-4 h-4 text-violet-400 shrink-0" />
+                      ) : (
+                        <FolderPlus className="w-4 h-4 text-zinc-500 shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
