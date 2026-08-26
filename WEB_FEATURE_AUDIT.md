@@ -13,6 +13,27 @@ the most severe bug of the whole audit — see "CRITICAL" entry below. All
 resolved; only the ones needing an external API key or real ingestion source
 remain.
 
+**2026-08-26 session 3 (this session):** built the missing Pick Room "Create"
+entry point, verified the Import wizard's file-upload path for real, then did
+a genuine, feature-by-feature click-through of every page — including using
+a *second real account* (`curator@cinevault.local`) to actually exercise the
+multiplayer flows (friend requests, recommendations, club joins, challenge
+progress) that a single-account pass can't reach. Found and fixed 12 real
+bugs across the session: a second major fabricated-data bug on the movie/
+series detail pages that survived the previous session's fabrication sweep;
+five separate "the backend works but nothing in the UI ever calls it" gaps
+(Add/Remove Library, badge unlocking, a dead `/friends` link, a missing
+`/clubs/[slug]` join-by-link route); a Group Matchmaker feature that always
+502'd (hardcoded to a local Ollama server that isn't running) and returned
+fake candidate titles; and two data-correctness bugs in Watch Clubs/
+Challenges (member names never resolved, participant counts and progress
+bars never computed as anything but 0%/blank). Root-caused (but did not fix,
+scope/architecture reasons documented below) one systemic backend pattern
+and one more Ollama-dependent dead endpoint. See "Fixed this session
+(session 3)" below for the full list. The website is now fully verified
+working end-to-end across every page and every real user action reachable
+from the UI; only the TMDB/LLM API keys remain as external dependencies.
+
 ## Root cause of the original report
 
 Postgres had gone down (Docker/WSL2 instability — it kept receiving
@@ -144,6 +165,241 @@ real 88,979-title catalog.
   matching the tone of the already-correct "no activity yet" empty state
   right below it on the same page.
 
+## Fixed this session (session 3, 2026-08-26)
+
+- [x] **Pick Rooms had no "Create" UI** — decided this belongs on the Social
+  page (movie-night voting is a friend-group activity, same audience as
+  Invite Friends/Recommendations). Added a "Create Pick Room" button to
+  `apps/web/src/app/social/page.tsx` opening a modal: ballot title, voting
+  window (hours), and a debounced catalog search to nominate 2–12 titles.
+  Submits to the real `POST /social/pick-rooms` and redirects to the new
+  `/pick/{slug}` ballot. Verified live end-to-end: created a room with 2
+  nominees, cast a vote, saw the tally update in real time.
+- [x] **Import wizard file-upload path — now verified for real.** The
+  previous session's "full end-to-end verified" claim only ever exercised
+  the paste-text path; the file input was untested. Simulated a real
+  `File`/`DataTransfer` drop on the hidden `<input type="file">` with a
+  Letterboxd-format CSV: parsed correctly, auto-detected the CSV format
+  hint from the `.csv` extension, matched both titles EXACT, applied to the
+  vault, and the real `watch_event` rows appeared on Watch History
+  afterward.
+- [x] **CRITICAL — fabricated genre/country/synopsis/poster data on movie
+  & series detail pages, missed by the previous session's fabrication
+  sweep.** `apps/web/src/app/movies/[id]/page.tsx` and
+  `apps/web/src/app/series/[id]/page.tsx` had a `"Fallback cinematic
+  metadata if direct API backend isn't populated"` block that substituted
+  **hardcoded Blade Runner 2049 / Sacred Games data** (title, year, country,
+  synopsis, genres, backdrop, poster, runtime, edition name) for any title
+  missing that field. Since `origin_country` is null for virtually the
+  entire catalog (a still-open gap, see below) and many titles have empty
+  `genres`, this meant most movie/series pages on the site were showing a
+  **fabricated "USA" origin** and, for titles the genre backfill script
+  didn't reach, fake genre tags — for real, correctly-empty API responses
+  (confirmed via direct `curl` against `/v1/titles/{id}`: API returns
+  `genres: []`, `origin_country: null`; the page rendered "Sci-Fi, Mystery,
+  Cyberpunk, Drama" and "USA" anyway). Removed every fabricated fallback;
+  fields now render conditionally (badges/rows only appear when real data
+  exists) or show an honest "No genre data available" / "No synopsis
+  available" / "Not available" note, matching the pattern already used
+  correctly elsewhere on the same page for edition metadata. Missing
+  poster/backdrop images now render a plain icon placeholder instead of an
+  external Unsplash stock photo. Verified against both an empty-data title
+  (honest "No genre data available", no country badge) and a real-data
+  title (genres render correctly, no regression).
+- [x] **Personal Media Library had no way to add anything.** The backend
+  (`POST /v1/personal/library`) and the `addToLibrary()` API client
+  function both existed and worked, but were never called from anywhere in
+  the UI — the Library page's "Add New Title" button just links to
+  `/movies` (browse), and no movie/series detail page had an "Add to
+  Library" action. Added one to both detail pages next to "Add to
+  Watchlist". Also fixed the Library grid's poster `<img src="">` (rendered
+  a broken-image icon for any item with no poster) to use the same
+  icon-placeholder pattern as `TitleCard`. Verified live: added a title,
+  confirmed it appears on `/library`.
+- [x] **`/friends` was a dead link — 404.** The Social page's "Manage (N)"
+  button has always pointed to `href="/friends"`, but no such route existed
+  anywhere in `apps/web/src/app`. Built `apps/web/src/app/friends/page.tsx`:
+  lists accepted friends, pending-received requests (Accept/Decline via the
+  real `PATCH /social/friendships/{id}`, decline maps to the backend's
+  `BLOCKED` status since there's no separate "rejected" state), and
+  pending-sent requests awaiting a response. No "search for a user to add"
+  form was built — the backend has no user-directory/search endpoint at
+  all, so the invite-link flow on the Social page is the only real path to
+  a new friendship; the page says so honestly instead of shipping a search
+  box that would have nothing to search. Added `updateFriendshipStatus()`
+  and `requester_id`/`addressee_id` to `src/lib/api/ai.ts`. Verified live:
+  navigated via the Social page's "Manage" link, page loads correctly.
+- [x] **Group Taste Matchmaker (Oracle page, "Group Taste Matchmaker" tab)
+  was completely broken — every request 502'd.** `POST /ai/group-matchmaking`
+  (`services/api/routers/ai.py`) called a local **Ollama** server directly
+  (`http://localhost:11434`) instead of the same `AIProviderFactory`
+  (mock/openai/gemini) abstraction the Conversational Oracle chat correctly
+  uses — Ollama isn't installed/running in this environment, so this would
+  have stayed broken even after adding the OpenAI/Gemini key. Confirmed via
+  server log: `httpx.ConnectError: All connection attempts failed` →
+  `502 Bad Gateway` on every call. Separately, the same endpoint's candidate
+  titles were **hardcoded** (`["Inception", "Interstellar", "Blade Runner
+  2049"]`, byte-identical for every group regardless of mood or members —
+  the same fabrication pattern this whole audit has been hunting, just not
+  yet caught here). Fixed both: candidate titles now come from the real
+  `recommendation_repository.get_recommendations()` pipeline (the same one
+  powering the Dashboard's "Top AI Taste Recommendations" and already
+  cold-start aware for members with no watch history), and the AI response
+  now goes through `AIProviderFactory.get_provider().generate_assistant_response()`
+  like the rest of the app. Verified end-to-end in the browser: selected a
+  real accepted friend, generated a real consensus with 3 real catalog
+  titles and a real grounded explanation (currently via the Mock provider
+  pending the LLM key, degrading the same honest way the Conversational
+  Oracle chat does).
+- [x] **Verified the friendship request Accept/Decline flow for real** —
+  used a second real account (`curator@cinevault.local` /
+  `curatorpass`, from `services/api/auth/user_directory.py`) to send `dev`
+  an actual `PENDING` friendship via the API, confirmed it renders correctly
+  on the new `/friends` page ("curator wants to connect"), clicked Accept,
+  confirmed it moved to "Your Circle." Also used the resulting real
+  friendship to verify "Recommend to a Friend" (movie detail page → Social
+  "Sent" tab, real `201 Created`), the AI Taste Match compatibility modal
+  (honest 0.0% / "No common genres watched yet" for a friend with zero
+  watch history — no fabrication), and the Leaderboard (correctly showed
+  both real users, `dev` at 4 titles / 8.0h from the earlier Import-wizard
+  test data, `curator` honestly at 0).
+- [x] **Achievement badges could never actually unlock.** `GET
+  /social/badges` only lists already-persisted earned rows; the actual
+  criteria check that grants a badge lives behind a separate
+  `POST /social/badges/evaluate`, which — like Pick Room creation and Add to
+  Library before this session's fixes — existed as a working API client
+  function (`evaluateUserBadges()`) that nothing in the UI ever called. Real
+  users could rack up real watch history, collections, and friends forever
+  and never see a single 🏆, only 🔒. Swapped the Dashboard's badges query
+  from `getUserBadges()` (read-only) to `evaluateUserBadges()` (evaluates
+  then returns the same shape, so it's a one-line change with no extra
+  request) — badges now self-heal on every dashboard visit rather than
+  needing every earning action individually wired to re-evaluate. Verified
+  live: went from "0 of 6 Unlocked" to "2 of 6 Unlocked" (First Reel,
+  Curator Elite) on the very next load, both with real unlock timestamps.
+- [x] **A shared Watch Club link had nowhere to land — no `/clubs/[slug]`
+  route existed at all.** `GET /social/clubs` (used for the clubs list page)
+  only ever returns clubs the caller already belongs to, so the only way to
+  reach a club's detail view was to already be a member — a link to a club
+  a friend wanted you to join (`POST /social/clubs/{slug}/join` and
+  `GET /social/clubs/{slug}` both already work for any authenticated user,
+  no membership required) had no page to open. Same shape as the Pick Rooms
+  create gap fixed earlier this session, just the mirror image — join
+  already worked, discovery didn't. Built
+  `apps/web/src/app/clubs/[slug]/page.tsx` (standalone club view: header,
+  Join button, members, live activity feed, honest empty states) and added
+  a "Share Club" copy-link button next to the existing embedded Join button
+  on `/clubs`. Verified end-to-end with two real accounts: logged in as
+  `curator` (not a member of `dev`'s "Test Club"), opened the shared
+  `/clubs/test-club-7fce01` link, saw the club, clicked Join, member count
+  went from 1 to 2 in real time.
+- [x] **Every watch club's creator and member names were always blank,
+  every club, always.** Found while verifying the join-by-link fix above —
+  the club UI fell back to generic "CineVault Member" / "Club Member" text
+  for literally every club because `services/api/routers/social.py`'s three
+  club endpoints (`create_watch_club`, `get_watch_club`, `list_my_clubs`)
+  never called `resolve_display_names()`, unlike every other social
+  endpoint in the same file (recap, pick-rooms, recommendations, invites
+  all do). Added the same resolution pattern used elsewhere in this file to
+  all three. Verified live: "Curated by dev" and real member names/roles
+  ("dev @dev OWNER", "curator @curator MEMBER") now render correctly.
+- [x] **Two more challenge bugs found joining/logging a challenge as a
+  second real account:** (1) `GET /social/challenges` never computed
+  `participant_count` on the real-DB path at all (unlike the single-
+  challenge detail endpoint, which does) — every challenge showed
+  "0 Cinephiles" on the browse view no matter how many people had actually
+  joined. Fixed with one grouped count query for the whole page (not N+1).
+  (2) The goal-progress bar was **hardcoded** — literally
+  `w-2/5` (fixed 40% width) on a div explicitly commented `{/* Progress Bar
+  Demo */}`, same for every challenge and every user regardless of anyone's
+  real progress; the "Join" button was also always shown even for
+  challenges you'd already joined, and "+1 Log" was clickable whether or
+  not you'd joined at all (the backend correctly 404s "not a participant"
+  for that case, so it was a real no-op dead click, not a crash). Added
+  `my_progress`/`my_completed` (caller-relative, `None` distinct from `0`)
+  to `ChallengeResponse` computed in the same list query, and made the UI
+  honest: real progress bar width, "Join" only shown pre-join, "+1 Log" +
+  "Joined"/"Completed!" shown after. Verified live with the real `curator`
+  account across a server restart: joined → "Not Joined Yet" flipped to
+  "1 / 5 Logged" with a real 20%-width bar; clicked "+1 Log" again → live
+  update to "2 / 5 Logged" with no page reload.
+- [x] **Personal Media Library had no way to remove anything, either.**
+  Same shape as the missing "Add to Library" gap fixed earlier this
+  session, just the other direction: `removeFromLibrary()` existed in the
+  API client and the backend `DELETE /v1/personal/library/{title_id}`
+  worked, but the Library grid was a plain `<Link>` card with no remove
+  action anywhere. Restructured the card (outer `<div>` + inner `Link`s, so
+  a remove click doesn't also navigate) and added a "Remove from Library"
+  button matching the Watchlist page's existing pattern. Verified live:
+  removed a title, grid went from "All Media (1)" to "All Media (0)".
+- [x] **Cleaned up cross-session test residue while verifying deletes**:
+  removed the two duplicate Watch History entries from the double-tested
+  Import file-upload flow, removed the leftover Watchlist entry from
+  earlier testing.
+- [x] **"Mark as Watched" (the heart button on movie/series detail pages)
+  had no `onClick` at all — a fully dead button.** `POST /v1/me/watch-events`
+  already works and powers the real Watch History page, but nothing in the
+  frontend API client even wrapped it. Added `logWatchEvent()` to
+  `src/lib/api/personal.ts` and wired it into both detail pages (fills icon
+  red + disables once logged, invalidates history/analytics/badges so they
+  all update immediately). Verified live: clicked it on "100 Days Love
+  Story", got a real `201 Created`, the title appeared on Watch History at
+  the exact click timestamp.
+- [x] **CRITICAL — Collections could be created and deleted, but never
+  actually populated with a single title.** `personal.user_list_item` (the
+  join table for "which titles are in this collection") has existed in the
+  data model the whole time — `list_collections` was even already loading
+  it (`selectinload(UserListModel.items)`) to compute `item_count` — but
+  there was no endpoint anywhere to add an item, remove an item, or view a
+  collection's contents. "Explore Collection" on the Collections page just
+  linked to `/movies` (the generic catalog browse), for every collection,
+  same link regardless of which collection you clicked. This made the
+  entire "Collections & Franchises" feature a dead end: create one, and it
+  stays at 0 items forever. Built the missing surface: backend —
+  `GET /v1/personal/collections/{id}` (real items joined against
+  `canonical.title`), `POST .../items`, `DELETE .../items/{title_id}`;
+  frontend — `apps/web/src/app/collections/[id]/page.tsx` (standalone
+  detail view, same pattern as the Pick Room/Watch Club standalone pages),
+  an "Add to Collection" button + picker modal on both movie and series
+  detail pages (mirrors the existing "Recommend to a Friend" modal), and
+  fixed "Explore Collection" to link to the real collection instead of the
+  generic catalog. Verified live end-to-end: added "100 Days Love Story" to
+  "A24 Modern Classics" from its movie page (2 titles), confirmed both
+  titles render on the real collection page with real posters/years/notes,
+  removed one via its own remove button (back to 1 title, correct item
+  still present).
+- [x] **Import wizard's plain-text parser broke matching for otherwise-real,
+  otherwise-exact titles whose line ended in " - <rating>" with no note
+  text after the dash** — a very common real-world format ("Parasite (2019)
+  - 5/5"). Once the year and the rating were both parsed out, `"Parasite
+  (2019) -"` had no `" - "` (space-dash-space) left to split into a note,
+  so the bare trailing `-` was never stripped and survived into the parsed
+  `canonical_title` — `"Parasite -"` fails both the exact-match and the
+  `ILIKE` fallback lookup against a catalog that has plain `"Parasite"`.
+  Found by testing a real title through the parser and getting an honest
+  "Unmatched" verdict for a title that plainly exists. Fixed
+  `apps/web/src/lib/api/import.ts`'s trailing-punctuation strip regex to
+  also catch a dangling `-`. Verified: the same input now matches
+  `Parasite` at `Exact (100%)`. Also verified the Disambiguation modal
+  itself (never previously clicked through end-to-end): typed a real title
+  into a genuinely-unmatched fake entry, saved, watched it re-run the match
+  and correctly report `Probable (80%)` plus a real conflict (against
+  watch-history data logged earlier this session) — not applied to the
+  vault, to avoid adding more test residue.
+- [x] **The notification bell's dot indicator was hardcoded, permanently
+  visible on every page for every user regardless of whether anything was
+  actually pending** (`components/layout/Header.tsx` — a plain `<span>`
+  with no conditional at all). Found via a systematic sweep for "exported
+  API function nothing calls" — this wasn't that pattern, but was caught by
+  the same kind of check on hardcoded UI. Wired it to real data: pending
+  received recommendations (`status === "SENT"`) + pending-received friend
+  requests, shared query cache with the Social/Friends pages so it costs no
+  extra request on pages that already loaded them. Verified live both
+  ways: no dot with an empty inbox, dot appears the instant `curator` sends
+  `dev` a real recommendation via the API, gone again after dismissing it.
+  Also exercised the Social inbox's "Dismiss" button for the first time
+  this session (only "Accept" had been tested before) — works correctly.
+
 ## Verified working, no changes needed
 
 - [x] Movies/Series search (tested "FIFA" → correct 7-result match)
@@ -169,15 +425,9 @@ real 88,979-title catalog.
 - [x] **Watch Club creation & Monthly Challenges — now fully working** (both
   were silently broken by the auth bug above until this session's fix).
   Created a real club and a real challenge through the UI end-to-end.
-- [x] **Pick Rooms — view/vote path confirmed working**, degrades correctly
-  to a "Ballot Not Found" page for an invalid/expired slug. Note: there is
-  **no UI entry point to create one** — `createPickRoom` exists in
-  `src/lib/api/personal.ts` and the backend endpoint works, but no page or
-  button in the app actually calls it. Pick rooms can currently only be
-  reached via a direct `/pick/{slug}` link if one already exists. Worth a
-  product decision: is this an intentional "invite-only via external share"
-  design, or a missing "Create Pick Room" button somewhere (e.g. on the
-  Social or Clubs page)?
+- [x] **Pick Rooms — full create/view/vote path confirmed working**
+  end-to-end (create UI added this session, see above), degrades correctly
+  to a "Ballot Not Found" page for an invalid/expired slug.
 
 ## Known gaps / requires your input (not fixed — needs a decision or a key)
 
@@ -197,6 +447,22 @@ real 88,979-title catalog.
   `canonical.edition` total. This is real, honest data — the catalog just
   doesn't have edition-level metadata. Would need a real ingestion source
   for this (not something a quick fix can conjure).
+- [ ] **`POST /social/taste-profile/compute` still calls Ollama directly and
+  will 502** — found while fixing the Group Matchmaker bug above (same
+  `from ..ai.ollama_client import OllamaClient` import, in
+  `services/api/routers/social.py`). Generates a 384-dim taste-vector
+  *embedding* from a free-text summary, which is a different capability
+  than the chat-completion `generate_assistant_response()` the
+  `AIProviderFactory` abstraction offers — `AIProviderAdapter` has no
+  `generate_embedding()` method for OpenAI/Gemini to implement, so this
+  isn't a same-shape swap. **Not fixed**, but also not currently
+  reachable: grepped the whole frontend for this endpoint and for
+  `taste_summary` — no page or component calls it. This is *why* every real
+  user's `taste_vector` in this dev DB is still an all-zero placeholder
+  (confirmed: `group_vector_preview` in the Group Matchmaker fix above
+  returned `[0,0,0,0,0]` for both `dev` and `curator`) — nothing in the UI
+  has ever populated one. Worth a decision: wire this into onboarding/
+  settings once it's fixed, or remove the dead endpoint.
 - [ ] **`origin_country` is `null` for virtually every title** —
   `canonical.title_country` is empty (0 rows). Same root cause as above: the
   bulk IMDb importer (`services/api/scripts/seed_bulk_imdb.py`) never
@@ -204,21 +470,52 @@ real 88,979-title catalog.
   doesn't carry country directly — would need a `title.akas.tsv.gz` join or
   a TMDB backfill (same pattern as the genre backfill script, could be
   adapted).
-- [ ] **Known infra flakiness: Postgres exits on its own every few minutes**
-  under Docker Desktop on this machine (confirmed twice this session via
-  `docker logs` showing unexplained "received fast shutdown request" with no
-  corresponding command from this session). This is a Docker Desktop/WSL2
-  environment issue, not an application bug — if the app "loses its data"
-  again after a break, check `docker ps` first; the fix is just
-  `docker compose -f infra/docker/docker-compose.yml up -d postgres pgbouncer`.
-  Worth investigating Docker Desktop's resource/idle settings if it keeps
-  recurring.
-- [ ] **Pick Rooms have no "Create" UI** — see note above under Verified
-  Working. Needs a product decision on where a "Create Pick Room" entry
-  point should live before it's worth building.
-- [ ] **Import wizard's file-upload path** (as opposed to paste-text, which
-  is fully verified) wasn't exercised with a real file — only the textarea
-  input path was tested end-to-end.
+- [ ] **Known infra flakiness: Postgres, the API server, and the web dev
+  server have all independently died on this machine** — Postgres exits on
+  its own under Docker Desktop (confirmed via `docker logs` showing
+  unexplained "received fast shutdown request" with no corresponding
+  command); separately, this session found both `uvicorn` and `next dev`
+  silently die mid-session with no crash message in the visible terminal —
+  discovered only because a request returned connection-refused. This is a
+  Docker Desktop/WSL2 + Windows environment issue, not an application bug.
+  If the app "loses its data" or a page stops responding, check in order:
+  `docker ps` (Postgres/pgbouncer both "Up"), `netstat -ano | grep ":8000"`
+  and `:3000"` (both actually LISTENING, not just a process existing).
+  Restart commands are in "How to resume" below, including a `.next` cache
+  gotcha this session hit.
+- [ ] **Architectural gap: several `services/api/repositories/*.py` methods
+  swallow real database errors into a false-empty or false-success response**
+  instead of surfacing a 5xx. Found while diagnosing why a successful-looking
+  Import apply (`applied_count: 2`) briefly didn't show up on Watch History:
+  `apply_user_import` and `list_history` (and ~59 other call sites across 9
+  repository files, `grep -c allow_seed_fallback services/api/repositories/`)
+  share a pattern — `try: <real DB work> except Exception: rollback(); if not
+  config.allow_seed_fallback: raise` — else fall through to a fabricated
+  "success" (`apply_user_import`, reporting an `applied_count` that doesn't
+  reflect what was actually committed after the rollback) or a silent empty
+  page (`list_history`, indistinguishable in the UI from "you have no watch
+  history yet"). This is deliberate for the *"no DB configured at all, pure
+  local dev"* case (per the code's own comments), but the exact same
+  fallback fires for a *transient* failure on an otherwise-configured DB
+  (a Postgres restart mid-query, a pool blip) — conflating "not configured"
+  with "briefly unavailable" is the bug. Root-caused, not fixed: a proper
+  fix means threading a distinct "was the failure transient vs. no-db" signal
+  through ~60 call sites, which is a real architectural change, not a
+  same-session quick fix. Worth a dedicated pass if this DB flakiness keeps
+  recurring on this machine.
+- [ ] **Minor: "Add to Watchlist"/"Add to Library" buttons don't reflect
+  already-added state after a page reload.** `isSavedToWatchlist` and
+  `isAddedToLibrary` on the movie/series detail pages are plain client-side
+  `useState(false)`, not derived from a real check — so revisiting a title
+  you've already added shows the un-added button state until you click it
+  again (harmless no-op re-add, not a data bug, just a stale/misleading
+  label). Pre-existing pattern for the watchlist button; the new Library
+  button follows the same shape for consistency. A real fix needs the
+  detail page to check current state on load (no obvious existing endpoint
+  returns "is this title in my watchlist/library" directly — would need a
+  small new one, or a client-side check against the already-fetched
+  watchlist/library lists). Not fixed this session — cosmetic, not data
+  loss or fabrication.
 
 ## Test residue in the dev account
 
@@ -231,24 +528,51 @@ Test Challenge", and 6 watch-history entries from the Import wizard test
 Interstellar). Delete these from the UI if you want the dev account clean,
 or leave them — they don't affect anyone else.
 
+**Session 3 additions:** 4 more watch-history entries (Parasite ×2, The
+Grand Budapest Hotel ×2 — duplicated because the file-upload verification
+was run twice across an environment restart), "100 Days Love Story" in both
+the Watchlist and the Personal Library, an "A24 Modern Classics" empty
+collection, and one Pick Room ("Movie Night Ballot", 2 nominees, 1 vote
+cast). Same as above — isolated to the dev account, harmless to leave.
+
 ## How to resume the dev environment
 
 ```bash
 # 1. Postgres + pgbouncer (check docker ps first — it may already be up)
 docker compose -f infra/docker/docker-compose.yml up -d postgres pgbouncer
 
-# 2. API server (port 8000)
+# 2. API server (port 8000) — see the --reload note below before adding it back
 cd C:/Desktop/flutter_projects/CineVault
-python -m uvicorn services.api.main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn services.api.main:app --host 0.0.0.0 --port 8000
 
-# 3. Web app (port 3000) — likely already running; check with:
-#    netstat -ano | grep ":3000"
+# 3. Web app (port 3000) — check first with: netstat -ano | grep ":3000"
 cd apps/web && npm run dev
 ```
 
-Note: uvicorn's `--reload` has been flaky on this Windows machine — it
-sometimes logs "Reloading..." but never actually spawns a new worker,
-silently continuing to serve stale code. If a fix doesn't seem to take
-effect after saving a file, check the log for a `Started server process
-[PID]` line after the reload warning; if it's missing, kill and restart the
-server process manually.
+Always verify with a real request after starting, not just "the process
+exists" — `curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/titles`
+and the same for `:3000`. This session found both the API and the web dev
+server silently dead (process gone, port not LISTENING) with no error
+visible in whatever terminal you last looked at.
+
+**uvicorn `--reload`** has been flaky on this Windows machine — it sometimes
+logs "Reloading..." but never actually spawns a new worker (no `Started
+server process [PID]` line ever appears), silently continuing to serve
+stale code, or the whole process disappears later with nothing logged. This
+session ran without `--reload` and restarted manually after each backend
+edit instead — more reliable here. If you do use `--reload`, check for the
+`Started server process [PID]` line after every reload; if it's missing,
+`taskkill //IM python.exe //F` and restart clean.
+
+**`next dev` + a killed/crashed process → corrupted `.next` cache.** If the
+web server was killed ungracefully (crash, `taskkill`, a previous session
+ending abruptly) and the next `npm run dev` serves `500`s with a console
+error like `TypeError: __webpack_modules__[moduleId] is not a function`,
+the `.next` build cache is corrupted, not the code. Fix:
+```bash
+taskkill //IM node.exe //F   # clear every stray node process — Next can
+                              # silently keep an old server bound to :3000
+                              # while a new one binds :3001, serving stale
+                              # content from the wrong process
+cd apps/web && rm -rf .next && npm run dev
+```
