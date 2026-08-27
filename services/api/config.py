@@ -94,7 +94,13 @@ class APIConfig(BaseModel):
     rate_limit_internal_admin: int = 1200
 
     # AI Provider Configuration
-    ai_provider: str = os.getenv("AI_PROVIDER", "mock")
+    # None (not the string "mock") when AI_PROVIDER is unset — this is what
+    # lets effective_ai_provider below distinguish "not configured, please
+    # auto-detect from whichever key is present" from "explicitly forced to
+    # mock, ignore any keys". Collapsing both into the literal string "mock"
+    # (the previous default) meant AI_PROVIDER=mock could never actually
+    # force mock mode once any real API key existed in the environment.
+    ai_provider: Optional[str] = os.getenv("AI_PROVIDER")
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     gemini_api_key: Optional[str] = os.getenv("GEMINI_API_KEY")
@@ -103,6 +109,11 @@ class APIConfig(BaseModel):
     # reuses OpenAIProviderAdapter with a different base_url + model.
     groq_api_key: Optional[str] = os.getenv("GROQ_API_KEY")
     groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    # xAI Grok: OpenAI-compatible API (https://docs.x.ai) — a different
+    # provider from Groq above despite the similar name; also reuses
+    # OpenAIProviderAdapter with a different base_url + model.
+    grok_api_key: Optional[str] = os.getenv("GROK_API_KEY")
+    grok_model: str = os.getenv("GROK_MODEL", "grok-4")
 
     # Ingestion Provider Configuration
     ingestion_mode: str = os.getenv("INGESTION_MODE", "mock")
@@ -157,12 +168,19 @@ class APIConfig(BaseModel):
     def effective_ai_provider(self) -> str:
         """
         Resolves the active AI provider.
-        - If AI_PROVIDER env var is explicitly set to a non-mock value, use it.
-        - Otherwise, auto-detect based on available API keys.
-        - Falls back to 'mock' only when no credentials are present.
+        - If AI_PROVIDER env var is explicitly set (to ANY value, including
+          the literal string "mock"), use it exactly as given — this is what
+          lets a test session or a developer force real mock behavior even
+          when a working API key is also present in the environment.
+        - Otherwise (AI_PROVIDER unset entirely), auto-detect based on
+          whichever API key is present.
+        - Falls back to 'mock' only when neither an explicit setting nor any
+          credentials are present.
         """
-        if self.ai_provider != "mock":
+        if self.ai_provider is not None:
             return self.ai_provider
+        if self.grok_api_key:
+            return "grok"
         if self.groq_api_key:
             return "groq"
         if self.openai_api_key:

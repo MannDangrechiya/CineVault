@@ -429,6 +429,36 @@ class GroqProviderAdapter(OpenAIProviderAdapter):
     def _display_name(self) -> str:
         return "Groq"
 
+class GrokProviderAdapter(OpenAIProviderAdapter):
+    """
+    Live xAI Grok API provider integration. A different provider from Groq
+    above despite the near-identical name (xAI's Grok models vs. Groq's
+    inference-hosting service) — xAI also exposes an OpenAI-compatible
+    endpoint (https://docs.x.ai/docs/api-reference), so this is the same
+    reuse pattern: only the base URL/key/model/identity differ.
+    """
+
+    _GROK_BASE_URL = "https://api.x.ai/v1"
+
+    def __init__(self, api_key: Optional[str] = None, client: Optional[Any] = None, model: Optional[str] = None):
+        self.api_key = api_key or config.grok_api_key or os.getenv("GROK_API_KEY")
+        self.model = model or config.grok_model or os.getenv("GROK_MODEL", "grok-4")
+        self.fallback = MockAIProviderAdapter()
+        if client:
+            self.client = client
+        elif self.api_key and AsyncOpenAI is not None:
+            self.client = AsyncOpenAI(api_key=self.api_key, base_url=self._GROK_BASE_URL)
+        else:
+            self.client = None
+
+    @property
+    def provider_enum(self) -> AIProviderEnum:
+        return AIProviderEnum.GROK
+
+    @property
+    def _display_name(self) -> str:
+        return "Grok"
+
 class GeminiProviderAdapter(AIProviderAdapter):
     """Live Google Gemini API provider integration for CineVault OS AI Assistant."""
 
@@ -553,5 +583,7 @@ class AIProviderFactory:
             return GeminiProviderAdapter()
         elif requested == "groq":
             return GroqProviderAdapter()
+        elif requested == "grok":
+            return GrokProviderAdapter()
         else:
             return MockAIProviderAdapter()

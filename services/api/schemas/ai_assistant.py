@@ -11,6 +11,7 @@ class AIProviderEnum(str, Enum):
     OPENAI = "openai"
     GEMINI = "gemini"
     GROQ = "groq"
+    GROK = "grok"
     CLAUDE = "claude"
     DEEPSEEK = "deepseek"
 
