@@ -514,6 +514,28 @@ real 88,979-title catalog.
   too and had just gotten lucky not hitting it. The script safely resumes on
   re-run (`ON CONFLICT DO NOTHING` + skips already-backfilled title_ids), so
   the crash mid-run cost only time, not data correctness.
+- [x] **Added xAI Grok as a provider option** (`GrokProviderAdapter`,
+  `services/api/ai/provider.py`) — same OpenAI-compatible-endpoint-reuse
+  pattern as the Groq adapter above; `api.x.ai/v1` is a different provider
+  from Groq Cloud despite the near-identical name. `GROK_API_KEY` is set in
+  `.env` and the integration verified end-to-end for real (see "Known gaps"
+  above for why it doesn't answer real questions yet — billing, not code).
+- [x] **CRITICAL — `AI_PROVIDER=mock` could never actually force mock mode
+  once any real API key existed anywhere in the environment.**
+  `config.ai_provider` defaulted to the literal string `"mock"` when
+  `AI_PROVIDER` was simply unset, making "unset" and "explicitly mock"
+  indistinguishable to `effective_ai_provider`'s auto-detect logic — which
+  always ran its key-based auto-detect whenever `self.ai_provider == "mock"`,
+  regardless of whether that `"mock"` came from an explicit setting or just
+  the field's own default. Caught via a real regression: `tests/conftest.py`'s
+  autouse `AI_PROVIDER=mock` override (added specifically to keep tests off
+  real APIs) silently stopped working the moment a working `GROK_API_KEY`
+  existed — 3 tests in `test_ai_assistant_foundation.py` started making
+  real, non-deterministic calls to `api.x.ai`. Fixed by changing
+  `config.ai_provider` to `Optional[str]` (`None` when unset, not the string
+  `"mock"`) so `effective_ai_provider` can tell "not configured" from
+  "explicitly forced to mock" apart. Re-verified: full targeted suite (498
+  tests) passes clean with the real key still in `.env`.
 
 ## Verified working, no changes needed
 
@@ -555,10 +577,19 @@ real 88,979-title catalog.
   will take a long time for 89k titles (consider `--max-batches` to test
   first). Frontend already handles missing posters gracefully in the
   meantime (shows a placeholder icon, not a broken image).
-- [ ] **AI Oracle chat has no LLM behind it** — needs `GROQ_API_KEY` (now
-  wired in, session 4 — recommended: free tier is fast and generous),
-  `OPENAI_API_KEY`, or `GEMINI_API_KEY` in `.env` to actually answer
-  questions instead of showing the graceful-degradation error message.
+- [ ] **AI Oracle chat has no working LLM behind it yet** — `GROK_API_KEY`
+  (xAI, session 4) is set in `.env` and the integration is fully verified
+  end-to-end (`AIProviderFactory` correctly resolves to `grok` and reaches
+  `api.x.ai` with valid auth), but the xAI team behind that key has no
+  billing/credits configured, so every real call currently 403s
+  (`"Your newly created team doesn't have any credits or licenses yet"`) and
+  the app degrades honestly to the connection-error message rather than
+  crashing. **Add credits at the URL in that error message and it will work
+  with zero further code changes.** `GROQ_API_KEY` (Groq Cloud, different
+  provider from xAI despite the name, free tier), `OPENAI_API_KEY`, or
+  `GEMINI_API_KEY` in `.env` are also wired in as alternatives — whichever
+  key is present is auto-detected, priority order grok → groq → openai →
+  gemini (see `config.effective_ai_provider`).
 - [x] ~~Technical specs (audio/aspect ratio/color grading) show "Not
   available" for virtually the whole catalog~~ — **won't fix.** Confirmed via
   research (session 4) that TMDB's `release_dates` endpoint, OMDb, and the
