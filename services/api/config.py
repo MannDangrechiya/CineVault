@@ -3,8 +3,26 @@
 #         Added S3 access key fields, JWT secret key, and computed provider properties.
 
 import os
+from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel, model_validator
+
+# The root .env file was previously never loaded anywhere in this codebase —
+# every os.getenv() below only ever saw real values if they happened to
+# already be exported in the shell before Python started. Loading it here,
+# before any os.getenv() call in this module executes, is what makes "put
+# your API key in .env" actually true. load_dotenv() never overrides a
+# variable already set in the real environment, so an explicit shell export
+# still wins over the file, same as the standard convention.
+load_dotenv_path = Path(__file__).resolve().parent.parent.parent / ".env"
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(load_dotenv_path)
+except ImportError:
+    # python-dotenv isn't installed — fall back to whatever is already in
+    # the process environment rather than hard-failing config import.
+    pass
 
 
 # P0 Fix (Day 1-7 remediation): known-insecure placeholder values that must
@@ -81,6 +99,10 @@ class APIConfig(BaseModel):
     openai_model: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     gemini_api_key: Optional[str] = os.getenv("GEMINI_API_KEY")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    # Groq: OpenAI-compatible API (https://console.groq.com), free tier —
+    # reuses OpenAIProviderAdapter with a different base_url + model.
+    groq_api_key: Optional[str] = os.getenv("GROQ_API_KEY")
+    groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     # Ingestion Provider Configuration
     ingestion_mode: str = os.getenv("INGESTION_MODE", "mock")
@@ -141,6 +163,8 @@ class APIConfig(BaseModel):
         """
         if self.ai_provider != "mock":
             return self.ai_provider
+        if self.groq_api_key:
+            return "groq"
         if self.openai_api_key:
             return "openai"
         if self.gemini_api_key:

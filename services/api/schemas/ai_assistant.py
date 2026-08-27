@@ -10,6 +10,7 @@ class AIProviderEnum(str, Enum):
     MOCK = "mock"
     OPENAI = "openai"
     GEMINI = "gemini"
+    GROQ = "groq"
     CLAUDE = "claude"
     DEEPSEEK = "deepseek"
 

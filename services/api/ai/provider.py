@@ -399,6 +399,36 @@ class OpenAIProviderAdapter(AIProviderAdapter):
         except Exception as e:
             self._handle_error("generate_proposal", e)
 
+class GroqProviderAdapter(OpenAIProviderAdapter):
+    """
+    Live Groq API provider integration. Groq exposes an OpenAI-compatible
+    endpoint (https://console.groq.com/docs/openai), so this only needs to
+    override where the client points and which model/key it uses — every
+    method (extract_intent / generate_assistant_response / generate_proposal)
+    is inherited unchanged from OpenAIProviderAdapter.
+    """
+
+    _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+
+    def __init__(self, api_key: Optional[str] = None, client: Optional[Any] = None, model: Optional[str] = None):
+        self.api_key = api_key or config.groq_api_key or os.getenv("GROQ_API_KEY")
+        self.model = model or config.groq_model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.fallback = MockAIProviderAdapter()
+        if client:
+            self.client = client
+        elif self.api_key and AsyncOpenAI is not None:
+            self.client = AsyncOpenAI(api_key=self.api_key, base_url=self._GROQ_BASE_URL)
+        else:
+            self.client = None
+
+    @property
+    def provider_enum(self) -> AIProviderEnum:
+        return AIProviderEnum.GROQ
+
+    @property
+    def _display_name(self) -> str:
+        return "Groq"
+
 class GeminiProviderAdapter(AIProviderAdapter):
     """Live Google Gemini API provider integration for CineVault OS AI Assistant."""
 
@@ -510,11 +540,18 @@ class AIProviderFactory:
 
     @staticmethod
     def get_provider(provider_type: Optional[str] = None) -> AIProviderAdapter:
-        requested = (provider_type or os.getenv("AI_PROVIDER", "mock")).lower()
+        # config.effective_ai_provider already reads AI_PROVIDER when it's
+        # explicitly set to a non-mock value, and otherwise auto-detects from
+        # whichever API key is actually present (groq/openai/gemini) — using
+        # a raw os.getenv() here instead meant setting e.g. GROQ_API_KEY
+        # alone silently did nothing without *also* setting AI_PROVIDER=groq.
+        requested = (provider_type or config.effective_ai_provider).lower()
 
         if requested == "openai":
             return OpenAIProviderAdapter()
         elif requested == "gemini":
             return GeminiProviderAdapter()
+        elif requested == "groq":
+            return GroqProviderAdapter()
         else:
             return MockAIProviderAdapter()
