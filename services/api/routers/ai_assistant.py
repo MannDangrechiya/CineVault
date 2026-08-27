@@ -33,7 +33,7 @@ internal_router = APIRouter(prefix="/internal/v1/ai/proposals", tags=["AI Propos
 @public_router.post("/query", response_model=AssistantQueryResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 async def process_assistant_query(
     body: AssistantQueryRequest,
-    provider: Optional[str] = Query(None, description="Optional target AI provider (mock, openai, gemini)"),
+    provider: Optional[str] = Query(None, description="Optional target AI provider (mock, openai, gemini, groq)"),
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):

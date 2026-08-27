@@ -1,5 +1,5 @@
 # CineVault OS — AI Module Schemas (v2.0 Module 3)
-# Defines schemas for Ollama AI Brain, Group Matchmaking, and Vector operations
+# Defines schemas for AI Provider integration, Group Matchmaking, and Vector operations
 
 from typing import List, Optional
 import uuid

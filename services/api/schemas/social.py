@@ -190,7 +190,7 @@ class UserTasteProfileResponse(BaseModel):
 
 
 class TasteProfileComputeRequest(BaseModel):
-    """Schema for requesting real vector computation for taste profile via Ollama."""
+    """Schema for requesting real vector computation for taste profile via the self-hosted embedding service."""
     taste_summary: str = Field(
         ...,
         min_length=1,

@@ -1,0 +1,26 @@
+# CineVault OS — root .dockerignore
+# All three prod images (services/api/Dockerfile, services/ai_worker/Dockerfile,
+# apps/web/Dockerfile) build with `context: ../..` (repo root) per
+# infra/docker/docker-compose.prod.yml, and services/api/Dockerfile does a
+# blanket `COPY . /app/`. Since services/api/config.py now actually loads the
+# root .env at runtime (see WEB_FEATURE_AUDIT.md session 4), a developer
+# building from a checkout with a real local .env would otherwise bake live
+# secrets into the image and have them actively used. Never let real secrets
+# cross into a build context.
+.env
+.env.*
+!.env.example
+
+# Standard noise — not secrets, just build-context hygiene
+.git
+.gitignore
+node_modules
+**/node_modules
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.next
+apps/web/.next
+*.log
+.wslconfig

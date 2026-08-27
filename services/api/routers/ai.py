@@ -1,5 +1,5 @@
 # CineVault OS — AI Brain & Group Matchmaking Router (v2.0 Module 3)
-# Integrates Ollama AI Brain, Vector Group Consensus, and LLM Matchmaking (ADR-004)
+# Integrates the AIProviderFactory (mock/openai/gemini/groq), Vector Group Consensus, and LLM Matchmaking (ADR-004)
 
 import logging
 from typing import Optional, List, Dict, Any
