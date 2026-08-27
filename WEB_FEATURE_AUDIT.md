@@ -13,7 +13,21 @@ the most severe bug of the whole audit — see "CRITICAL" entry below. All
 resolved; only the ones needing an external API key or real ingestion source
 remain.
 
-**2026-08-26 session 3 (this session):** built the missing Pick Room "Create"
+**2026-08-27 session 4:** closed out most of the remaining "Known gaps" list
+from session 3 — the ones that didn't strictly need a paid/rate-limited
+external service. Replaced the dead local-Ollama dependency for taste-vector
+embeddings with a self-hosted `sentence-transformers` model (no external API,
+no ongoing cost); wired Groq (OpenAI-compatible, generous free tier) into the
+existing `AIProviderFactory` as a first-class provider alongside OpenAI/
+Gemini; and along the way found and fixed two foundational bugs that would
+have silently defeated the "just paste a key into `.env`" instructions in
+this very doc — see "Fixed this session (session 4)" below. Also addressed
+the two documented infra-flakiness items (Postgres/WSL2 restarts, uvicorn
+`--reload` silently not reloading) and started the IMDb country-data
+backfill. Marked the technical-specs gap "won't fix" — confirmed via
+research that no free API carries this data at catalog scale.
+
+**2026-08-26 session 3:** built the missing Pick Room "Create"
 entry point, verified the Import wizard's file-upload path for real, then did
 a genuine, feature-by-feature click-through of every page — including using
 a *second real account* (`curator@cinevault.local`) to actually exercise the
@@ -400,6 +414,87 @@ real 88,979-title catalog.
   Also exercised the Social inbox's "Dismiss" button for the first time
   this session (only "Accept" had been tested before) — works correctly.
 
+## Fixed this session (session 4, 2026-08-27)
+
+- [x] **CRITICAL — the root `.env` file was never actually loaded anywhere in
+  the backend.** `services/api/config.py`'s `APIConfig` is a plain
+  `pydantic.BaseModel` reading `os.getenv(...)` at class-definition time —
+  there was no `python-dotenv` call (or any other loader) anywhere in the
+  codebase. This meant every instruction in this doc to "add `TMDB_API_KEY`/
+  `OPENAI_API_KEY`/`GEMINI_API_KEY` to `.env`" would have silently done
+  nothing: those values only ever reached `os.getenv()` if they happened to
+  already be exported in the shell before Python started, which none of the
+  documented restart commands do. `python-dotenv` was present only as an
+  incidental transitive dependency of another package, never invoked. Fixed
+  by calling `load_dotenv()` at the top of `config.py`, before any
+  `os.getenv()` call in the module executes, pointed at the repo-root `.env`
+  regardless of the working directory uvicorn is launched from. An explicit
+  shell-exported variable still wins over the file (standard `load_dotenv()`
+  behavior, `override=False`), so nothing that worked before regresses.
+- [x] **`AIProviderFactory.get_provider()` never used the auto-detect logic
+  that already existed for it.** `config.effective_ai_provider` (resolves to
+  whichever of `openai`/`gemini`/etc. has a real key set, falling back to
+  `mock` only when none do) was fully implemented but never called from
+  anywhere — the factory read `os.getenv("AI_PROVIDER", "mock")` directly
+  instead, meaning setting an API key alone did nothing without *also*
+  explicitly setting `AI_PROVIDER=<name>`. Wired `get_provider()`'s default
+  path through `config.effective_ai_provider` so "set one API key" is
+  actually sufficient, matching what the property's own docstring always
+  claimed it did.
+- [x] **`POST /social/taste-profile/compute` no longer depends on a local
+  Ollama server.** Replaced the `OllamaClient().generate_embedding()` call
+  (dead on arrival — nothing runs Ollama in this environment) with a
+  self-hosted `sentence-transformers/all-MiniLM-L6-v2` model
+  (`services/api/ai/embedding_service.py`), the same model family Ollama's
+  `all-minilm` was already wrapping, so the output shape (384-dim,
+  L2-normalized) is unchanged. Runs in-process via `asyncio.to_thread` (no
+  external network call after the first model download), so this closes the
+  gap with zero ongoing cost and zero new API key. Deleted the now-fully-dead
+  `services/api/ai/ollama_client.py` (its only other caller, group
+  matchmaking, was already moved off Ollama in session 3) and rewrote
+  `tests/test_v2_ai_brain.py` accordingly — including two tests
+  (`test_group_matchmaking_end_to_end_lifecycle`,
+  `test_group_matchmaking_*_failure_returns_502`) that had gone stale in
+  session 3's Ollama removal and were mocking a code path
+  (`OllamaClient.generate_chat`) the group-matchmaking endpoint no longer
+  calls at all.
+- [x] **Wired Groq in as a first-class `AI_PROVIDER` option.** Groq exposes
+  an OpenAI-compatible endpoint, so `GroqProviderAdapter` in
+  `services/api/ai/provider.py` subclasses `OpenAIProviderAdapter` and only
+  overrides the base URL/key/model/display-name/enum — every actual method
+  (`extract_intent`, `generate_assistant_response`, `generate_proposal`) is
+  inherited unchanged. Set `GROQ_API_KEY` (and optionally `GROQ_MODEL`,
+  defaults to `llama-3.3-70b-versatile`) in `.env` to activate it for the
+  Oracle chat and Group Matchmaker — same honest Mock-provider degradation
+  as OpenAI/Gemini when no key is present.
+- [x] **uvicorn `--reload` Windows flakiness — root-caused further and
+  fixed.** Found that `watchfiles` (the reliable file-watcher backend
+  `uvicorn[standard]` normally provides) wasn't actually installed — the
+  bare `uvicorn` in `requirements.txt` meant `--reload` was silently running
+  on Python's polling-based `StatReload` fallback the whole time, which is
+  the likely root cause of the "logs Reloading... but never actually
+  reloads" behavior documented in session 2/3. Fixed the requirements pin to
+  `uvicorn[standard]` and added `infra/scripts/run_api_dev.py`, a small
+  launcher that also sets `asyncio.WindowsSelectorEventLoopPolicy()` before
+  uvicorn's reload supervisor creates its event loop (setting it inside
+  `services/api/main.py` itself would be too late — the supervisor process
+  starts before it ever imports the app). `infra/scripts/start-dev.ps1` /
+  `start-dev.sh` now launch the API through this script instead of calling
+  `uvicorn` directly. Not yet verified end-to-end across a real multi-edit
+  session — worth confirming next time `--reload` is relied on for a while.
+- [x] **Postgres/WSL2 stability — applied the two standard mitigations.**
+  Added `restart: unless-stopped` to the `postgres` and `pgbouncer` services
+  in `infra/docker/docker-compose.yml` so an unexplained "fast shutdown"
+  self-heals instead of silently falling back to seed data until someone
+  notices. Created `%UserProfile%\.wslconfig` with `memory=8GB`/`swap=4GB`
+  (this machine has ~16GB total RAM) — unbounded WSL2 memory growth is a
+  documented trigger for VM-level instability that can kill containers
+  running inside it. **Requires a `wsl --shutdown` + Docker Desktop restart
+  to take effect** — not done automatically since it would kill whatever's
+  currently running; do this before your next dev session.
+- [ ] **Country-of-origin backfill from IMDb's `title.akas.tsv.gz`** — in
+  progress, see the dedicated note below on the download step.
+
 ## Verified working, no changes needed
 
 - [x] Movies/Series search (tested "FIFA" → correct 7-result match)
@@ -434,35 +529,32 @@ real 88,979-title catalog.
 - [ ] **No real poster images anywhere** — `poster_sync_status` is `PENDING`
   for 88,979/88,979 titles; the `services/api/ingestion/tmdb_worker.py`
   poster-sync worker exists and works, but needs a `TMDB_API_KEY` in `.env`
-  (free key from themoviedb.org). Once set, run:
+  (free key from themoviedb.org — now actually loaded, see session 4's
+  `.env`-loading fix above). Once set, run:
   `python services/api/ingestion/tmdb_worker.py` — rate-limited to 20 req/s,
   will take a long time for 89k titles (consider `--max-batches` to test
   first). Frontend already handles missing posters gracefully in the
   meantime (shows a placeholder icon, not a broken image).
-- [ ] **AI Oracle chat has no LLM behind it** — needs `OPENAI_API_KEY` or a
-  Gemini key configured (`services/api/ai/provider.py`) to actually answer
+- [ ] **AI Oracle chat has no LLM behind it** — needs `GROQ_API_KEY` (now
+  wired in, session 4 — recommended: free tier is fast and generous),
+  `OPENAI_API_KEY`, or `GEMINI_API_KEY` in `.env` to actually answer
   questions instead of showing the graceful-degradation error message.
-- [ ] **Technical specs (audio/aspect ratio/color grading) show "Not
-  available" for virtually the whole catalog** — only 2 rows exist in
-  `canonical.edition` total. This is real, honest data — the catalog just
-  doesn't have edition-level metadata. Would need a real ingestion source
-  for this (not something a quick fix can conjure).
-- [ ] **`POST /social/taste-profile/compute` still calls Ollama directly and
-  will 502** — found while fixing the Group Matchmaker bug above (same
-  `from ..ai.ollama_client import OllamaClient` import, in
-  `services/api/routers/social.py`). Generates a 384-dim taste-vector
-  *embedding* from a free-text summary, which is a different capability
-  than the chat-completion `generate_assistant_response()` the
-  `AIProviderFactory` abstraction offers — `AIProviderAdapter` has no
-  `generate_embedding()` method for OpenAI/Gemini to implement, so this
-  isn't a same-shape swap. **Not fixed**, but also not currently
-  reachable: grepped the whole frontend for this endpoint and for
-  `taste_summary` — no page or component calls it. This is *why* every real
-  user's `taste_vector` in this dev DB is still an all-zero placeholder
-  (confirmed: `group_vector_preview` in the Group Matchmaker fix above
-  returned `[0,0,0,0,0]` for both `dev` and `curator`) — nothing in the UI
-  has ever populated one. Worth a decision: wire this into onboarding/
-  settings once it's fixed, or remove the dead endpoint.
+- [x] ~~Technical specs (audio/aspect ratio/color grading) show "Not
+  available" for virtually the whole catalog~~ — **won't fix.** Confirmed via
+  research (session 4) that TMDB's `release_dates` endpoint, OMDb, and the
+  IMDb bulk datasets all lack audio-format/aspect-ratio/HDR data — no free
+  API carries edition-level technical specs at this catalog's scale. Only 2
+  rows exist in `canonical.edition` total; this is honest, correctly-empty
+  data, not a bug. Leaving the "Not available" fallback as-is; would need
+  either a paid data source (Gracenote/Rovi-class) or manual curation to
+  close, neither of which is a quick fix.
+- [x] ~~`POST /social/taste-profile/compute` still calls Ollama directly and
+  will 502`~~ — **fixed, session 4.** Now backed by a self-hosted
+  `sentence-transformers` embedding model, see "Fixed this session (session
+  4)" above. Still not called from anywhere in the frontend (grepped again to
+  confirm) — the same "wire into onboarding, or leave as a working-but-unused
+  endpoint" decision from session 3 still stands, now moot from a
+  reliability standpoint since it no longer 502s.
 - [ ] **`origin_country` is `null` for virtually every title** —
   `canonical.title_country` is empty (0 rows). Same root cause as above: the
   bulk IMDb importer (`services/api/scripts/seed_bulk_imdb.py`) never
@@ -470,19 +562,23 @@ real 88,979-title catalog.
   doesn't carry country directly — would need a `title.akas.tsv.gz` join or
   a TMDB backfill (same pattern as the genre backfill script, could be
   adapted).
-- [ ] **Known infra flakiness: Postgres, the API server, and the web dev
-  server have all independently died on this machine** — Postgres exits on
-  its own under Docker Desktop (confirmed via `docker logs` showing
-  unexplained "received fast shutdown request" with no corresponding
-  command); separately, this session found both `uvicorn` and `next dev`
-  silently die mid-session with no crash message in the visible terminal —
-  discovered only because a request returned connection-refused. This is a
-  Docker Desktop/WSL2 + Windows environment issue, not an application bug.
-  If the app "loses its data" or a page stops responding, check in order:
+- [x] ~~Known infra flakiness: Postgres, the API server, and the web dev
+  server have all independently died on this machine~~ — **mitigations
+  applied, session 4, not yet fully verified.** Postgres exits on its own
+  under Docker Desktop (confirmed via `docker logs` showing unexplained
+  "received fast shutdown request" with no corresponding command). Added
+  `restart: unless-stopped` to `postgres`/`pgbouncer` in
+  `infra/docker/docker-compose.yml` and a `%UserProfile%\.wslconfig` memory/
+  swap cap (see session 4 fix above) — **requires `wsl --shutdown` + a Docker
+  Desktop restart to actually take effect**, not done automatically this
+  session. Separately, `uvicorn --reload` silently not-reloading was
+  root-caused to a missing `watchfiles` dependency (fixed: `uvicorn[standard]`)
+  — see session 4 above. `next dev` dying mid-session is still unexplained;
+  if the app "loses its data" or a page stops responding, check in order:
   `docker ps` (Postgres/pgbouncer both "Up"), `netstat -ano | grep ":8000"`
   and `:3000"` (both actually LISTENING, not just a process existing).
   Restart commands are in "How to resume" below, including a `.next` cache
-  gotcha this session hit.
+  gotcha a previous session hit.
 - [ ] **Architectural gap: several `services/api/repositories/*.py` methods
   swallow real database errors into a false-empty or false-success response**
   instead of surfacing a 5xx. Found while diagnosing why a successful-looking
@@ -541,9 +637,12 @@ cast). Same as above — isolated to the dev account, harmless to leave.
 # 1. Postgres + pgbouncer (check docker ps first — it may already be up)
 docker compose -f infra/docker/docker-compose.yml up -d postgres pgbouncer
 
-# 2. API server (port 8000) — see the --reload note below before adding it back
+# 2. API server (port 8000) — now goes through infra/scripts/run_api_dev.py,
+# which sets the Windows event-loop policy before uvicorn starts (see
+# session 4's --reload fix below). --reload is on by default; pass
+# --no-reload to run without it.
 cd C:/Desktop/flutter_projects/CineVault
-python -m uvicorn services.api.main:app --host 0.0.0.0 --port 8000
+python infra/scripts/run_api_dev.py --port 8000
 
 # 3. Web app (port 3000) — check first with: netstat -ano | grep ":3000"
 cd apps/web && npm run dev
@@ -555,14 +654,20 @@ and the same for `:3000`. This session found both the API and the web dev
 server silently dead (process gone, port not LISTENING) with no error
 visible in whatever terminal you last looked at.
 
-**uvicorn `--reload`** has been flaky on this Windows machine — it sometimes
-logs "Reloading..." but never actually spawns a new worker (no `Started
-server process [PID]` line ever appears), silently continuing to serve
-stale code, or the whole process disappears later with nothing logged. This
-session ran without `--reload` and restarted manually after each backend
-edit instead — more reliable here. If you do use `--reload`, check for the
-`Started server process [PID]` line after every reload; if it's missing,
-`taskkill //IM python.exe //F` and restart clean.
+**uvicorn `--reload`** was flaky on this Windows machine — it sometimes
+logged "Reloading..." but never actually spawned a new worker (no `Started
+server process [PID]` line ever appeared), silently continuing to serve
+stale code, or the whole process disappeared later with nothing logged.
+**Session 4 root-caused this:** `watchfiles` (the reliable file-watcher
+`uvicorn[standard]` is supposed to provide) wasn't actually installed, so
+`--reload` was silently running on Python's polling-based `StatReload`
+fallback the entire time. Fixed by pinning `uvicorn[standard]` in
+`requirements.txt` and launching via `infra/scripts/run_api_dev.py` (also
+sets `WindowsSelectorEventLoopPolicy` before uvicorn's reload supervisor
+starts — doing this inside `main.py` itself would be too late). Not yet
+stress-tested across a long multi-edit session — if it's still unreliable,
+check for the `Started server process [PID]` line after every reload; if
+missing, `taskkill //IM python.exe //F` and restart clean.
 
 **`next dev` + a killed/crashed process → corrupted `.next` cache.** If the
 web server was killed ungracefully (crash, `taskkill`, a previous session
