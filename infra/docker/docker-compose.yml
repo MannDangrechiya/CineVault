@@ -8,6 +8,14 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: cinevault-local-postgres
+    # Docker Desktop's WSL2 backend on this machine has been observed sending
+    # an unexplained "fast shutdown request" to this container (confirmed via
+    # `docker logs` — not an application crash). restart: unless-stopped
+    # brings it back automatically instead of leaving the API silently
+    # falling back to seed data until someone notices. See
+    # WEB_FEATURE_AUDIT.md "Known infra flakiness" for the full writeup and
+    # the accompanying .wslconfig memory/swap tuning.
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-cinevault}
       POSTGRES_USER: ${POSTGRES_USER:-cinevault_dev}
@@ -38,6 +46,7 @@ services:
   pgbouncer:
     image: edoburu/pgbouncer:latest
     container_name: cinevault-local-pgbouncer
+    restart: unless-stopped
     environment:
       DB_HOST: postgres
       DB_PORT: 5432

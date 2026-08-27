@@ -50,24 +50,26 @@ if (-not $NoDocker) {
     Write-Host "[1/4] Skipping Docker containers (-NoDocker specified)." -ForegroundColor DarkGray
 }
 
-# 2. Check Ollama AI Engine (v2.0 Module 3)
+# 2. Check AI Provider Configuration (embeddings are now self-hosted, no
+#    Ollama dependency — see services/api/ai/embedding_service.py)
 Write-Host ""
-Write-Host "[2/4] Checking Ollama AI Neural Engine (Port 11434)..." -ForegroundColor Yellow
-try {
-    $ollamaReq = [System.Net.WebRequest]::Create("http://localhost:11434/api/tags")
-    $ollamaReq.Timeout = 1500
-    $ollamaRes = $ollamaReq.GetResponse()
-    Write-Host "      [OK] Ollama AI Brain active on http://localhost:11434 (LLM and Embeddings ready)." -ForegroundColor Green
-    $ollamaRes.Close()
-} catch {
-    Write-Host "      [INFO] Ollama is not active on port 11434 (Optional for local AI matchmaking)." -ForegroundColor DarkGray
-    Write-Host "             To enable local AI embeddings: run 'ollama serve' in another terminal." -ForegroundColor DarkGray
+Write-Host "[2/4] Checking AI Provider Configuration..." -ForegroundColor Yellow
+$EnvFile = Join-Path $RootDir ".env"
+$HasAiKey = $false
+if (Test-Path $EnvFile) {
+    $HasAiKey = Select-String -Path $EnvFile -Pattern "^(GROQ|OPENAI|GEMINI)_API_KEY=.+" -Quiet
+}
+if ($HasAiKey) {
+    Write-Host "      [OK] An AI provider key is configured in .env (Oracle chat / matchmaking ready)." -ForegroundColor Green
+} else {
+    Write-Host "      [INFO] No GROQ_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY set in .env." -ForegroundColor DarkGray
+    Write-Host "             AI features will degrade honestly to the Mock provider until one is set." -ForegroundColor DarkGray
 }
 
 # 3. Launch FastAPI Backend Service
 Write-Host ""
 Write-Host "[3/4] Launching FastAPI Backend Service (Port $ApiPort)..." -ForegroundColor Yellow
-$BackendCmd = "cd '$RootDir'; `$env:PORT = '$ApiPort'; `$env:ENVIRONMENT = 'local_development'; Write-Host '--- CineVault OS v2.0 API Service (Port $ApiPort) ---' -ForegroundColor Cyan; python -m uvicorn services.api.main:app --host 0.0.0.0 --port $ApiPort --reload"
+$BackendCmd = "cd '$RootDir'; `$env:PORT = '$ApiPort'; `$env:ENVIRONMENT = 'local_development'; Write-Host '--- CineVault OS v2.0 API Service (Port $ApiPort) ---' -ForegroundColor Cyan; python infra\scripts\run_api_dev.py --port $ApiPort"
 Start-Process powershell.exe -ArgumentList "-NoExit", "-Command", $BackendCmd
 Write-Host "      [OK] Backend process started in dedicated window." -ForegroundColor Green
 

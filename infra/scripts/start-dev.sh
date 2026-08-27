@@ -43,19 +43,20 @@ if [ "$START_DOCKER" = true ]; then
   fi
 fi
 
-# 2. Check Ollama AI Engine
+# 2. Check AI Provider Configuration (embeddings are now self-hosted, no
+#    Ollama dependency — see services/api/ai/embedding_service.py)
 echo ""
-echo "[2/4] Checking Ollama AI Neural Engine (Port 11434)..."
-if curl -s -m 1 http://localhost:11434/api/tags >/dev/null 2>&1; then
-  echo "      ✓ Ollama AI Brain active on http://localhost:11434"
+echo "[2/4] Checking AI Provider Configuration..."
+if [ -f "${ROOT_DIR}/.env" ] && grep -qE "^(GROQ|OPENAI|GEMINI)_API_KEY=.+" "${ROOT_DIR}/.env"; then
+  echo "      ✓ An AI provider key is configured in .env (Oracle chat / matchmaking ready)."
 else
-  echo "      ℹ Ollama is not active on port 11434 (Optional for local AI matchmaking)."
+  echo "      ℹ No GROQ_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY set in .env — AI features will degrade honestly to the Mock provider."
 fi
 
 # 3. Launch FastAPI Backend Service
 echo ""
 echo "[3/4] Launching FastAPI Backend Service (Port ${API_PORT})..."
-(cd "${ROOT_DIR}" && ENVIRONMENT=local_development PORT="${API_PORT}" python -m uvicorn services.api.main:app --host 0.0.0.0 --port "${API_PORT}" --reload) &
+(cd "${ROOT_DIR}" && ENVIRONMENT=local_development PORT="${API_PORT}" python infra/scripts/run_api_dev.py --port "${API_PORT}") &
 BACKEND_PID=$!
 echo "${BACKEND_PID}" > "${ROOT_DIR}/.backend.pid"
 echo "      ✓ Backend API launched (PID: ${BACKEND_PID})."
