@@ -1,19 +1,24 @@
 # CineVault OS — Test Suite for Module 3: The AI Brain (v2.0)
-# Validates OllamaClient (embeddings & chat), Vector Group Matchmaking math,
-# Taste Profile real vector computation, and AI API endpoints with mocked HTTP calls.
+# Validates the self-hosted embedding service, Vector Group Matchmaking math,
+# Taste Profile real vector computation, and AI API endpoints with mocked calls.
 
 import uuid
-from unittest.mock import patch, AsyncMock
-import httpx
+from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
 from pydantic import ValidationError
 from fastapi.testclient import TestClient
 
 from services.api.main import app
-from services.api.ai.ollama_client import OllamaClient
+from services.api.ai import embedding_service
 from services.api.routers.ai import compute_average_group_vector
 from services.api.schemas.ai import GroupMatchRequest, GroupMatchResponse
 from services.api.schemas.social import TasteProfileComputeRequest
+from services.api.schemas.recommendations import (
+    RecommendationListResponse,
+    RecommendationItemResponse,
+    RecommendationModeEnum,
+    GroundedExplanation,
+)
 from services.api.repositories.social import (
     social_repository,
     SEED_FRIENDSHIPS,
@@ -43,115 +48,52 @@ def extract_error_message(resp) -> str:
 
 
 # =============================================================================
-# 1. OllamaClient Unit Tests (Isolated Mocking)
+# 1. Embedding Service Unit Tests (Isolated Mocking — no real model load)
 # =============================================================================
 
 @pytest.mark.anyio
-async def test_ollama_client_generate_embedding_success():
-    """Verifies OllamaClient correctly calls /api/embeddings and parses 384-dim vector."""
+async def test_embedding_service_generate_embedding_success(monkeypatch):
+    """Verifies generate_embedding returns a 384-dim vector from the (mocked) model."""
     mock_vector = [0.01 * (i % 10) for i in range(384)]
-    mock_response = httpx.Response(
-        status_code=200,
-        json={"embedding": mock_vector},
-        request=httpx.Request("POST", "http://localhost:11434/api/embeddings"),
-    )
 
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_response
+    class _FakeVector:
+        def tolist(self):
+            return mock_vector
 
-        ollama = OllamaClient(base_url="http://localhost:11434")
-        result = await ollama.generate_embedding("Sci-fi cyberpunk and time travel")
+    class _FakeModel:
+        def encode(self, text, normalize_embeddings=True):
+            assert text == "Sci-fi cyberpunk and time travel"
+            return _FakeVector()
 
-        assert len(result) == 384
-        assert result == mock_vector
-        mock_post.assert_called_once()
-        args, kwargs = mock_post.call_args
-        assert args[0] == "http://localhost:11434/api/embeddings"
-        assert kwargs["json"]["model"] == "all-minilm"
-        assert kwargs["json"]["prompt"] == "Sci-fi cyberpunk and time travel"
+    monkeypatch.setattr(embedding_service, "_get_model", lambda: _FakeModel())
+
+    result = await embedding_service.generate_embedding("Sci-fi cyberpunk and time travel")
+
+    assert len(result) == 384
+    assert result == mock_vector
 
 
 @pytest.mark.anyio
-async def test_ollama_client_generate_embedding_batch_format():
-    """Verifies OllamaClient compatibility with batch format embeddings."""
-    mock_vector = [0.05] * 384
-    mock_response = httpx.Response(
-        status_code=200,
-        json={"embeddings": [mock_vector]},
-        request=httpx.Request("POST", "http://localhost:11434/api/embeddings"),
-    )
-
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_response
-
-        ollama = OllamaClient()
-        result = await ollama.generate_embedding("Space opera and psychological thriller")
-        assert len(result) == 384
-        assert result == mock_vector
-
-
-@pytest.mark.anyio
-async def test_ollama_client_generate_embedding_validation_and_errors():
-    """Verifies input validation and exception handling in generate_embedding."""
-    ollama = OllamaClient()
-
-    # Empty text raises ValueError
+async def test_embedding_service_generate_embedding_validation():
+    """Empty/whitespace-only input raises ValueError before touching the model."""
     with pytest.raises(ValueError, match="cannot be empty"):
-        await ollama.generate_embedding("")
+        await embedding_service.generate_embedding("")
 
     with pytest.raises(ValueError, match="cannot be empty"):
-        await ollama.generate_embedding("   ")
-
-    # HTTP 500 raises RuntimeError
-    err_response = httpx.Response(
-        status_code=500,
-        text="Internal Server Error",
-        request=httpx.Request("POST", "http://localhost:11434/api/embeddings"),
-    )
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = err_response
-        with pytest.raises(RuntimeError, match="Ollama API HTTP 500"):
-            await ollama.generate_embedding("test query")
+        await embedding_service.generate_embedding("   ")
 
 
 @pytest.mark.anyio
-async def test_ollama_client_generate_chat_success():
-    """Verifies OllamaClient correctly calls /api/generate and extracts response."""
-    ai_text = "Here are 3 movies for your movie night: Inception, Interstellar, and Blade Runner 2049."
-    mock_response = httpx.Response(
-        status_code=200,
-        json={"response": ai_text, "done": True},
-        request=httpx.Request("POST", "http://localhost:11434/api/generate"),
-    )
+async def test_embedding_service_generate_embedding_model_failure(monkeypatch):
+    """A model-load/encode failure is wrapped into a RuntimeError."""
 
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_response
+    def _raise():
+        raise RuntimeError("model failed to load")
 
-        ollama = OllamaClient(chat_model="mistral")
-        result = await ollama.generate_chat("Recommend movies for a sci-fi group")
+    monkeypatch.setattr(embedding_service, "_get_model", _raise)
 
-        assert result == ai_text
-        mock_post.assert_called_once()
-        args, kwargs = mock_post.call_args
-        assert args[0] == "http://localhost:11434/api/generate"
-        assert kwargs["json"]["model"] == "mistral"
-        assert kwargs["json"]["stream"] is False
-
-
-@pytest.mark.anyio
-async def test_ollama_client_generate_chat_validation_and_errors():
-    """Verifies validation and error handling in generate_chat."""
-    ollama = OllamaClient()
-
-    # Empty prompt raises ValueError
-    with pytest.raises(ValueError, match="cannot be empty"):
-        await ollama.generate_chat("")
-
-    # Connection error raises RuntimeError
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.side_effect = httpx.ConnectError("Connection refused")
-        with pytest.raises(RuntimeError, match="Could not connect to Ollama"):
-            await ollama.generate_chat("test prompt")
+    with pytest.raises(RuntimeError, match="Embedding generation failed"):
+        await embedding_service.generate_embedding("test query")
 
 
 # =============================================================================
@@ -222,7 +164,7 @@ def test_pydantic_ai_schemas_validation():
 
 
 # =============================================================================
-# 4. API Endpoints Integration Tests (Mocked Ollama)
+# 4. API Endpoints Integration Tests (Mocked embedding service / AI provider)
 # =============================================================================
 
 def test_unauthenticated_endpoints_rejected():
@@ -246,7 +188,7 @@ def test_post_taste_profile_compute_endpoint_success():
     """
     Tests POST /social/taste-profile/compute:
     1. Sends taste summary.
-    2. Ollama generates 384-dimensional vector embedding.
+    2. The self-hosted embedding service generates a 384-dimensional vector.
     3. Vector is persisted in repository.
     """
     user_id = "018f4a00-0000-7000-8000-000000000301"
@@ -255,7 +197,7 @@ def test_post_taste_profile_compute_endpoint_success():
 
     mock_vec = [0.02 * (i % 10) for i in range(384)]
 
-    with patch("services.api.ai.ollama_client.OllamaClient.generate_embedding", new_callable=AsyncMock) as mock_embed:
+    with patch("services.api.ai.embedding_service.generate_embedding", new_callable=AsyncMock) as mock_embed:
         mock_embed.return_value = mock_vec
 
         payload = {"taste_summary": "I love mind-bending psychological thrillers and cyberpunk aesthetics"}
@@ -276,21 +218,21 @@ def test_post_taste_profile_compute_endpoint_success():
     assert SEED_TASTE_PROFILES[u_uuid]["taste_vector"] == mock_vec
 
 
-def test_post_taste_profile_compute_ollama_failure_returns_502():
-    """When Ollama is unreachable, POST /social/taste-profile/compute returns HTTP 502."""
+def test_post_taste_profile_compute_embedding_failure_returns_502():
+    """When embedding generation fails, POST /social/taste-profile/compute returns HTTP 502."""
     user_id = "018f4a00-0000-7000-8000-000000000302"
     token = get_test_token(user_id)
     headers = {"Authorization": f"Bearer {token}"}
 
-    with patch("services.api.ai.ollama_client.OllamaClient.generate_embedding", new_callable=AsyncMock) as mock_embed:
-        mock_embed.side_effect = RuntimeError("Could not connect to Ollama at http://localhost:11434")
+    with patch("services.api.ai.embedding_service.generate_embedding", new_callable=AsyncMock) as mock_embed:
+        mock_embed.side_effect = RuntimeError("Embedding generation failed: model unavailable")
 
         payload = {"taste_summary": "Horror and mystery"}
         resp = client.post("/social/taste-profile/compute", json=payload, headers=headers)
 
         assert resp.status_code == 502
         msg = extract_error_message(resp)
-        assert "Ollama embedding computation failed" in msg
+        assert "Embedding computation failed" in msg
 
 
 def test_group_matchmaking_rejects_non_friends():
@@ -312,6 +254,18 @@ def test_group_matchmaking_rejects_non_friends():
     assert "not an ACCEPTED friend" in msg
 
 
+def _fake_recommendation_item(canonical_title: str, score: float) -> RecommendationItemResponse:
+    """Builds a minimal valid recommendation item for mocking get_recommendations()."""
+    return RecommendationItemResponse(
+        title_id=str(uuid.uuid4()),
+        display_id=f"MOV-{canonical_title[:3].upper()}",
+        canonical_title=canonical_title,
+        content_type="MOVIE",
+        recommendation_score=score,
+        explanation=GroundedExplanation(explanation_text="test fixture"),
+    )
+
+
 def test_group_matchmaking_end_to_end_lifecycle():
     """
     Tests complete Group Matchmaking flow:
@@ -319,7 +273,8 @@ def test_group_matchmaking_end_to_end_lifecycle():
     2. User 1 and User 3 become ACCEPTED friends.
     3. User 1, 2, and 3 have 384-dimensional taste profiles.
     4. User 1 initiates group matchmaking for all 3 members.
-    5. Ollama AI Brain generates group consensus movie recommendation.
+    5. The configured AI provider generates a group consensus recommendation,
+       grounded in real candidate titles from the recommendations pipeline.
     6. Verifies response payload, recommended titles, and consensus vector.
     """
     user_1 = "018f4a00-0000-7000-8000-000000000501"
@@ -352,16 +307,34 @@ def test_group_matchmaking_end_to_end_lifecycle():
     client.put("/social/taste-profile", json={"taste_vector": vec_2}, headers=headers_2)
     client.put("/social/taste-profile", json={"taste_vector": vec_3}, headers=headers_3)
 
-    # Step 3: Mock Ollama chat generation
+    # Step 3: Mock the recommendations pipeline (real candidate titles) and
+    # the configured AI provider's response generation.
     oracle_response = (
         "As CineVault Oracle, based on your group mood 'Mind-Bending Sci-Fi Night', "
         "I recommend Inception, Interstellar, and Blade Runner 2049. "
         "These films offer the perfect synthesis of your group's love for intricate plots and visionary world-building."
     )
+    fake_recs = RecommendationListResponse(
+        mode=RecommendationModeEnum.TONIGHT,
+        total=3,
+        is_cold_start=False,
+        data=[
+            _fake_recommendation_item("Inception", 92.0),
+            _fake_recommendation_item("Interstellar", 90.0),
+            _fake_recommendation_item("Blade Runner 2049", 88.0),
+        ],
+    )
+    mock_provider = MagicMock()
+    mock_provider.generate_assistant_response = AsyncMock(return_value=oracle_response)
 
-    with patch("services.api.ai.ollama_client.OllamaClient.generate_chat", new_callable=AsyncMock) as mock_chat:
-        mock_chat.return_value = oracle_response
-
+    with patch(
+        "services.api.routers.ai.recommendation_repository.get_recommendations",
+        new_callable=AsyncMock,
+        return_value=fake_recs,
+    ), patch(
+        "services.api.routers.ai.AIProviderFactory.get_provider",
+        return_value=mock_provider,
+    ):
         # Step 4: Initiate Group Matchmaking
         payload = {
             "friend_ids": [user_2, user_3],
@@ -381,16 +354,20 @@ def test_group_matchmaking_end_to_end_lifecycle():
         assert data["group_vector_preview"] is not None
         assert len(data["group_vector_preview"]) == 5
 
-        # Check that prompt sent to Ollama contains the Oracle prompt structure
-        mock_chat.assert_called_once()
-        prompt_arg = mock_chat.call_args[1]["prompt"]
-        assert "CineVault Oracle" in prompt_arg
-        assert "Mind-Bending Sci-Fi Night" in prompt_arg
-        assert "Inception, Interstellar, Blade Runner 2049" in prompt_arg
+        # Check the request sent to the AI provider is grounded in the real
+        # candidate titles and carries the group's mood.
+        mock_provider.generate_assistant_response.assert_called_once()
+        call_kwargs = mock_provider.generate_assistant_response.call_args.kwargs
+        assert "Mind-Bending Sci-Fi Night" in call_kwargs["sanitized_query"]
+        assert [t["canonical_title"] for t in call_kwargs["matched_titles"]] == [
+            "Inception",
+            "Interstellar",
+            "Blade Runner 2049",
+        ]
 
 
-def test_group_matchmaking_ollama_failure_returns_502():
-    """When Ollama chat generation fails during matchmaking, returns HTTP 502."""
+def test_group_matchmaking_ai_provider_failure_returns_502():
+    """When the AI provider fails during matchmaking, returns HTTP 502."""
     user_a = "018f4a00-0000-7000-8000-000000000601"
     user_b = "018f4a00-0000-7000-8000-000000000602"
 
@@ -403,12 +380,21 @@ def test_group_matchmaking_ollama_failure_returns_502():
     f_res = client.post("/social/friendships", json={"addressee_id": user_b}, headers=headers_a)
     client.patch(f"/social/friendships/{f_res.json()['friendship_id']}", json={"status": "ACCEPTED"}, headers=headers_b)
 
-    with patch("services.api.ai.ollama_client.OllamaClient.generate_chat", new_callable=AsyncMock) as mock_chat:
-        mock_chat.side_effect = RuntimeError("Ollama service timeout")
+    mock_provider = MagicMock()
+    mock_provider.generate_assistant_response = AsyncMock(side_effect=RuntimeError("AI provider timeout"))
+    empty_recs = RecommendationListResponse(mode=RecommendationModeEnum.TONIGHT, total=0, is_cold_start=True, data=[])
 
+    with patch(
+        "services.api.routers.ai.recommendation_repository.get_recommendations",
+        new_callable=AsyncMock,
+        return_value=empty_recs,
+    ), patch(
+        "services.api.routers.ai.AIProviderFactory.get_provider",
+        return_value=mock_provider,
+    ):
         payload = {"friend_ids": [user_b], "mood": "Action"}
         resp = client.post("/ai/group-matchmaking", json=payload, headers=headers_a)
 
         assert resp.status_code == 502
         msg = extract_error_message(resp)
-        assert "Ollama AI chat generation failed" in msg
+        assert "AI group matchmaking generation failed" in msg

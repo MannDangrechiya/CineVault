@@ -56,7 +56,7 @@ from ..rate_limiter import enforce_rate_limit
 from ..database import get_db
 from ..repositories.social import social_repository, _resolve_uuid, resolve_friend_id
 from ..repositories.canonical import canonical_repository
-from ..ai.ollama_client import OllamaClient
+from ..ai import embedding_service
 
 
 logger = logging.getLogger("cinevault.routers.social")
@@ -499,18 +499,23 @@ async def compute_taste_profile_from_summary(
 ):
     """
     Generates a 384-dimensional dense vector embedding from natural language preferences
-    via the Ollama AI Brain (all-minilm) and persists it to the user's taste profile.
+    via a self-hosted sentence-transformers model (all-MiniLM-L6-v2) and persists it
+    to the user's taste profile.
     """
     user_id = _extract_user_id(claims)
 
     try:
-        ollama = OllamaClient()
-        embedding = await ollama.generate_embedding(body.taste_summary)
+        embedding = await embedding_service.generate_embedding(body.taste_summary)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     except Exception as exc:
-        logger.error(f"Failed to generate embedding from Ollama: {exc}", exc_info=True)
+        logger.error(f"Failed to generate embedding: {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Ollama embedding computation failed: {str(exc)}",
+            detail=f"Embedding computation failed: {str(exc)}",
         ) from exc
 
     result = await social_repository.upsert_taste_profile(
@@ -523,7 +528,7 @@ async def compute_taste_profile_from_summary(
         "status": "success",
         "user_id": str(user_id),
         "dimension": len(embedding),
-        "message": "Taste profile computed and persisted successfully via Ollama AI Brain",
+        "message": "Taste profile computed and persisted successfully",
         "last_computed_at": result.get("last_computed_at"),
     }
 
