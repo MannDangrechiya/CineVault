@@ -201,7 +201,15 @@ async def backfill_countries(
 
     async with pool.acquire() as conn:
         with gzip.open(akas_path, "rt", encoding="utf-8", errors="replace") as f:
-            reader = csv.reader(f, delimiter="\t")
+            # IMDb's TSV exports aren't CSV-quoted — a literal " in a title
+            # (common in akas' alternate/foreign titles) makes Python's
+            # default QUOTE_MINIMAL csv.reader treat it as an opening quote
+            # and swallow everything up to the next matching " (sometimes
+            # megabytes later) into one giant "field", which then blows past
+            # the default 128KB field_size_limit. QUOTE_NONE treats the tab
+            # as the only delimiter, matching how this data is actually
+            # structured.
+            reader = csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE)
             next(reader, None)  # header: titleId ordering title region language types attributes isOriginalTitle
 
             for row in reader:

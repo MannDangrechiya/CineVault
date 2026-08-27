@@ -154,7 +154,13 @@ async def backfill_genres(
 
     async with pool.acquire() as conn:
         with gzip.open(basics_path, "rt", encoding="utf-8", errors="replace") as f:
-            reader = csv.reader(f, delimiter="\t")
+            # IMDb's TSV exports aren't CSV-quoted — a literal " in a title
+            # makes Python's default QUOTE_MINIMAL csv.reader treat it as an
+            # opening quote and swallow everything up to the next matching "
+            # into one giant field, which can exceed the default field size
+            # limit (hit in practice on title.akas.tsv.gz, same file family).
+            # QUOTE_NONE matches how this data is actually delimited.
+            reader = csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE)
             next(reader, None)  # header
 
             for row in reader:

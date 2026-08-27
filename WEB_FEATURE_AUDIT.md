@@ -492,8 +492,28 @@ real 88,979-title catalog.
   running inside it. **Requires a `wsl --shutdown` + Docker Desktop restart
   to take effect** — not done automatically since it would kill whatever's
   currently running; do this before your next dev session.
-- [ ] **Country-of-origin backfill from IMDb's `title.akas.tsv.gz`** — in
-  progress, see the dedicated note below on the download step.
+- [x] **Country-of-origin backfill from IMDb's `title.akas.tsv.gz`** —
+  complete. Ran `services/api/scripts/backfill_country_from_imdb.py` against
+  the live catalog: **88,960 of 88,977 IMDb-sourced titles (99.98%) now have
+  a real `canonical.title_country` row**, up from 0. Verified directly
+  against the DB (join matches the exact derivation
+  `services/api/repositories/canonical.py` uses for `origin_country` /
+  `countries`) — e.g. `IMDB-tt0000574` ("The Story of the Kelly Gang") →
+  `AU`, `IMDB-tt0002199` ("From the Manger to the Cross") → `BR`. Scanned all
+  59,104,906 rows of the 511MB akas dataset. The 17 titles without a country
+  either had no valid (non-`\N`, 2-letter) region anywhere in their akas
+  entries, or no akas entries at all — both real, honest gaps, not a bug.
+  Fixed a real parsing bug found along the way: Python's default
+  `csv.reader` quote handling (`QUOTE_MINIMAL`) treats a literal `"` in an
+  IMDb title as an opening quote and swallows everything up to the next
+  matching `"` — sometimes megabytes later — into one field, which exceeds
+  the default `field_size_limit` and crashes with `_csv.Error: field larger
+  than field limit`. Fixed by passing `quoting=csv.QUOTE_NONE` (IMDb's TSVs
+  aren't CSV-quoted; tab is the only real delimiter). Also fixed the same
+  latent bug in the existing `backfill_genres_from_imdb.py`, which had it
+  too and had just gotten lucky not hitting it. The script safely resumes on
+  re-run (`ON CONFLICT DO NOTHING` + skips already-backfilled title_ids), so
+  the crash mid-run cost only time, not data correctness.
 
 ## Verified working, no changes needed
 
