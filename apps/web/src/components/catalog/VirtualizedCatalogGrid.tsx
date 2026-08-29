@@ -49,7 +49,10 @@ export const VirtualizedCatalogGrid: React.FC<VirtualizedCatalogGridProps> = ({
 
   const rowVirtualizer = useWindowVirtualizer({
     count: rowCount,
-    estimateSize: useCallback(() => 340, []),
+    // TitleCard is poster-only now (no text footer), so rows are shorter than
+    // before -- this is just react-virtual's initial guess; measureElement
+    // (below) corrects it against the real rendered height per row.
+    estimateSize: useCallback(() => 300, []),
     overscan: 4,
     scrollMargin: parentRef.current?.offsetTop ?? 0,
   });
@@ -88,7 +91,7 @@ export const VirtualizedCatalogGrid: React.FC<VirtualizedCatalogGridProps> = ({
               key={virtualRow.key}
               data-index={virtualRow.index}
               ref={rowVirtualizer.measureElement}
-              className="absolute top-0 left-0 w-full grid gap-4 pb-4"
+              className="absolute top-0 left-0 w-full grid gap-6 pb-6"
               style={{
                 transform: `translateY(${
                   virtualRow.start - (rowVirtualizer.options.scrollMargin || 0)
