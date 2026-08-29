@@ -29,6 +29,7 @@ import {
   evaluateUserBadges,
   getUserRecap,
 } from "@/lib/api/personal";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { EmptyState, ErrorState } from "@/components/ui/States";
 
 function MetricSkeleton() {
@@ -212,6 +213,7 @@ function CinemaRecapModal({ onClose }: { onClose: () => void }) {
 
 export default function DashboardPage() {
   const [showRecapModal, setShowRecapModal] = useState(false);
+  const { user } = useAuth();
 
   const {
     data: analytics,
@@ -219,12 +221,12 @@ export default function DashboardPage() {
     isError: isAnalyticsError,
     refetch: refetchAnalytics,
   } = useQuery({
-    queryKey: ["personalAnalytics"],
+    queryKey: ["personalAnalytics", user?.sub],
     queryFn: getPersonalAnalytics,
   });
 
   const { data: recsData, isLoading: isRecsLoading } = useQuery({
-    queryKey: ["topRecommendations"],
+    queryKey: ["topRecommendations", user?.sub],
     queryFn: () => getTopRecommendations(4),
   });
 
@@ -236,7 +238,7 @@ export default function DashboardPage() {
   // every dashboard visit keeps this simple and self-healing rather than
   // trying to hook every action that could unlock one.
   const { data: badgesData } = useQuery({
-    queryKey: ["userBadges"],
+    queryKey: ["userBadges", user?.sub],
     queryFn: () => evaluateUserBadges(),
   });
 
@@ -253,9 +255,11 @@ export default function DashboardPage() {
   const monthlyCount = analytics?.monthly_watch_count ?? 0;
   const streakDays = analytics?.watch_streak_days ?? 0;
 
-  const topGenres = analytics?.top_genres ?? [];
-  const topDirectors = analytics?.top_directors ?? [];
-  const topActors = analytics?.top_actors ?? [];
+  // Shelves cap at 10 items for a clean, uncluttered view -- the analytics
+  // endpoint doesn't bound these itself, so it's enforced here on render.
+  const topGenres = (analytics?.top_genres ?? []).slice(0, 10);
+  const topDirectors = (analytics?.top_directors ?? []).slice(0, 10);
+  const topActors = (analytics?.top_actors ?? []).slice(0, 10);
   const monthlyTrend = analytics?.monthly_trend ?? [];
 
   const maxTrendHours = Math.max(...monthlyTrend.map((m) => m.hours), 1);

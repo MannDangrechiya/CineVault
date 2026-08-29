@@ -574,9 +574,11 @@ export default function SocialRecommendationsPage() {
   });
 
   const acceptedFriends = friendships.filter((f) => f.status === "ACCEPTED");
+  // Ranked shelf: show only the top 10 matches for a clean, uncluttered grid.
   const friendMatches = acceptedFriends
     .map((f) => ({ friend: f, score: tasteMatchMap.get(f.friend_id) }))
-    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
+    .slice(0, 10);
 
   if (isLoading) {
     return (
@@ -766,7 +768,8 @@ export default function SocialRecommendationsPage() {
               </div>
             ) : (
               <div className="space-y-2.5">
-                {leaderboard.entries.map((entry) => {
+                {/* Top 10 ranked shelf -- the tab badge above still shows the true total. */}
+                {leaderboard.entries.slice(0, 10).map((entry) => {
                   const isTop1 = entry.rank === 1;
                   const isTop2 = entry.rank === 2;
                   const isTop3 = entry.rank === 3;

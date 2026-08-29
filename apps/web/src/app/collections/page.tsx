@@ -58,7 +58,7 @@ export default function CollectionsPage() {
   const queryClient = useQueryClient();
 
   const {
-    data: collections = [],
+    data: allCollections = [],
     isLoading,
     isError,
     refetch,
@@ -66,6 +66,9 @@ export default function CollectionsPage() {
     queryKey: ["collections"],
     queryFn: getCollections,
   });
+
+  // Clean, uncluttered preview grid: show the 10 most recent collections.
+  const collections = allCollections.slice(0, 10);
 
   const createMutation = useMutation({
     mutationFn: createCollection,

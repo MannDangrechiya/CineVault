@@ -50,9 +50,11 @@ export default function HistoryPage() {
   } = useQuery({
     queryKey: ["history", filter],
     queryFn: () =>
+      // Initial view caps at the latest 10 events for a clean, uncluttered
+      // timeline; `totalCount` below still reflects the true lifetime total.
       getHistory({
         type: filter === "ALL" ? undefined : filter,
-        limit: 50,
+        limit: 10,
         offset: 0,
       }),
   });
