@@ -78,7 +78,11 @@ class TestRecommendationEngine(unittest.IsolatedAsyncioTestCase):
 
     def test_similar_titles_endpoint(self):
         """Verifies GET /v1/recommendations/similar/{title_id} returns content-similar titles."""
-        seed_id = "018f4a00-0000-7000-8000-000000000001" # Inception
+        # Real Inception (2010) row -- the previous ID
+        # (018f4a00-0000-7000-8000-000000000001) was a fake seed UUID that
+        # only worked because it happened to collide with SEED_CATALOG's
+        # demo "Inception" entry, not because it was a real title.
+        seed_id = "10000000-0000-7000-8000-000000000002"  # Inception
         response = self.client.get(f"/v1/recommendations/similar/{seed_id}?limit=3", headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
@@ -103,14 +107,17 @@ class TestRecommendationEngine(unittest.IsolatedAsyncioTestCase):
 
     def test_explain_recommendation_endpoint(self):
         """Verifies POST /v1/recommendations/explain returns grounded diagnostic score breakdown."""
+        # Real Inception (2010) / The Dark Knight (2008) rows -- the
+        # previous fake seed UUIDs don't exist in the real catalog and now
+        # correctly 404 instead of fabricating a "Target Title" response.
         payload = {
-            "title_id": "018f4a00-0000-7000-8000-000000000001",
-            "seed_title_id": "018f4a00-0000-7000-8000-000000000002"
+            "title_id": "10000000-0000-7000-8000-000000000002",  # Inception
+            "seed_title_id": "01a010cc-9905-74ad-89a7-c468917c1000"  # The Dark Knight
         }
         response = self.client.post("/v1/recommendations/explain", json=payload, headers=self.auth_headers)
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["title_id"], "018f4a00-0000-7000-8000-000000000001")
+        self.assertEqual(data["title_id"], "10000000-0000-7000-8000-000000000002")
         self.assertIn("score_breakdown", data)
         self.assertIn("explanation", data)
         self.assertIn("total_score", data["score_breakdown"])

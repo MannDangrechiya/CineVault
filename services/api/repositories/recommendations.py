@@ -180,10 +180,15 @@ async def _load_catalog_from_db(
     ensuring diversity beyond the original 8 hardcoded titles.
     """
     try:
+        # Excludes RETIRED titles (the tombstone value the title-merge/
+        # reconciliation soft-delete path actually sets, per
+        # quality/reconciliation.py -- nothing anywhere ever sets
+        # "DELETED", so filtering on that was dead code that let merged-
+        # away duplicate titles keep appearing in the candidate pool.
         title_query = (
             select(TitleModel)
             .options(selectinload(TitleModel.editions))
-            .where(TitleModel.status_flag != "DELETED")
+            .where(TitleModel.status_flag != "RETIRED")
             .limit(limit)
             .order_by(TitleModel.created_at.desc(), TitleModel.title_id.desc())
         )
@@ -456,7 +461,12 @@ class RecommendationRepository:
                 except (ValueError, Exception) as exc:
                     logger.warning("Could not fetch seed title %s from DB: %s", seed_title_id, exc)
 
-            if seed_item is None:
+            # Only scan the hardcoded demo catalog when there's no real DB
+            # to have checked in the first place -- a seed_title_id that
+            # genuinely doesn't exist in real-DB mode should stay
+            # unmatched, not silently pick up a demo title's genres/
+            # directors for a live scoring computation.
+            if seed_item is None and db is None:
                 for item in SEED_CATALOG:
                     if item["title_id"] == seed_title_id:
                         seed_item = item
@@ -715,8 +725,13 @@ class RecommendationRepository:
         user_id: str,
         title_id: str,
         seed_title_id: Optional[str] = None,
-    ) -> RecommendationExplainResponse:
-        """Generates a grounded explanation and transparent score breakdown for a title."""
+    ) -> Optional[RecommendationExplainResponse]:
+        """Generates a grounded explanation and transparent score breakdown for a title.
+
+        Returns None if `title_id` doesn't match a real title in real-DB
+        mode -- callers must turn that into a 404, not a fabricated
+        "Target Title"/75.0-score/"Inception" explanation for an unrelated
+        request."""
         recs = await self.get_recommendations(
             db=db,
             user_id=user_id,
@@ -735,19 +750,48 @@ class RecommendationRepository:
         )
 
         if not matched_item:
-            cat_match = next((item for item in SEED_CATALOG if item["title_id"] == title_id), None)
-            matched_item = RecommendationItemResponse(
-                title_id=title_id,
-                display_id=cat_match["display_id"] if cat_match else "T-TARGET",
-                canonical_title=cat_match["canonical_title"] if cat_match else "Target Title",
-                content_type="MOVIE",
-                recommendation_score=75.0,
-                explanation=GroundedExplanation(
-                    explanation_text="Recommended based on genre and taste similarity.",
-                    matched_genres=cat_match.get("genres", []) if cat_match else [],
-                    seed_title_name="Inception" if seed_title_id else None,
-                ),
-            )
+            # title_id is legitimately outside the current top-20 ranked
+            # candidates (a common, honest case -- e.g. explaining a title
+            # the user found via search rather than from their
+            # recommendations feed). Look it up for real instead of
+            # inventing a title/score; a genuine not-found returns None.
+            if db is not None:
+                try:
+                    t_uuid = UUID(title_id)
+                    title_orm = (await db.execute(select(TitleModel).where(TitleModel.title_id == t_uuid))).scalar_one_or_none()
+                except (ValueError, Exception) as exc:
+                    logger.warning("explain_recommendation: could not look up title %s: %s", title_id, exc)
+                    title_orm = None
+                if not title_orm:
+                    return None
+                matched_item = RecommendationItemResponse(
+                    title_id=title_id,
+                    display_id=title_orm.display_id,
+                    canonical_title=title_orm.canonical_title,
+                    content_type=(title_orm.content_type_id or "MOVIE").upper(),
+                    recommendation_score=0.0,
+                    explanation=GroundedExplanation(
+                        explanation_text="This title isn't in your current top recommendations, so no personalized match score is available yet.",
+                        matched_genres=[],
+                        seed_title_name=None,
+                    ),
+                )
+            else:
+                # db is None only when config.allow_seed_fallback is
+                # explicitly true (local dev without Postgres).
+                cat_match = next((item for item in SEED_CATALOG if item["title_id"] == title_id), None)
+                matched_item = RecommendationItemResponse(
+                    title_id=title_id,
+                    display_id=cat_match["display_id"] if cat_match else "T-TARGET",
+                    canonical_title=cat_match["canonical_title"] if cat_match else "Target Title",
+                    content_type="MOVIE",
+                    recommendation_score=75.0,
+                    explanation=GroundedExplanation(
+                        explanation_text="Recommended based on genre and taste similarity.",
+                        matched_genres=cat_match.get("genres", []) if cat_match else [],
+                        seed_title_name="Inception" if seed_title_id else None,
+                    ),
+                )
 
         return RecommendationExplainResponse(
             title_id=matched_item.title_id,

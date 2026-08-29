@@ -93,9 +93,12 @@ async def explain_recommendation(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Generates transparent score breakdown and factually grounded explanation for a recommended title."""
-    return await recommendation_repository.explain_recommendation(
+    result = await recommendation_repository.explain_recommendation(
         db=db,
         user_id=claims.sub,
         title_id=body.title_id,
         seed_title_id=body.seed_title_id
     )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Title '{body.title_id}' not found.")
+    return result
