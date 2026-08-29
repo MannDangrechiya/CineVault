@@ -149,7 +149,10 @@ async def get_raw_payload(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Retrieves immutable raw provider payload (CAT-5)."""
-    return await ingestion_repository.get_raw_payload_by_id(db=db, raw_payload_id=raw_payload_id)
+    result = await ingestion_repository.get_raw_payload_by_id(db=db, raw_payload_id=raw_payload_id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Raw payload '{raw_payload_id}' not found.")
+    return result
 
 @router.get("/reconciliation/candidates", response_model=List[ReconciliationCandidateSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def list_reconciliation_candidates(

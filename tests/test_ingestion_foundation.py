@@ -12,6 +12,33 @@ from services.api.main import app
 from services.api.ingestion.licensing import licensing_gate, SourceAccessStatus, AuthorityRole
 from services.api.ingestion.adapters import KobisProviderAdapter, TvdbProviderAdapter, compute_payload_checksum
 from services.api.repositories.ingestion import ingestion_repository
+from services.api.database import AsyncSessionLocal
+from services.api.models.ingestion import RawPayloadCaptureModel
+import uuid
+
+
+async def _create_raw_payload() -> str:
+    """Creates a real ingestion.raw_payload_capture row -- get_raw_payload_by_id
+    used to return a fabricated 'Parasite' TMDB payload for any not-found
+    ID; it now correctly 404s, so this test needs a real row to fetch."""
+    async with AsyncSessionLocal() as session:
+        result = await ingestion_repository.capture_raw_payload(
+            db=session,
+            provider_name="TMDB",
+            external_entity_type="MOVIE",
+            external_entity_id="test-550",
+            raw_payload={"id": 550, "title": "Fight Club"},
+        )
+        await session.commit()
+        return result["raw_payload_id"]
+
+
+async def _delete_raw_payload(raw_payload_id: str) -> None:
+    async with AsyncSessionLocal() as session:
+        obj = await session.get(RawPayloadCaptureModel, uuid.UUID(raw_payload_id))
+        if obj:
+            await session.delete(obj)
+            await session.commit()
 
 def generate_curator_jwt(sub: str = "curator-999") -> str:
     header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "typ": "JWT"}).encode()).decode().rstrip("=")
@@ -112,11 +139,15 @@ class TestIngestionFoundation(unittest.TestCase):
         self.assertGreater(len(data), 0)
 
     def test_internal_raw_payload_endpoint(self):
-        res = self.client.get("/internal/v1/ingestion/raw-payloads/raw-12345", headers=self.curator_headers)
-        self.assertEqual(res.status_code, 200)
-        data = res.json()
-        self.assertIn("payload_hash", data)
-        self.assertIn("payload_data", data)
+        raw_payload_id = asyncio.run(_create_raw_payload())
+        try:
+            res = self.client.get(f"/internal/v1/ingestion/raw-payloads/{raw_payload_id}", headers=self.curator_headers)
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertIn("payload_hash", data)
+            self.assertIn("payload_data", data)
+        finally:
+            asyncio.run(_delete_raw_payload(raw_payload_id))
 
 if __name__ == "__main__":
     unittest.main()

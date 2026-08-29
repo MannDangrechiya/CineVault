@@ -2,9 +2,11 @@
 # Validates Authentication, Authorization, RBAC, Service Identities, 3-Tier API Isolation, CAT-2 Leakage Prevention,
 # Provider Secret Isolation, AI Staging Boundary, Canonical Integrity, Privileged Sessions, Audit Integrity & Cryptography Baseline
 
+import asyncio
 import json
 import time
 import unittest
+import uuid
 from fastapi.testclient import TestClient
 
 from services.api.main import app
@@ -21,6 +23,55 @@ from services.api.auth.audit import audit_logger, AuditLogger
 from services.api.telemetry import sanitize_value, JSONFormatter, metrics_collector
 from services.api.valkey import valkey_manager
 from services.api.rabbitmq import rabbitmq_manager, PayloadValidationError
+from services.api.database import AsyncSessionLocal
+from services.api.models.quality import ReconciliationCandidateModel, AIProposalStagingModel
+
+
+async def _create_reconciliation_candidate() -> str:
+    async with AsyncSessionLocal() as session:
+        cand = ReconciliationCandidateModel(
+            candidate_id=uuid.uuid4(),
+            provider_name="KOBIS",
+            external_id=f"kobis_test_{uuid.uuid4().hex[:8]}",
+            match_confidence=0.95,
+            match_rule_id="RULE_EXACT_ORIGINAL_TITLE_MATCH",
+            decision_status="PENDING",
+        )
+        session.add(cand)
+        await session.commit()
+        return str(cand.candidate_id)
+
+
+async def _delete_reconciliation_candidate(candidate_id: str) -> None:
+    async with AsyncSessionLocal() as session:
+        obj = await session.get(ReconciliationCandidateModel, uuid.UUID(candidate_id))
+        if obj:
+            await session.delete(obj)
+            await session.commit()
+
+
+async def _create_ai_proposal() -> str:
+    async with AsyncSessionLocal() as session:
+        proposal = AIProposalStagingModel(
+            proposal_id=uuid.uuid4(),
+            target_entity_type="TITLE",
+            proposed_attribute_name="synopsis",
+            proposed_value="An AI-proposed localized synopsis for a security test fixture.",
+            confidence_score=0.88,
+            evidence_payload={"source": "test-fixture"},
+            review_status="PENDING",
+        )
+        session.add(proposal)
+        await session.commit()
+        return str(proposal.proposal_id)
+
+
+async def _delete_ai_proposal(proposal_id: str) -> None:
+    async with AsyncSessionLocal() as session:
+        obj = await session.get(AIProposalStagingModel, uuid.UUID(proposal_id))
+        if obj:
+            await session.delete(obj)
+            await session.commit()
 
 def generate_mock_jwt(roles: list, sub: str = "user-sec-123", exp_delta: int = 900) -> str:
     import base64
@@ -167,41 +218,58 @@ class TestPhase6SecurityImplementation(unittest.TestCase):
         self.assertEqual(sanitize_value("secret", "my_api_key"), "[REDACTED]")
         self.assertEqual(sanitize_value("authorization", "Bearer secret_token"), "[REDACTED]")
 
-        # Raw payload endpoint returned to curator must not leak internal DB credentials
+        # Raw payload endpoint returned to curator must not leak internal DB credentials.
+        # 'payload_001' isn't a real raw_payload_id (not even a UUID) -- the
+        # endpoint now correctly 404s for it instead of fabricating a fake
+        # TMDB payload, but the credential-leak property must hold
+        # regardless of status code.
         headers = {"Authorization": f"Bearer {self.curator_jwt}"}
         resp = self.client.get("/internal/v1/ingestion/raw-payloads/payload_001", headers=headers)
-        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.status_code, 404)
         body = resp.text
         self.assertNotIn("postgres://", body)
         self.assertNotIn("amqp://", body)
 
     # 6. AI Canonical Write Prohibition & Staging Boundary
     def test_ai_canonical_write_prohibition(self):
-        # AI proposal endpoint lists proposals in CAT-6 staging
-        headers = {"Authorization": f"Bearer {self.curator_jwt}"}
-        resp = self.client.get("/internal/v1/ai/proposals", headers=headers)
-        self.assertEqual(resp.status_code, 200)
-        proposals = resp.json()
-        self.assertGreaterEqual(len(proposals), 1)
-        self.assertEqual(proposals[0]["provenance_type"], "AI_GENERATED")
+        # AI proposal endpoint lists proposals in CAT-6 staging -- needs a
+        # real proposal row: list_ai_proposals used to fabricate one
+        # ("prop_ai_991") whenever the real query legitimately found none.
+        proposal_id = asyncio.run(_create_ai_proposal())
+        try:
+            headers = {"Authorization": f"Bearer {self.curator_jwt}"}
+            resp = self.client.get("/internal/v1/ai/proposals", headers=headers)
+            self.assertEqual(resp.status_code, 200)
+            proposals = resp.json()
+            self.assertGreaterEqual(len(proposals), 1)
+            self.assertEqual(proposals[0]["provenance_type"], "AI_GENERATED")
 
-        # AI identity cannot execute canonical write
-        with self.assertRaises(AuthorizationError):
-            RBACPolicyEngine.enforce_service_isolation("cinevault-ai-service", "CANONICAL_WRITE_TITLE")
+            # AI identity cannot execute canonical write
+            with self.assertRaises(AuthorizationError):
+                RBACPolicyEngine.enforce_service_isolation("cinevault-ai-service", "CANONICAL_WRITE_TITLE")
+        finally:
+            asyncio.run(_delete_ai_proposal(proposal_id))
 
     # 7. Canonical Integrity & Curation Promotion
     def test_canonical_integrity_and_curation_promotion(self):
-        headers = {"Authorization": f"Bearer {self.curator_jwt}"}
-        promotion_body = {
-            "target_canonical_id": "018f2e4a-7b31-7000-8000-123456789abc",
-            "rationale": "High confidence match from KOBIS primary authority."
-        }
-        resp = self.client.post("/internal/v1/reconciliation/candidates/cand_001/promote", json=promotion_body, headers=headers)
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()
-        self.assertEqual(data["status"], "PROMOTED")
-        self.assertIn("integrity_hash", data)
-        self.assertEqual(len(data["integrity_hash"]), 64)
+        # Needs a real candidate row: promote_candidate used to report a
+        # fabricated "PROMOTED" success even for a fake candidate_id
+        # ('cand_001') that was never a real row.
+        candidate_id = asyncio.run(_create_reconciliation_candidate())
+        try:
+            headers = {"Authorization": f"Bearer {self.curator_jwt}"}
+            promotion_body = {
+                "target_canonical_id": "018f2e4a-7b31-7000-8000-123456789abc",
+                "rationale": "High confidence match from KOBIS primary authority."
+            }
+            resp = self.client.post(f"/internal/v1/reconciliation/candidates/{candidate_id}/promote", json=promotion_body, headers=headers)
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertEqual(data["status"], "PROMOTED")
+            self.assertIn("integrity_hash", data)
+            self.assertEqual(len(data["integrity_hash"]), 64)
+        finally:
+            asyncio.run(_delete_reconciliation_candidate(candidate_id))
 
     # 8. Privileged Session Timeout Policy
     def test_privileged_session_idle_timeout(self):

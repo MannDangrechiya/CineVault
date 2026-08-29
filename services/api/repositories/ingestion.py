@@ -74,28 +74,36 @@ class IngestionRepository:
             "ingestion_run_id": str(run_uuid)
         }
 
-    async def get_raw_payload_by_id(self, db: Optional[AsyncSession], raw_payload_id: str) -> RawPayloadDetail:
-        """Retrieves immutable CAT-5 raw payload by UUIDv7."""
+    async def get_raw_payload_by_id(self, db: Optional[AsyncSession], raw_payload_id: str) -> Optional[RawPayloadDetail]:
+        """Retrieves immutable CAT-5 raw payload by UUIDv7.
+
+        Returns None on a genuine not-found in real-DB mode -- callers must
+        turn that into a 404, not a fabricated payload that keeps the
+        caller's requested ID but invents everything else (a fake
+        checksum/hash and "Parasite" TMDB payload for an unrelated ID)."""
         if db is not None:
             try:
                 raw_uuid = uuid.UUID(raw_payload_id)
                 stmt = select(RawPayloadCaptureModel).where(RawPayloadCaptureModel.raw_payload_id == raw_uuid)
                 res = await db.execute(stmt)
                 payload_orm = res.scalar_one_or_none()
-                if payload_orm:
-                    return RawPayloadDetail(
-                        raw_payload_id=str(payload_orm.raw_payload_id),
-                        provider_id=payload_orm.provider_name,
-                        payload_hash=payload_orm.payload_checksum,
-                        payload_data=payload_orm.raw_payload,
-                        captured_at=payload_orm.acquired_at.isoformat() if payload_orm.acquired_at else datetime.now(timezone.utc).isoformat()
-                    )
+                if not payload_orm:
+                    return None
+                return RawPayloadDetail(
+                    raw_payload_id=str(payload_orm.raw_payload_id),
+                    provider_id=payload_orm.provider_name,
+                    payload_hash=payload_orm.payload_checksum,
+                    payload_data=payload_orm.raw_payload,
+                    captured_at=payload_orm.acquired_at.isoformat() if payload_orm.acquired_at else datetime.now(timezone.utc).isoformat()
+                )
+            except ValueError:
+                return None
             except Exception as e:
                 logger.error(f"Database query get_raw_payload_by_id failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        # Fallback staged baseline for unit tests
+        # Seed fallback — local_development only when allow_seed_fallback=True
         return RawPayloadDetail(
             raw_payload_id=raw_payload_id,
             provider_id="TMDB",
@@ -111,21 +119,20 @@ class IngestionRepository:
                 stmt = select(RawPayloadCaptureModel).order_by(RawPayloadCaptureModel.acquired_at.desc()).limit(25)
                 res = await db.execute(stmt)
                 records = res.scalars().all()
-                if records:
-                    runs = []
-                    for r in records:
-                        runs.append(
-                            IngestionRunSummary(
-                                run_id=str(r.ingestion_run_id),
-                                provider_id=r.provider_name,
-                                status="COMPLETED" if r.http_status_code == 200 else "QUARANTINED",
-                                started_at=r.acquired_at.isoformat(),
-                                completed_at=r.acquired_at.isoformat(),
-                                records_fetched=1,
-                                records_quarantined=0 if r.http_status_code == 200 else 1
-                            )
-                        )
-                    return runs
+                # Real result returned unconditionally, even if empty -- no
+                # ingestion runs recorded yet is honest, healthy state.
+                return [
+                    IngestionRunSummary(
+                        run_id=str(r.ingestion_run_id),
+                        provider_id=r.provider_name,
+                        status="COMPLETED" if r.http_status_code == 200 else "QUARANTINED",
+                        started_at=r.acquired_at.isoformat(),
+                        completed_at=r.acquired_at.isoformat(),
+                        records_fetched=1,
+                        records_quarantined=0 if r.http_status_code == 200 else 1
+                    )
+                    for r in records
+                ]
             except Exception as e:
                 logger.error(f"Database query list_ingestion_runs failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
@@ -193,22 +200,23 @@ class IngestionRepository:
                     stmt = stmt.where(CandidateTitleModel.provider_name == provider_name.upper())
                 res = await db.execute(stmt)
                 records = res.scalars().all()
-                if records:
-                    return [
-                        {
-                            "candidate_id": str(r.candidate_id),
-                            "provider_name": r.provider_name,
-                            "external_id": r.external_id,
-                            "candidate_payload": r.candidate_payload,
-                            "match_status": r.match_status,
-                            "matched_canonical_title_id": str(r.matched_canonical_title_id) if r.matched_canonical_title_id else None,
-                            "match_score": float(r.match_score),
-                            "match_rule_id": r.match_rule_id,
-                            "review_status": r.review_status,
-                            "created_at": r.created_at.isoformat()
-                        }
-                        for r in records
-                    ]
+                # Real result returned unconditionally, even if empty -- no
+                # staged candidate titles right now is honest, healthy state.
+                return [
+                    {
+                        "candidate_id": str(r.candidate_id),
+                        "provider_name": r.provider_name,
+                        "external_id": r.external_id,
+                        "candidate_payload": r.candidate_payload,
+                        "match_status": r.match_status,
+                        "matched_canonical_title_id": str(r.matched_canonical_title_id) if r.matched_canonical_title_id else None,
+                        "match_score": float(r.match_score),
+                        "match_rule_id": r.match_rule_id,
+                        "review_status": r.review_status,
+                        "created_at": r.created_at.isoformat()
+                    }
+                    for r in records
+                ]
             except Exception as e:
                 logger.error(f"Database query list_candidate_titles failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
@@ -235,31 +243,36 @@ class IngestionRepository:
             try:
                 from ..models.ingestion import FieldProvenanceModel
                 entity_uuid = uuid.UUID(entity_id) if len(entity_id) == 36 else None
-                if entity_uuid:
-                    stmt = select(FieldProvenanceModel).where(FieldProvenanceModel.entity_id == entity_uuid)
-                    res = await db.execute(stmt)
-                    records = res.scalars().all()
-                    if records:
-                        return [
-                            {
-                                "provenance_id": str(r.provenance_id),
-                                "entity_type": r.entity_type,
-                                "entity_id": str(r.entity_id),
-                                "field_name": r.field_name,
-                                "field_value": r.field_value,
-                                "source_provider": r.source_provider,
-                                "external_id": r.external_id,
-                                "confidence": r.confidence,
-                                "verification_status": r.verification_status,
-                                "retrieved_at": r.retrieved_at.isoformat()
-                            }
-                            for r in records
-                        ]
+                if not entity_uuid:
+                    # Malformed entity_id -- not a real entity, so honestly
+                    # no provenance for it, not a fabricated one.
+                    return []
+                stmt = select(FieldProvenanceModel).where(FieldProvenanceModel.entity_id == entity_uuid)
+                res = await db.execute(stmt)
+                records = res.scalars().all()
+                # Real result returned unconditionally, even if empty -- an
+                # entity with no recorded provenance yet is honest state.
+                return [
+                    {
+                        "provenance_id": str(r.provenance_id),
+                        "entity_type": r.entity_type,
+                        "entity_id": str(r.entity_id),
+                        "field_name": r.field_name,
+                        "field_value": r.field_value,
+                        "source_provider": r.source_provider,
+                        "external_id": r.external_id,
+                        "confidence": r.confidence,
+                        "verification_status": r.verification_status,
+                        "retrieved_at": r.retrieved_at.isoformat()
+                    }
+                    for r in records
+                ]
             except Exception as e:
                 logger.error(f"Database query list_field_provenance failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
+        # Seed fallback — local_development only when allow_seed_fallback=True
         return [
             {
                 "provenance_id": "prov-001",
