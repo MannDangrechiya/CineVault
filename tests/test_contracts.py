@@ -11,10 +11,14 @@ class TestAPIContracts(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_title_detail_contract(self):
-        response = self.client.get("/v1/titles/018f2e4a-7b31-7000-8000-123456789abc")
+        # Real Parasite (2019) row -- the previous ID (018f2e4a-7b31-...) was
+        # a fake seed UUID that only worked against the db=None mock
+        # fallback and doesn't exist in the real catalog.
+        real_parasite_id = "10000000-0000-7000-8000-000000000001"
+        response = self.client.get(f"/v1/titles/{real_parasite_id}")
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["id"], "018f2e4a-7b31-7000-8000-123456789abc")
+        self.assertEqual(data["id"], real_parasite_id)
         self.assertEqual(data["display_id"], "MOV-000001")
         self.assertEqual(data["canonical_title"], "Parasite")
         self.assertIn("has_licensed_artwork", data)

@@ -65,6 +65,17 @@ class Phase4SearchDiscoveryTestCase(IsolatedAsyncioTestCase):
                 )
                 session.add(parasite)
                 await session.flush()
+            elif parasite.original_title != "기생충":
+                # A real "Parasite" (2019) row already exists (e.g. an
+                # earlier manually-seeded row with a romanized
+                # original_title) -- reuse it rather than violate
+                # uq_canonical_title_year_type by inserting a second
+                # (canonical_title, production_year, content_type) row, but
+                # make sure it actually carries the Korean original_title
+                # this multilingual test needs. Only a savepoint within this
+                # test's own rolled-back transaction -- never persisted.
+                parasite.original_title = "기생충"
+                await session.flush()
 
             # Add Parasite Alias, Country, Genre, Theme
             stmt_pa = select(TitleAliasModel).where(TitleAliasModel.title_id == parasite.title_id, TitleAliasModel.alias_name == "Gisaengchung")
@@ -103,6 +114,12 @@ class Phase4SearchDiscoveryTestCase(IsolatedAsyncioTestCase):
                     synopsis="Two teenagers share a profound, magical connection upon discovering they are swapping bodies."
                 )
                 session.add(your_name)
+                await session.flush()
+            elif your_name.original_title != "君の名は。":
+                # Same reuse-vs-uq_canonical_title_year_type reasoning as
+                # the Parasite fixture above -- a real bulk-ingested row
+                # already exists with a romaji original_title.
+                your_name.original_title = "君の名は。"
                 await session.flush()
 
             stmt_ya = select(TitleAliasModel).where(TitleAliasModel.title_id == your_name.title_id, TitleAliasModel.alias_name == "Kimi no Na wa")

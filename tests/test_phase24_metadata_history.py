@@ -16,7 +16,10 @@ class TestPhase24MetadataHistory(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.client = TestClient(app)
-        cls.test_title_id = "018f2e4a-7b31-7000-8000-123456789abc"
+        # Real Parasite (2019) row -- needed for test_title_history_public_api_endpoint,
+        # which goes through the real router/DB (the old fake seed UUID
+        # doesn't exist in the real catalog and now correctly 404s).
+        cls.test_title_id = "10000000-0000-7000-8000-000000000001"
 
     def test_record_and_retrieve_metadata_history(self):
         """History Engine: Emits change events tracking old/new values, source, actor, reason, and confidence."""

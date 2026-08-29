@@ -228,7 +228,10 @@ class TestPhase34FullProductQA:
         Scenario 4 — Metadata update safety:
         canonical metadata update -> history preserved without personal data corruption
         """
-        title_id = "018f2e4a-7b31-7000-8000-123456789abc"
+        # Real Parasite (2019) row -- the GET .../history call below goes
+        # through the real router/DB, which 404s on the old fake seed UUID
+        # (it doesn't exist in the real catalog).
+        title_id = "10000000-0000-7000-8000-000000000001"
 
         # Record a test metadata change
         asyncio.run(

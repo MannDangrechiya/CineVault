@@ -44,6 +44,7 @@ class SearchRepository:
         clean_q = normalize_search_query(q)
         results: List[SearchResultItem] = []
         seen_ids: Set[str] = set()
+        real_db_query_succeeded = False
 
         if db is not None and clean_q:
             try:
@@ -189,13 +190,17 @@ class SearchRepository:
                             )
                         )
 
+                real_db_query_succeeded = True
             except Exception as e:
                 logger.error(f"Database query search_catalog failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        # Fallback offline seed matching for test environments without DB
-        if not results and clean_q:
+        # Fallback offline seed matching -- local_development only (db is
+        # None, or a real query exception with allow_seed_fallback=True). A
+        # genuinely healthy search that just found nothing must return an
+        # honest empty result, not a canned "Bong Joon-ho"/"Parasite" hit.
+        if not results and clean_q and not real_db_query_succeeded:
             if "parasite" in clean_q or "기생충" in clean_q or "gisaengchung" in clean_q:
                 if entity_type in ("ALL", "TITLE"):
                     if (not content_type or content_type.upper() == "MOVIE") and (not year or year == 2019):

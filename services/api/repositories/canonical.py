@@ -19,6 +19,7 @@ from ..models.canonical import (
     FestivalModel, FestivalEditionModel, FestivalParticipationModel,
     ThemeModel, KeywordModel, TitleLanguageModel
 )
+from ..models.ingestion import FieldProvenanceModel
 from ..schemas.titles import (
     TitleSummary, TitleDetail, EditionSummary, TitleLookupResponse,
     ProvenanceRecord, ReleaseSummary, PlatformSummary, PlatformOfferSummary,
@@ -295,23 +296,25 @@ class CanonicalRepository:
                 result = await db.execute(stmt)
                 db_titles = result.scalars().unique().all()
 
-                if db_titles:
-                    summaries = []
-                    for t in db_titles:
-                        countries = sorted(c.country_code for c in t.countries)
-                        summaries.append(TitleSummary(
-                            id=str(t.title_id),
-                            display_id=t.display_id,
-                            canonical_title=t.canonical_title,
-                            original_title=t.original_title,
-                            content_type=(t.content_type_id or "MOVIE").upper(),
-                            production_year=t.production_year,
-                            origin_country=countries[0] if countries else None,
-                            has_licensed_artwork=bool(t.poster_url),
-                            poster_url=t.poster_url,
-                            backdrop_url=t.backdrop_url,
-                        ))
-                    return summaries
+                # Return the real result unconditionally, even when empty --
+                # a legitimately empty/filtered page is not a DB failure and
+                # must never fall through to fabricated seed titles below.
+                summaries = []
+                for t in db_titles:
+                    countries = sorted(c.country_code for c in t.countries)
+                    summaries.append(TitleSummary(
+                        id=str(t.title_id),
+                        display_id=t.display_id,
+                        canonical_title=t.canonical_title,
+                        original_title=t.original_title,
+                        content_type=(t.content_type_id or "MOVIE").upper(),
+                        production_year=t.production_year,
+                        origin_country=countries[0] if countries else None,
+                        has_licensed_artwork=bool(t.poster_url),
+                        poster_url=t.poster_url,
+                        backdrop_url=t.backdrop_url,
+                    ))
+                return summaries
             except Exception as e:
                 logger.error(f"Database query failed, falling back to seed baseline: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
@@ -488,15 +491,16 @@ class CanonicalRepository:
                 stmt = select(GenreModel).order_by(GenreModel.name.asc())
                 res = await db.execute(stmt)
                 genres_orm = res.scalars().all()
-                if genres_orm:
-                    return [
-                        GenreSummary(
-                            genre_id=g.genre_id,
-                            name=g.name,
-                            description=g.description
-                        )
-                        for g in genres_orm
-                    ]
+                # Real result returned unconditionally, even if empty -- an
+                # untagged/empty genre table is not a DB failure.
+                return [
+                    GenreSummary(
+                        genre_id=g.genre_id,
+                        name=g.name,
+                        description=g.description
+                    )
+                    for g in genres_orm
+                ]
             except Exception as e:
                 logger.error(f"Database query get_genres failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
@@ -542,6 +546,11 @@ class CanonicalRepository:
                 )
                 result = await db.execute(stmt)
                 title_orm = result.scalar_one_or_none()
+
+                if title_orm is None:
+                    # Genuine not-found against a healthy DB -- never fall
+                    # through to the fabricated seed catalog below for this.
+                    return None
 
                 if title_orm:
                     primary_ed = None
@@ -762,6 +771,9 @@ class CanonicalRepository:
                             lookup_method="PROVIDER_EXTERNAL_MAPPING",
                             matched_external_id=external_id
                         )
+                # Genuine not-found against a healthy DB -- never fall
+                # through to the fabricated seed lookup below for this.
+                return None
             except Exception as e:
                 logger.error(f"Database lookup failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
@@ -779,23 +791,61 @@ class CanonicalRepository:
         return None
 
     async def get_provenance(self, db: Optional[AsyncSession], title_id: str) -> List[ProvenanceRecord]:
-        """Retrieves field provenance lineage explaining canonical fact authority."""
-        return [
-            ProvenanceRecord(
-                field_name="canonical_title",
-                source_provider="KOBIS",
-                observation_timestamp="2026-08-08T12:00:00Z",
-                applied_rule_id="RULE-KOREAN-FILM-PRIMARY-KOBIS",
-                is_manually_overridden=False
-            ),
-            ProvenanceRecord(
-                field_name="production_year",
-                source_provider="TMDB",
-                observation_timestamp="2026-08-08T12:00:00Z",
-                applied_rule_id="RULE-PRODUCTION-YEAR-EXACT",
-                is_manually_overridden=False
-            )
-        ]
+        """Retrieves field provenance lineage explaining canonical fact authority.
+
+        Queries the real quality.field_provenance table (ADR-001/002:
+        external metadata must retain source/provenance). Previously this
+        returned two hardcoded provenance records for EVERY title
+        regardless of what (if anything) was actually recorded -- fixed to
+        query real data and return an honest empty list when none exists,
+        rather than inventing a fabricated lineage."""
+        if db is not None:
+            try:
+                t_uuid = uuid.UUID(title_id)
+                stmt = (
+                    select(FieldProvenanceModel)
+                    .where(
+                        FieldProvenanceModel.entity_type == "TITLE",
+                        FieldProvenanceModel.entity_id == t_uuid,
+                    )
+                    .order_by(FieldProvenanceModel.retrieved_at.asc())
+                )
+                res = await db.execute(stmt)
+                records = res.scalars().all()
+                return [
+                    ProvenanceRecord(
+                        field_name=r.field_name,
+                        source_provider=r.source_provider,
+                        observation_timestamp=r.retrieved_at.isoformat(),
+                        applied_rule_id=f"VERIFICATION_{r.verification_status}",
+                        is_manually_overridden=(r.verification_status == "MANUALLY_OVERRIDDEN"),
+                    )
+                    for r in records
+                ]
+            except Exception as e:
+                logger.error(f"get_provenance failed for title_id={title_id}: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+
+        # Seed fallback — local_development only when allow_seed_fallback=True
+        if title_id in SEED_FALLBACK_TITLES:
+            return [
+                ProvenanceRecord(
+                    field_name="canonical_title",
+                    source_provider="KOBIS",
+                    observation_timestamp="2026-08-08T12:00:00Z",
+                    applied_rule_id="RULE-KOREAN-FILM-PRIMARY-KOBIS",
+                    is_manually_overridden=False
+                ),
+                ProvenanceRecord(
+                    field_name="production_year",
+                    source_provider="TMDB",
+                    observation_timestamp="2026-08-08T12:00:00Z",
+                    applied_rule_id="RULE-PRODUCTION-YEAR-EXACT",
+                    is_manually_overridden=False
+                )
+            ]
+        return []
 
     async def get_title_releases(
         self,
@@ -817,18 +867,19 @@ class CanonicalRepository:
 
                 res = await db.execute(stmt)
                 releases_orm = res.scalars().all()
-                if releases_orm:
-                    return [
-                        ReleaseSummary(
-                            release_id=str(r.release_id),
-                            edition_id=str(r.edition_id),
-                            release_name=r.release_name,
-                            release_type=r.release_type,
-                            release_date=r.release_date.isoformat() if r.release_date else None,
-                            country_code=r.country_code
-                        )
-                        for r in releases_orm
-                    ]
+                # Real result returned unconditionally, even if empty -- a
+                # title with no recorded releases yet is not a DB failure.
+                return [
+                    ReleaseSummary(
+                        release_id=str(r.release_id),
+                        edition_id=str(r.edition_id),
+                        release_name=r.release_name,
+                        release_type=r.release_type,
+                        release_date=r.release_date.isoformat() if r.release_date else None,
+                        country_code=r.country_code
+                    )
+                    for r in releases_orm
+                ]
             except Exception as e:
                 logger.error(f"Database query get_title_releases failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
@@ -880,52 +931,67 @@ class CanonicalRepository:
                 )
                 res = await db.execute(stmt)
                 rows = res.all()
-                if rows:
-                    for offer_orm, platform_orm in rows:
-                        offers.append(
-                            PlatformOfferSummary(
-                                offer_id=str(offer_orm.offer_id),
-                                platform_id=str(platform_orm.platform_id),
-                                platform_name=platform_orm.name,
-                                platform_code=platform_orm.code,
-                                title_id=str(offer_orm.title_id),
-                                country_code=offer_orm.country_code,
-                                offer_type=offer_orm.offer_type,
-                                valid_from=offer_orm.valid_from.isoformat() if offer_orm.valid_from else None,
-                                valid_to=offer_orm.valid_to.isoformat() if offer_orm.valid_to else None
-                            )
+                for offer_orm, platform_orm in rows:
+                    offers.append(
+                        PlatformOfferSummary(
+                            offer_id=str(offer_orm.offer_id),
+                            platform_id=str(platform_orm.platform_id),
+                            platform_name=platform_orm.name,
+                            platform_code=platform_orm.code,
+                            title_id=str(offer_orm.title_id),
+                            country_code=offer_orm.country_code,
+                            offer_type=offer_orm.offer_type,
+                            valid_from=offer_orm.valid_from.isoformat() if offer_orm.valid_from else None,
+                            valid_to=offer_orm.valid_to.isoformat() if offer_orm.valid_to else None
                         )
+                    )
+
+                # Real result returned unconditionally, even if zero offers
+                # exist yet -- a title with no distribution deals is honest
+                # data, not a reason to fabricate "Watcha"/"Naver Series On"
+                # availability nobody actually has.
+                title_detail = await self.get_title_by_id(db=db, title_id=title_id)
+                display_id = title_detail.display_id if title_detail else title_id
+                return AvailabilityDiscoveryResponse(
+                    title_id=title_id,
+                    display_id=display_id,
+                    country_code=clean_country,
+                    total_offers=len(offers),
+                    offers=offers,
+                    releases=releases
+                )
             except Exception as e:
                 logger.error(f"Database query get_title_availability failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        # Fallback staged platform offers for unit tests
-        if not offers:
-            offers = [
-                PlatformOfferSummary(
-                    offer_id="018f2e4a-7b31-7000-8000-offer-001",
-                    platform_id="018f2e4a-7b31-7000-8000-platform-001",
-                    platform_name="Watcha",
-                    platform_code="WATCHA",
-                    title_id=title_id,
-                    country_code=clean_country,
-                    offer_type="FLATRATE",
-                    valid_from="2020-01-01T00:00:00Z",
-                    valid_to=None
-                ),
-                PlatformOfferSummary(
-                    offer_id="018f2e4a-7b31-7000-8000-offer-002",
-                    platform_id="018f2e4a-7b31-7000-8000-platform-002",
-                    platform_name="Naver Series On",
-                    platform_code="NAVER_SERIES",
-                    title_id=title_id,
-                    country_code=clean_country,
-                    offer_type="RENT",
-                    valid_from="2020-01-01T00:00:00Z",
-                    valid_to=None
-                )
-            ]
+        # Fallback staged platform offers — local_development only when
+        # allow_seed_fallback=True (db is None, or a real-DB exception with
+        # the flag explicitly set).
+        offers = [
+            PlatformOfferSummary(
+                offer_id="018f2e4a-7b31-7000-8000-offer-001",
+                platform_id="018f2e4a-7b31-7000-8000-platform-001",
+                platform_name="Watcha",
+                platform_code="WATCHA",
+                title_id=title_id,
+                country_code=clean_country,
+                offer_type="FLATRATE",
+                valid_from="2020-01-01T00:00:00Z",
+                valid_to=None
+            ),
+            PlatformOfferSummary(
+                offer_id="018f2e4a-7b31-7000-8000-offer-002",
+                platform_id="018f2e4a-7b31-7000-8000-platform-002",
+                platform_name="Naver Series On",
+                platform_code="NAVER_SERIES",
+                title_id=title_id,
+                country_code=clean_country,
+                offer_type="RENT",
+                valid_from="2020-01-01T00:00:00Z",
+                valid_to=None
+            )
+        ]
 
         # Resolve display_id for response
         title_detail = await self.get_title_by_id(db=db, title_id=title_id)
@@ -991,7 +1057,19 @@ class CanonicalRepository:
         db: Optional[AsyncSession],
         title_id: str
     ) -> List[MetadataChangeHistoryRecord]:
-        """Retrieves chronological metadata change history for a canonical title entity."""
+        """Retrieves chronological metadata change history for a canonical title entity.
+
+        NOTE (found during the session 5/6 fallback audit): `audit_logger`
+        (services/api/auth/audit.py) is an in-memory, per-process list --
+        it is never persisted to Postgres and is lost on every restart,
+        despite `audit.canonical_audit_log`/`audit.attribute_evidence_lineage`
+        (V1.6__create_audit_tables.sql) existing as real tables for exactly
+        this purpose and never being referenced anywhere in the codebase.
+        Wiring real DB-backed metadata history persistence is a genuine gap
+        worth a dedicated pass (see WEB_FEATURE_AUDIT.md), but is out of
+        scope here -- this fix only removes the fabricated fallback below;
+        it does not add real persistence.
+        """
         history_records: List[MetadataChangeHistoryRecord] = []
         for event in audit_logger.events:
             if event.get("event_type") == "AUDIT_METADATA_CHANGE" and event.get("target_id") == title_id:
@@ -1013,23 +1091,10 @@ class CanonicalRepository:
                     )
                 )
 
-        if not history_records:
-            history_records = [
-                MetadataChangeHistoryRecord(
-                    history_id=str(uuid.uuid4()),
-                    title_id=title_id,
-                    field_name="canonical_title",
-                    old_value=None,
-                    new_value="Initial Canonical Ingestion",
-                    source_provider="KOBIS",
-                    actor_id="system_ingestion_pipeline",
-                    actor_type="SYSTEM",
-                    reason="Initial catalog baseline import",
-                    confidence=1.0,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    integrity_hash="a1b2c3d4e5f60718293a4b5c6d7e8f90123456789abcdef0123456789abcdef0"
-                )
-            ]
+        # No fabricated "Initial Canonical Ingestion" placeholder: a title
+        # with no recorded metadata-change events yet is honest, real state
+        # (most titles were bulk-ingested before this in-memory audit log
+        # existed), not something to invent a fake event for.
         return history_records
 
 canonical_repository = CanonicalRepository()

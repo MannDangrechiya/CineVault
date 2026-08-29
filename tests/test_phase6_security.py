@@ -145,8 +145,10 @@ class TestPhase6SecurityImplementation(unittest.TestCase):
         self.assertNotIn("user@test.com", clean_cache_val)
         self.assertIn("[REDACTED]", clean_cache_val)
 
-        # Public API responses must not leak CAT-2 data
-        resp = self.client.get("/v1/titles/018f2e4a-7b31-7000-8000-123456789abc")
+        # Public API responses must not leak CAT-2 data (real Parasite (2019)
+        # row -- the old fake seed UUID only worked against the db=None
+        # mock fallback and doesn't exist in the real catalog)
+        resp = self.client.get("/v1/titles/10000000-0000-7000-8000-000000000001")
         self.assertEqual(resp.status_code, 200)
         resp_data = resp.json()
         self.assertNotIn("watch_event_notes", resp_data)

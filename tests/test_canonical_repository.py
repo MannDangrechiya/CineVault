@@ -52,7 +52,10 @@ class TestCanonicalRepository(unittest.TestCase):
         self.assertTrue(all("display_id" in t and bool(t["display_id"]) for t in data["data"]))
 
     def test_router_title_detail_endpoint(self):
-        response = self.client.get("/v1/titles/018f2e4a-7b31-7000-8000-123456789abc")
+        # Real Parasite (2019) row -- the previous ID (018f2e4a-7b31-...) was
+        # a fake seed UUID that only worked against the db=None mock
+        # fallback and doesn't exist in the real catalog.
+        response = self.client.get("/v1/titles/10000000-0000-7000-8000-000000000001")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["canonical_title"], "Parasite")
@@ -60,7 +63,7 @@ class TestCanonicalRepository(unittest.TestCase):
         self.assertIn("synopsis", data)
 
     def test_router_title_provenance_endpoint(self):
-        response = self.client.get("/v1/titles/018f2e4a-7b31-7000-8000-123456789abc/provenance")
+        response = self.client.get("/v1/titles/10000000-0000-7000-8000-000000000001/provenance")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIsInstance(data, list)
