@@ -23,12 +23,18 @@ from services.api.main import app
 from services.api.database import get_db
 
 async def override_get_db_fallback():
-    """Yields None to trigger in-memory seed catalog & repository fallbacks during local tests."""
+    """Yields None. Opt in explicitly (app.dependency_overrides[get_db] =
+    override_get_db_fallback) for a test that specifically needs to exercise a
+    repository's documented db=None fallback path through the API layer. Not
+    applied by default: the suite runs against real Postgres by default so
+    tests actually verify real DB behavior (2026-08-29 sizing pass showed only
+    10/512 tests depended on the old default-to-None behavior, all due to
+    stale hardcoded title UUIDs rather than a real need for the mock path --
+    see WEB_FEATURE_AUDIT.md)."""
     yield None
 
 @pytest.fixture(autouse=True)
 def configure_test_environment():
-    """Applies global dependency overrides before each test run."""
-    app.dependency_overrides[get_db] = override_get_db_fallback
+    """Ensures no test leaks a get_db override into the ones that run after it."""
     yield
     app.dependency_overrides.pop(get_db, None)

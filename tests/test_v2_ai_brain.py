@@ -2,6 +2,7 @@
 # Validates the self-hosted embedding service, Vector Group Matchmaking math,
 # Taste Profile real vector computation, and AI API endpoints with mocked calls.
 
+import asyncio
 import uuid
 from unittest.mock import patch, AsyncMock, MagicMock
 import pytest
@@ -9,6 +10,7 @@ from pydantic import ValidationError
 from fastapi.testclient import TestClient
 
 from services.api.main import app
+from services.api.database import AsyncSessionLocal
 from services.api.ai import embedding_service
 from services.api.routers.ai import compute_average_group_vector
 from services.api.schemas.ai import GroupMatchRequest, GroupMatchResponse
@@ -22,7 +24,6 @@ from services.api.schemas.recommendations import (
 from services.api.repositories.social import (
     social_repository,
     SEED_FRIENDSHIPS,
-    SEED_TASTE_PROFILES,
 )
 from services.api.routers.auth import generate_dev_jwt
 
@@ -212,10 +213,15 @@ def test_post_taste_profile_compute_endpoint_success():
 
         mock_embed.assert_called_once_with(payload["taste_summary"])
 
-    # Verify vector was persisted in in-memory / db repository
-    u_uuid = uuid.UUID(user_id)
-    assert u_uuid in SEED_TASTE_PROFILES
-    assert SEED_TASTE_PROFILES[u_uuid]["taste_vector"] == mock_vec
+    # Verify the vector was actually persisted in Postgres (social.user_taste_profile),
+    # not just the in-memory SEED_TASTE_PROFILES fallback dict used when db=None.
+    async def _fetch_persisted_profile():
+        async with AsyncSessionLocal() as session:
+            return await social_repository.get_taste_profile(db=session, user_id=user_id)
+
+    persisted = asyncio.run(_fetch_persisted_profile())
+    assert persisted is not None
+    assert list(persisted["taste_vector"]) == mock_vec
 
 
 def test_post_taste_profile_compute_embedding_failure_returns_502():

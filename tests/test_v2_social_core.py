@@ -31,6 +31,19 @@ def get_test_token(user_id: str) -> str:
     )
 
 
+def get_any_real_title_id() -> str:
+    """Returns a real catalog.title UUID. These tests only care about a valid
+    title existing (the recommendation state machine doesn't inspect
+    canonical_title), but a hardcoded placeholder UUID doesn't exist in the
+    real database and trips social.recommendation's title_id foreign key.
+    Resolved dynamically rather than hardcoded again so it can't go stale."""
+    res = client.get("/v1/titles?limit=1")
+    assert res.status_code == 200
+    matches = res.json().get("data", [])
+    assert matches, "no titles found in the real catalog"
+    return matches[0]["id"]
+
+
 def extract_error_message(resp) -> str:
     """Extracts error message from standardized CineVault RFC 7807 response or FastAPI default."""
     data = resp.json()
@@ -148,7 +161,7 @@ def test_full_social_core_and_recommendation_state_machine_lifecycle():
     """
     user_a_id = "018f4a00-0000-7000-8000-000000000010"
     user_b_id = "018f4a00-0000-7000-8000-000000000020"
-    title_id = "018f4a00-0000-7000-8000-000000000030"
+    title_id = get_any_real_title_id()
 
     token_a = get_test_token(user_a_id)
     token_b = get_test_token(user_b_id)
@@ -261,7 +274,7 @@ def test_recommendation_rejection_path():
     """Tests the state transition SENT -> REJECTED and verifies terminal rejection state."""
     user_c_id = "018f4a00-0000-7000-8000-000000000040"
     user_d_id = "018f4a00-0000-7000-8000-000000000050"
-    title_id = "018f4a00-0000-7000-8000-000000000060"
+    title_id = get_any_real_title_id()
 
     token_c = get_test_token(user_c_id)
     token_d = get_test_token(user_d_id)

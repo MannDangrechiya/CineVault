@@ -275,25 +275,30 @@ class CanonicalRepository:
         """Lists canonical platform titles with dynamic SQL filtering and pagination."""
         if db is not None:
             try:
-                stmt = select(TitleModel)
+                stmt = select(TitleModel).options(selectinload(TitleModel.countries))
                 if content_type:
                     stmt = stmt.where(TitleModel.content_type_id.ilike(content_type))
                 if production_year:
                     stmt = stmt.where(TitleModel.production_year == production_year)
+                if origin_country:
+                    stmt = stmt.where(
+                        TitleModel.countries.any(TitleCountryModel.country_code == origin_country.strip().upper())
+                    )
                 if cursor:
                     try:
                         cursor_uuid = uuid.UUID(cursor)
                         stmt = stmt.where(TitleModel.title_id > cursor_uuid)
                     except ValueError:
                         pass
-                
+
                 stmt = stmt.order_by(TitleModel.title_id).limit(limit)
                 result = await db.execute(stmt)
-                db_titles = result.scalars().all()
+                db_titles = result.scalars().unique().all()
 
                 if db_titles:
                     summaries = []
                     for t in db_titles:
+                        countries = sorted(c.country_code for c in t.countries)
                         summaries.append(TitleSummary(
                             id=str(t.title_id),
                             display_id=t.display_id,
@@ -301,7 +306,7 @@ class CanonicalRepository:
                             original_title=t.original_title,
                             content_type=(t.content_type_id or "MOVIE").upper(),
                             production_year=t.production_year,
-                            origin_country=None,
+                            origin_country=countries[0] if countries else None,
                             has_licensed_artwork=bool(t.poster_url),
                             poster_url=t.poster_url,
                             backdrop_url=t.backdrop_url,

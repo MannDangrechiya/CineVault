@@ -42,6 +42,39 @@ def get_test_token(user_id: str) -> str:
     )
 
 
+def get_real_title_id(canonical_title: str, production_year: int) -> str:
+    """Looks up a real catalog.title row's UUID by exact (case-insensitive)
+    canonical_title. These tests used to hardcode title UUIDs (e.g.
+    '018f2e4a-7b31-...') that don't exist in the real database -- they only
+    ever worked against the db=None mock fallback, which never enforced the
+    foreign key from social.recommendation to canonical.title.
+
+    Deliberately mirrors _resolve_title_id's own
+    `TitleModel.canonical_title.ilike(title_name)` + `.first()` query (see
+    services/api/routers/automation.py) rather than searching independently:
+    the real catalog turned out to have more than one row for some of these
+    well-known titles (e.g. an older placeholder-seeded "Parasite" alongside
+    a later bulk-IMDb-ingested one), and an independent search could tie-break
+    to a different row than the webhook handler actually resolves to. This
+    keeps the test's expectation and the app's behavior looking at the same
+    row. production_year is accepted for documentation/readability but not
+    used for matching, to stay consistent with that lookup."""
+    import asyncio
+    from services.api.database import AsyncSessionLocal
+    from services.api.models.canonical import TitleModel
+    from sqlalchemy import select
+
+    async def _lookup():
+        async with AsyncSessionLocal() as session:
+            stmt = select(TitleModel).where(TitleModel.canonical_title.ilike(canonical_title))
+            res = await session.execute(stmt)
+            return res.scalars().first()
+
+    title_row = asyncio.run(_lookup())
+    assert title_row is not None, f"{canonical_title!r} not found in the real catalog"
+    return str(title_row.title_id)
+
+
 # -----------------------------------------------------------------------------
 # 1. Pydantic Schema Validation Tests
 # -----------------------------------------------------------------------------
@@ -142,7 +175,7 @@ def test_media_server_webhook_plex_scrobble():
     data = response.json()
     assert data["status"] == "success"
     assert data["event"] == "media.scrobble"
-    assert data["title_id"] == "018f2e4a-7b31-7000-8000-123456789abf"  # The Dark Knight
+    assert data["title_id"] == get_real_title_id("The Dark Knight", 2008)
     assert data["canonical_title"] == "The Dark Knight"
     assert "watch_event_id" in data
     assert data["watch_event_id"] is not None
@@ -174,7 +207,7 @@ def test_media_server_webhook_jellyfin_item_finished():
     data = response.json()
     assert data["status"] == "success"
     assert data["event"] == "ItemFinished"
-    assert data["title_id"] == "018f2e4a-7b31-7000-8000-123456789abc"  # Parasite
+    assert data["title_id"] == get_real_title_id("Parasite", 2019)
     assert data["canonical_title"] == "Parasite"
 
 
@@ -195,7 +228,7 @@ def test_webhook_auto_transitions_accepted_recommendation():
     user_b = str(uuid.uuid4())
     token_a = get_test_token(user_a)
     token_b = get_test_token(user_b)
-    parasite_id = "018f2e4a-7b31-7000-8000-123456789abc"
+    parasite_id = get_real_title_id("Parasite", 2019)
 
     # Step 1: Establish friendship between User A and User B
     req_resp = client.post(
@@ -273,7 +306,7 @@ def test_webhook_does_not_transition_non_accepted_recommendations():
     user_b = str(uuid.uuid4())
     token_a = get_test_token(user_a)
     token_b = get_test_token(user_b)
-    dark_knight_id = "018f2e4a-7b31-7000-8000-123456789abf"
+    dark_knight_id = get_real_title_id("The Dark Knight", 2008)
 
     # Establish friendship
     req_resp = client.post(
@@ -378,7 +411,7 @@ def test_smart_watchlist_friend_recommended_inclusion():
     user_b = str(uuid.uuid4())
     token_a = get_test_token(user_a)
     token_b = get_test_token(user_b)
-    inception_id = "018f2e4a-7b31-7000-8000-123456789ac0"  # Inception (148 mins)
+    inception_id = get_real_title_id("Inception", 2010)
 
     # Establish friendship
     req_resp = client.post(

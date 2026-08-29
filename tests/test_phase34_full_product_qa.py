@@ -16,15 +16,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.api.main import app
-from services.api.database import get_db
 from services.api.repositories.canonical import canonical_repository
 
 client = TestClient(app)
 
-async def override_get_db():
-    yield None
-
-app.dependency_overrides[get_db] = override_get_db
+# NOTE: this module used to set app.dependency_overrides[get_db] to a stub
+# yielding None, permanently (no teardown) for the rest of the pytest
+# session -- forcing every test collected afterward onto the db=None mock
+# path regardless of what conftest.py or any other module wanted. These are
+# "Full Product QA End-to-End Scenarios"; they should run against the real
+# database, which is now conftest.py's default for the whole suite.
 
 
 def generate_mock_jwt(roles: list, sub: str = "user-9999999") -> str:
@@ -123,9 +124,16 @@ class TestPhase34FullProductQA:
         user_id = f"qa_user_tv_{uuid.uuid4().hex[:8]}"
         user_jwt = generate_mock_jwt(["AuthenticatedUser"], sub=user_id)
         auth_headers = {"Authorization": f"Bearer {user_jwt}"}
-        series_id = "018f2e4a-7b31-7000-8000-123456789abc"
 
-        # 1. Open series details
+        # 1. Find a real series and open its details (was a hardcoded UUID that
+        # doesn't exist in the real catalog -- only ever worked against the
+        # db=None mock fallback, which returned 200 for any ID)
+        catalog_res = client.get("/v1/titles?content_type=TV_SERIES&limit=1", headers=auth_headers)
+        assert catalog_res.status_code == 200
+        series_candidates = catalog_res.json().get("data", [])
+        assert len(series_candidates) >= 1, "no TV_SERIES title found in the real catalog"
+        series_id = series_candidates[0]["id"]
+
         series_res = client.get(f"/v1/titles/{series_id}", headers=auth_headers)
         assert series_res.status_code == 200
 
