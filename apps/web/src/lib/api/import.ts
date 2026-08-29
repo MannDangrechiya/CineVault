@@ -1,7 +1,8 @@
 // CineVault OS — Data Portability & Document Ingestion Engine API Client Module
-// Supports Letterboxd CSV, JSON, and Samsung Notes / plain text unstructured parsing
+// Supports Letterboxd CSV, JSON, Samsung Notes / plain text, and PDF (text-layer) parsing
 
 import { apiFetch } from "./client";
+import { APIClientError } from "./types";
 
 export interface ImportItemPayload {
   canonical_title?: string;
@@ -71,6 +72,46 @@ export async function applyImport(
       conflict_strategy: conflictStrategy,
     }),
   });
+}
+
+export interface PdfExtractResponse {
+  extracted_text: string;
+  page_count: number;
+  warning?: string;
+}
+
+// Bypasses apiFetch deliberately: apiFetch hard-sets Content-Type: application/json,
+// which would strip the multipart boundary a FormData body needs. The browser sets
+// the correct multipart Content-Type itself as long as we don't override it here.
+export async function extractPdfText(file: File): Promise<PdfExtractResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  let response: Response;
+  try {
+    response = await fetch("/api/proxy/v1/personal/import/extract-pdf", {
+      method: "POST",
+      body: formData,
+    });
+  } catch (error) {
+    throw new APIClientError(
+      error instanceof Error ? error.message : "Failed to reach the CineVault API server.",
+      0
+    );
+  }
+
+  if (!response.ok) {
+    let message = `HTTP ${response.status} ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      message = errorData?.detail || errorData?.error?.message || message;
+    } catch {
+      // Fall back to the generic status message above.
+    }
+    throw new APIClientError(message, response.status);
+  }
+
+  return (await response.json()) as PdfExtractResponse;
 }
 
 // ── Multi-Format Text / Document Parsers ───────────────────────────────────

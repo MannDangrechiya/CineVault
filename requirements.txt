@@ -28,3 +28,10 @@ pgvector>=0.2.0
 # profile vector — replaces the local-Ollama dependency, no external API,
 # no network call after the first model download.
 sentence-transformers>=2.7.0
+# Required by FastAPI's UploadFile/File(...) dependency (personal.py's PDF
+# import endpoint) — without it, the app fails to even import, not just to
+# handle uploads.
+python-multipart>=0.0.9
+# Text-layer extraction for the PDF import endpoint. Was previously only an
+# incidental transitive dependency and never pinned directly.
+pypdf>=4.0.0

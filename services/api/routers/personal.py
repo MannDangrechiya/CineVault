@@ -1,10 +1,13 @@
 # CineVault OS — Personal Data Router (CAT-2)
 # User personal logs, append-only watch events, title state management & conflict resolution (ADR-003, ADR-004)
 
+import io
 import logging
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, status
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import config
@@ -19,7 +22,7 @@ from ..schemas.personal import (
     UserDashboardMetricsResponse,
     PersonalDataExportResponse,
     ImportPreviewRequest, ImportPreviewResponse, ImportConflictItem, ImportItemVerdict,
-    ImportApplyRequest, ImportApplyResponse,
+    ImportApplyRequest, ImportApplyResponse, PdfExtractResponse,
     HistoryItemResponse, HistoryPageResponse,
     CollectionItemResponse, CollectionCreateRequest,
     CollectionDetailResponse, CollectionItemAddRequest,
@@ -297,6 +300,73 @@ async def get_user_streak(
 
 
 # ── /v1/personal/import ────────────────────────────────────────────────────
+
+@personal_router.post("/import/extract-pdf", response_model=PdfExtractResponse)
+async def extract_pdf_text_for_import(
+    file: UploadFile = File(...),
+    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+):
+    """
+    Extracts raw text from an uploaded PDF for the Import Wizard's parse pipeline.
+    Uses pypdf's embedded-text-layer extraction — this covers text-based PDFs
+    (typed notes, exported lists, Letterboxd/Trakt PDF exports) but does NOT run
+    OCR, so scanned/photographed pages with no text layer yield no content for
+    that page rather than silently fabricating text; callers should fall back to
+    a plain-text export for those. The returned text is handed to the same
+    parseImportText → preview/apply pipeline already used for pasted notes.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only .pdf files are supported by this endpoint.")
+
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+
+    try:
+        reader = PdfReader(io.BytesIO(raw_bytes))
+    except PdfReadError as exc:
+        logger.warning("Failed to open uploaded PDF for import: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not read this PDF — it may be corrupted or password-protected.",
+        ) from exc
+
+    if reader.is_encrypted:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password-protected PDFs are not supported.")
+
+    page_texts: List[str] = []
+    empty_pages = 0
+    for page in reader.pages:
+        try:
+            text = page.extract_text() or ""
+        except Exception as exc:
+            logger.warning("Failed to extract text from a page of uploaded PDF: %s", exc)
+            text = ""
+        if text.strip():
+            page_texts.append(text)
+        else:
+            empty_pages += 1
+
+    extracted_text = "\n\n".join(page_texts).strip()
+    warning: Optional[str] = None
+    if empty_pages:
+        warning = (
+            f"{empty_pages} of {len(reader.pages)} page(s) had no extractable text layer "
+            "(likely scanned images) and were skipped — OCR is not supported yet."
+        )
+
+    if not extracted_text:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=warning or "No text could be extracted from this PDF.",
+        )
+
+    return PdfExtractResponse(
+        extracted_text=extracted_text,
+        page_count=len(reader.pages),
+        warning=warning,
+    )
+
 
 @personal_router.post("/import/preview", response_model=ImportPreviewResponse)
 async def preview_personal_import(

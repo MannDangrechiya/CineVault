@@ -24,6 +24,7 @@ import {
   parseImportText,
   previewImport,
   applyImport,
+  extractPdfText,
   ImportItemPayload,
   ImportPreviewResponse,
   ImportApplyResponse,
@@ -65,6 +66,7 @@ export default function ImportPage() {
   const [rawText, setRawText] = useState(SAMPLE_SAMSUNG_NOTES);
   const [formatHint, setFormatHint] = useState<"auto" | "csv" | "json" | "notes">("auto");
   const [fileName, setFileName] = useState<string | null>(null);
+  const [pdfNotice, setPdfNotice] = useState<string | null>(null);
 
   // Parsed and preview state
   const [parsedItems, setParsedItems] = useState<ImportItemPayload[]>([]);
@@ -112,11 +114,32 @@ export default function ImportPage() {
     previewMutation.mutate(items);
   };
 
+  // PDFs need server-side text extraction (pypdf) — a browser FileReader can't
+  // parse the binary format the way it can read .txt/.csv/.json as plain text.
+  const pdfExtractMutation = useMutation({
+    mutationFn: (file: File) => extractPdfText(file),
+    onSuccess: (data) => {
+      setRawText(data.extracted_text);
+      setFormatHint("notes");
+      setPdfNotice(data.warning ?? null);
+    },
+    onError: (error: unknown) => {
+      setPdfNotice(error instanceof Error ? error.message : "Failed to extract text from this PDF.");
+    },
+  });
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setFileName(file.name);
+    setPdfNotice(null);
+
+    if (file.name.toLowerCase().endsWith(".pdf")) {
+      pdfExtractMutation.mutate(file);
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
@@ -283,7 +306,7 @@ export default function ImportPage() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".csv,.json,.txt"
+                    accept=".csv,.json,.txt,.pdf"
                     onChange={handleFileUpload}
                     className="hidden"
                   />
@@ -292,12 +315,23 @@ export default function ImportPage() {
                   </div>
                   <div>
                     <p className="text-xs sm:text-sm font-bold text-zinc-200">
-                      {fileName ? `Selected: ${fileName}` : "Click or drag & drop files here"}
+                      {pdfExtractMutation.isPending
+                        ? "Extracting text from PDF…"
+                        : fileName
+                          ? `Selected: ${fileName}`
+                          : "Click or drag & drop files here"}
                     </p>
                     <p className="text-[11px] text-zinc-500 mt-1">
-                      Supports Letterboxd CSV exports, CineVault JSON, and raw Samsung Notes text files
+                      Supports Letterboxd CSV exports, CineVault JSON, raw Samsung Notes text files, and
+                      text-based PDFs (scanned/image-only PDFs aren&apos;t OCR&apos;d yet)
                     </p>
                   </div>
+                </div>
+              )}
+              {inputMode === "upload" && pdfNotice && (
+                <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{pdfNotice}</span>
                 </div>
               )}
 

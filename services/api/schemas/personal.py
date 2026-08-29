@@ -64,6 +64,11 @@ class ImportApplyRequest(BaseModel):
     items: List[ImportItemPayload]
     conflict_strategy: ImportConflictStrategyEnum = ImportConflictStrategyEnum.KEEP_EXISTING
 
+class PdfExtractResponse(BaseModel):
+    extracted_text: str
+    page_count: int
+    warning: Optional[str] = None
+
 class ImportApplyResponse(BaseModel):
     applied_count: int
     conflicts_resolved: int
