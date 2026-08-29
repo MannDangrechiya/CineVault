@@ -64,11 +64,14 @@ async def compare_titles_endpoint(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Compares two canonical titles with shared genres, crew/cast, and comparative summary."""
-    return await ai_assistant_repository.compare_titles(
+    result = await ai_assistant_repository.compare_titles(
         db=db,
         title_id_1=title_id_1,
         title_id_2=title_id_2
     )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or both titles were not found.")
+    return result
 
 @public_router.get("/viewing-plan", response_model=ViewingPlanResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 async def generate_viewing_plan_endpoint(

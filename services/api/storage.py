@@ -238,8 +238,15 @@ class ObjectStorageAdapter:
                 return url
             except (ClientError, Exception) as exc:
                 logger.warning("generate_presigned_url failed: %s", exc)
+                if not config.allow_seed_fallback:
+                    # Unlike every other method in this file, this used to
+                    # fall back to a direct/public URL unconditionally, in
+                    # any environment -- masking a real S3 permissions/config
+                    # problem in production instead of surfacing an error.
+                    raise StorageError(f"Could not generate a presigned URL for '{object_key}': {exc}") from exc
 
-        # Fallback: return direct MinIO URL in local dev
+        # Fallback: direct MinIO URL — local_development only when
+        # allow_seed_fallback=True.
         return self._resolve_public_url(object_key)
 
     def _resolve_public_url(self, object_key: str) -> str:

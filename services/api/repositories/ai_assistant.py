@@ -257,8 +257,12 @@ class AIAssistantRepository:
         db: Optional[AsyncSession],
         title_id_1: str,
         title_id_2: str
-    ) -> TitleComparisonResponse:
-        """Performs structured comparative cinematic analysis between two canonical works."""
+    ) -> Optional[TitleComparisonResponse]:
+        """Performs structured comparative cinematic analysis between two canonical works.
+
+        Returns None if either title doesn't match a real title in
+        real-DB mode -- callers must turn that into a 404, not a
+        fabricated "Title 1"/"Title 2" placeholder comparison."""
         t1_dict: Dict[str, Any] = {"title_id": title_id_1, "canonical_title": "Title 1"}
         t2_dict: Dict[str, Any] = {"title_id": title_id_2, "canonical_title": "Title 2"}
         shared_genres: List[str] = []
@@ -315,8 +319,18 @@ class AIAssistantRepository:
                     shared_genres = list(set(t1_genres).intersection(set(t2_genres)))
                     shared_directors = list(set(t1_directors).intersection(set(t2_directors)))
                     shared_actors = list(set(t1_actors).intersection(set(t2_actors)))
+
+                if not t1 or not t2:
+                    # A genuine not-found for either title against a
+                    # healthy DB -- never fall through to the "Title 1"/
+                    # "Title 2" placeholder comparison below.
+                    return None
+            except ValueError:
+                return None
             except Exception as e:
                 logger.error("compare_titles failed: %s", e, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         summary = (
             f"Comparing '{t1_dict.get('canonical_title')}' and '{t2_dict.get('canonical_title')}'. "
