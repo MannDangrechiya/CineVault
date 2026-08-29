@@ -16,6 +16,37 @@ from services.api.quality.reconciliation import reconciliation_engine
 from services.api.repositories.quality import quality_repository
 from services.api.ingestion.pipeline import pipeline_engine
 from services.api.schemas.internal import IngestionTriggerRequest, IngestionItemPayload
+from services.api.database import AsyncSessionLocal
+from services.api.models.quality import MetadataConflictModel
+import uuid
+
+
+async def _create_metadata_conflict() -> str:
+    """Creates a real quality.metadata_conflict row -- resolve_metadata_conflict
+    used to return a fabricated 'RESOLVED' success even for a fake conflict
+    ID ('conf_001') that was never a real row; it now correctly 404s for
+    that, so tests need a real conflict to resolve."""
+    async with AsyncSessionLocal() as session:
+        conflict = MetadataConflictModel(
+            conflict_id=uuid.uuid4(),
+            entity_type="TITLE",
+            field_name="runtime_minutes",
+            candidate_value="140",
+            existing_value="142",
+            source_provider="TMDB",
+            status="OPEN",
+        )
+        session.add(conflict)
+        await session.commit()
+        return str(conflict.conflict_id)
+
+
+async def _delete_metadata_conflict(conflict_id: str) -> None:
+    async with AsyncSessionLocal() as session:
+        obj = await session.get(MetadataConflictModel, uuid.UUID(conflict_id))
+        if obj:
+            await session.delete(obj)
+            await session.commit()
 
 def generate_curator_jwt(sub: str = "curator-999") -> str:
     header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "typ": "JWT"}).encode()).decode().rstrip("=")
@@ -214,16 +245,21 @@ class TestDay5DataQuality(unittest.TestCase):
 
     def test_metadata_conflict_endpoints(self):
         """REST endpoints for metadata conflicts listing and resolution."""
-        res = self.client.get("/internal/v1/reconciliation/conflicts", headers=self.curator_headers)
-        self.assertEqual(res.status_code, 200)
+        conflict_id = asyncio.run(_create_metadata_conflict())
+        try:
+            res = self.client.get("/internal/v1/reconciliation/conflicts", headers=self.curator_headers)
+            self.assertEqual(res.status_code, 200)
+            self.assertTrue(any(c["conflict_id"] == conflict_id for c in res.json()))
 
-        resolve_res = self.client.post(
-            "/internal/v1/reconciliation/conflicts/conf_001/resolve",
-            json={"winning_value": "142", "resolution_notes": "Official theatrical runtime verified."},
-            headers=self.curator_headers
-        )
-        self.assertEqual(resolve_res.status_code, 200)
-        self.assertEqual(resolve_res.json()["status"], "RESOLVED")
+            resolve_res = self.client.post(
+                f"/internal/v1/reconciliation/conflicts/{conflict_id}/resolve",
+                json={"winning_value": "142", "resolution_notes": "Official theatrical runtime verified."},
+                headers=self.curator_headers
+            )
+            self.assertEqual(resolve_res.status_code, 200)
+            self.assertEqual(resolve_res.json()["status"], "RESOLVED")
+        finally:
+            asyncio.run(_delete_metadata_conflict(conflict_id))
 
     def test_dry_run_and_idempotency(self):
         """Dry-run execution computes quality counters without canonical mutation; running twice is idempotent."""

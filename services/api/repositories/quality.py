@@ -28,17 +28,18 @@ class QualityRepository:
                 )
                 res = await db.execute(stmt)
                 records = res.scalars().all()
-                if records:
-                    return [
-                        ReconciliationCandidateSummary(
-                            candidate_id=str(r.candidate_id),
-                            source_provider=r.provider_name,
-                            suggested_action="MERGE_CANDIDATE" if r.candidate_title_id else "NEW_TITLE_CANDIDATE",
-                            match_confidence=float(r.match_confidence),
-                            status=r.decision_status
-                        )
-                        for r in records
-                    ]
+                # Real result returned unconditionally, even if empty -- no
+                # pending candidates right now is honest, healthy state.
+                return [
+                    ReconciliationCandidateSummary(
+                        candidate_id=str(r.candidate_id),
+                        source_provider=r.provider_name,
+                        suggested_action="MERGE_CANDIDATE" if r.candidate_title_id else "NEW_TITLE_CANDIDATE",
+                        match_confidence=float(r.match_confidence),
+                        status=r.decision_status
+                    )
+                    for r in records
+                ]
             except Exception as e:
                 logger.error(f"Database query list_reconciliation_candidates failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
@@ -62,22 +63,23 @@ class QualityRepository:
                 stmt = select(MetadataConflictModel).where(MetadataConflictModel.status == "OPEN")
                 res = await db.execute(stmt)
                 records = res.scalars().all()
-                if records:
-                    return [
-                        {
-                            "conflict_id": str(r.conflict_id),
-                            "entity_type": r.entity_type,
-                            "entity_id": str(r.entity_id) if r.entity_id else None,
-                            "field_name": r.field_name,
-                            "candidate_value": r.candidate_value,
-                            "existing_value": r.existing_value,
-                            "source_provider": r.source_provider,
-                            "confidence": r.confidence,
-                            "status": r.status,
-                            "created_at": r.created_at.isoformat()
-                        }
-                        for r in records
-                    ]
+                # Real result returned unconditionally, even if empty -- no
+                # open conflicts right now is honest, healthy state.
+                return [
+                    {
+                        "conflict_id": str(r.conflict_id),
+                        "entity_type": r.entity_type,
+                        "entity_id": str(r.entity_id) if r.entity_id else None,
+                        "field_name": r.field_name,
+                        "candidate_value": r.candidate_value,
+                        "existing_value": r.existing_value,
+                        "source_provider": r.source_provider,
+                        "confidence": r.confidence,
+                        "status": r.status,
+                        "created_at": r.created_at.isoformat()
+                    }
+                    for r in records
+                ]
             except Exception as e:
                 logger.error(f"Database query list_metadata_conflicts failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
@@ -106,15 +108,13 @@ class QualityRepository:
         actor_id: str,
         winning_value: str,
         resolution_notes: str
-    ) -> Dict[str, Any]:
-        """Resolves active metadata conflict, updating status and preserving resolution audit provenance."""
-        audit_record = audit_logger.log_event(
-            event_type="AUDIT_METADATA_CONFLICT_RESOLVED",
-            actor_id=actor_id,
-            target_id=conflict_id,
-            details={"winning_value": winning_value, "notes": resolution_notes}
-        )
+    ) -> Optional[Dict[str, Any]]:
+        """Resolves active metadata conflict, updating status and preserving resolution audit provenance.
 
+        Returns None if `conflict_id` doesn't match a real, existing
+        conflict in real-DB mode -- callers must turn that into a 404, not
+        report a fabricated "RESOLVED" success for a mutation that never
+        happened."""
         resolved_iso = datetime.now(timezone.utc).isoformat()
 
         if db is not None:
@@ -123,17 +123,27 @@ class QualityRepository:
                 stmt = select(MetadataConflictModel).where(MetadataConflictModel.conflict_id == c_uuid)
                 res = await db.execute(stmt)
                 record = res.scalar_one_or_none()
-                if record:
-                    record.status = "RESOLVED"
-                    record.resolution_notes = f"Winning value '{winning_value}': {resolution_notes}"
-                    record.resolved_at = datetime.now(timezone.utc)
-                    record.resolved_by = actor_id
-                    await db.flush()
+                if not record:
+                    return None
+                record.status = "RESOLVED"
+                record.resolution_notes = f"Winning value '{winning_value}': {resolution_notes}"
+                record.resolved_at = datetime.now(timezone.utc)
+                record.resolved_by = actor_id
+                await db.flush()
+            except ValueError:
+                # Malformed conflict_id -- not a real UUID, so not a real conflict.
+                return None
             except Exception as e:
                 logger.error(f"Database update resolve_metadata_conflict failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
+        audit_record = audit_logger.log_event(
+            event_type="AUDIT_METADATA_CONFLICT_RESOLVED",
+            actor_id=actor_id,
+            target_id=conflict_id,
+            details={"winning_value": winning_value, "notes": resolution_notes}
+        )
         return {
             "status": "RESOLVED",
             "conflict_id": conflict_id,
@@ -151,15 +161,13 @@ class QualityRepository:
         actor_id: str,
         rationale: str,
         override_fields: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Approves human curation decision and promotes record to CAT-1 Canonical Platform Data."""
-        audit_record = audit_logger.log_event(
-            event_type="AUDIT_CANONICAL_PROMOTION",
-            actor_id=actor_id,
-            target_id=candidate_id,
-            details={"rationale": rationale, "override_fields": override_fields or {}}
-        )
+    ) -> Optional[Dict[str, Any]]:
+        """Approves human curation decision and promotes record to CAT-1 Canonical Platform Data.
 
+        Returns None if `candidate_id` doesn't match a real, existing
+        candidate in real-DB mode -- callers must turn that into a 404, not
+        report a fabricated "PROMOTED" success for a mutation that never
+        happened."""
         promoted_iso = datetime.now(timezone.utc).isoformat()
 
         if db is not None:
@@ -168,14 +176,23 @@ class QualityRepository:
                 stmt = select(ReconciliationCandidateModel).where(ReconciliationCandidateModel.candidate_id == cand_uuid)
                 res = await db.execute(stmt)
                 cand = res.scalar_one_or_none()
-                if cand:
-                    cand.decision_status = "PROMOTED"
-                    await db.flush()
+                if not cand:
+                    return None
+                cand.decision_status = "PROMOTED"
+                await db.flush()
+            except ValueError:
+                return None
             except Exception as e:
                 logger.error(f"Database update promote_candidate failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
+        audit_record = audit_logger.log_event(
+            event_type="AUDIT_CANONICAL_PROMOTION",
+            actor_id=actor_id,
+            target_id=candidate_id,
+            details={"rationale": rationale, "override_fields": override_fields or {}}
+        )
         return {
             "status": "PROMOTED",
             "candidate_id": candidate_id,
@@ -191,15 +208,13 @@ class QualityRepository:
         candidate_id: str,
         actor_id: str,
         rationale: str
-    ) -> Dict[str, Any]:
-        """Rejects reconciliation candidate with logged audit rationale."""
-        audit_record = audit_logger.log_event(
-            event_type="AUDIT_AI_PROPOSAL_DECISION",
-            actor_id=actor_id,
-            target_id=candidate_id,
-            details={"action": "REJECT", "rationale": rationale}
-        )
+    ) -> Optional[Dict[str, Any]]:
+        """Rejects reconciliation candidate with logged audit rationale.
 
+        Returns None if `candidate_id` doesn't match a real, existing
+        candidate in real-DB mode -- callers must turn that into a 404, not
+        report a fabricated "REJECTED" success for a mutation that never
+        happened."""
         rejected_iso = datetime.now(timezone.utc).isoformat()
 
         if db is not None:
@@ -208,14 +223,23 @@ class QualityRepository:
                 stmt = select(ReconciliationCandidateModel).where(ReconciliationCandidateModel.candidate_id == cand_uuid)
                 res = await db.execute(stmt)
                 cand = res.scalar_one_or_none()
-                if cand:
-                    cand.decision_status = "REJECTED"
-                    await db.flush()
+                if not cand:
+                    return None
+                cand.decision_status = "REJECTED"
+                await db.flush()
+            except ValueError:
+                return None
             except Exception as e:
                 logger.error(f"Database update reject_candidate failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
+        audit_record = audit_logger.log_event(
+            event_type="AUDIT_AI_PROPOSAL_DECISION",
+            actor_id=actor_id,
+            target_id=candidate_id,
+            details={"action": "REJECT", "rationale": rationale}
+        )
         return {
             "status": "REJECTED",
             "candidate_id": candidate_id,
@@ -232,19 +256,20 @@ class QualityRepository:
                 stmt = select(AIProposalStagingModel).where(AIProposalStagingModel.review_status == "PENDING")
                 res = await db.execute(stmt)
                 proposals = res.scalars().all()
-                if proposals:
-                    return [
-                        AIProposalSummary(
-                            proposal_id=str(p.proposal_id),
-                            target_title_id=str(p.target_entity_id) if p.target_entity_id else "018f2e4a-7b31-7000-8000-123456789abc",
-                            proposal_type=p.proposed_attribute_name,
-                            confidence_score=float(p.confidence_score),
-                            provenance_type="AI_GENERATED",
-                            model_id="cinevault-synopsis-v1",
-                            suggested_attributes={"proposed_value": p.proposed_value}
-                        )
-                        for p in proposals
-                    ]
+                # Real result returned unconditionally, even if empty -- no
+                # pending AI proposals right now is honest, healthy state.
+                return [
+                    AIProposalSummary(
+                        proposal_id=str(p.proposal_id),
+                        target_title_id=str(p.target_entity_id) if p.target_entity_id else "",
+                        proposal_type=p.proposed_attribute_name,
+                        confidence_score=float(p.confidence_score),
+                        provenance_type="AI_GENERATED",
+                        model_id="cinevault-synopsis-v1",
+                        suggested_attributes={"proposed_value": p.proposed_value}
+                    )
+                    for p in proposals
+                ]
             except Exception as e:
                 logger.error(f"Database query list_ai_proposals failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:

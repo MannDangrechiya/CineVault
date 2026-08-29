@@ -175,13 +175,16 @@ async def resolve_metadata_conflict(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Resolves active metadata conflict, logging winning choice and resolution audit provenance."""
-    return await quality_repository.resolve_metadata_conflict(
+    result = await quality_repository.resolve_metadata_conflict(
         db=db,
         conflict_id=conflict_id,
         actor_id=claims.sub,
         winning_value=body.winning_value,
         resolution_notes=body.resolution_notes
     )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Metadata conflict '{conflict_id}' not found.")
+    return result
 
 @router.post("/reconciliation/candidates/{candidate_id}/promote", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def promote_candidate(
@@ -191,13 +194,16 @@ async def promote_candidate(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Approves human curation decision and promotes record to CAT-1 Canonical Platform Data."""
-    return await quality_repository.promote_candidate(
+    result = await quality_repository.promote_candidate(
         db=db,
         candidate_id=candidate_id,
         actor_id=claims.sub,
         rationale=body.rationale,
         override_fields=body.override_fields
     )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Reconciliation candidate '{candidate_id}' not found.")
+    return result
 
 @router.post("/reconciliation/candidates/{candidate_id}/reject", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def reject_candidate(
@@ -207,12 +213,15 @@ async def reject_candidate(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Rejects reconciliation candidate with logged audit rationale."""
-    return await quality_repository.reject_candidate(
+    result = await quality_repository.reject_candidate(
         db=db,
         candidate_id=candidate_id,
         actor_id=claims.sub,
         rationale=body.rationale
     )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Reconciliation candidate '{candidate_id}' not found.")
+    return result
 
 from ..storage import storage_adapter
 

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from services.api.database import engine
 from services.api.models.canonical import TitleModel, ContentTypeModel
+from services.api.models.quality import ReconciliationCandidateModel
 from services.api.repositories.quality import quality_repository
 from services.api.repositories.control_room import control_room_repository
 
@@ -43,6 +44,29 @@ class Phase22DataCurationTestCase(IsolatedAsyncioTestCase):
                     production_year=2022
                 )
                 session.add(self.canonical_title)
+                await session.commit()
+
+            # A real PENDING reconciliation candidate flagged against this
+            # title -- list_reconciliation_candidates now returns the real,
+            # possibly-empty result set instead of a hardcoded fixture when
+            # a real DB query legitimately finds nothing, so this test needs
+            # actual data to exercise the regional-curation dedup path.
+            stmt_cand = select(ReconciliationCandidateModel).where(
+                ReconciliationCandidateModel.candidate_title_id == self.canonical_title.title_id
+            )
+            existing_cand = (await session.execute(stmt_cand)).scalar_one_or_none()
+            if not existing_cand:
+                session.add(
+                    ReconciliationCandidateModel(
+                        candidate_id=uuid.uuid4(),
+                        provider_name="KOBIS",
+                        external_id="kobis_test_kantara",
+                        candidate_title_id=self.canonical_title.title_id,
+                        match_confidence=0.93,
+                        match_rule_id="RULE_REGIONAL_ORIGINAL_TITLE_MATCH",
+                        decision_status="PENDING",
+                    )
+                )
                 await session.commit()
 
     async def asyncTearDown(self):

@@ -1,5 +1,6 @@
 # CineVault OS — Test Suite for Build Unit 8.10: Control Room / Curation Foundation Engine
 
+import asyncio
 import time
 import uuid
 import base64
@@ -8,6 +9,60 @@ import unittest
 from fastapi.testclient import TestClient
 
 from services.api.main import app
+from services.api.database import AsyncSessionLocal
+from services.api.models.quality import ReconciliationCandidateModel
+from services.api.models.ingestion import QuarantineRecordModel
+
+
+async def _create_reconciliation_candidate() -> str:
+    """Creates a real quality.reconciliation_candidate row for a test to
+    exercise the real detail/promote/reject endpoints against -- these used
+    to pass against fake IDs (e.g. '018f4a00-...-cand00000001') only because
+    a genuine not-found silently fell back to fabricated demo data."""
+    async with AsyncSessionLocal() as session:
+        cand = ReconciliationCandidateModel(
+            candidate_id=uuid.uuid4(),
+            provider_name="TMDB",
+            external_id=f"tmdb_test_{uuid.uuid4().hex[:8]}",
+            match_confidence=0.95,
+            match_rule_id="RULE_EXACT_ORIGINAL_TITLE_MATCH",
+            decision_status="PENDING",
+        )
+        session.add(cand)
+        await session.commit()
+        return str(cand.candidate_id)
+
+
+async def _create_quarantine_record() -> str:
+    """Creates a real quality.quarantine_record row -- see
+    _create_reconciliation_candidate for why this replaces a fake ID."""
+    async with AsyncSessionLocal() as session:
+        rec = QuarantineRecordModel(
+            quarantine_id=uuid.uuid4(),
+            provider_name="KOBIS",
+            failure_category="SCHEMA_VALIDATION_ERROR",
+            diagnostic_details={"missing_field": "production_year", "raw_bytes_received": 1420},
+            review_status="PENDING",
+        )
+        session.add(rec)
+        await session.commit()
+        return str(rec.quarantine_id)
+
+
+async def _delete_reconciliation_candidate(candidate_id: str) -> None:
+    async with AsyncSessionLocal() as session:
+        obj = await session.get(ReconciliationCandidateModel, uuid.UUID(candidate_id))
+        if obj:
+            await session.delete(obj)
+            await session.commit()
+
+
+async def _delete_quarantine_record(quarantine_id: str) -> None:
+    async with AsyncSessionLocal() as session:
+        obj = await session.get(QuarantineRecordModel, uuid.UUID(quarantine_id))
+        if obj:
+            await session.delete(obj)
+            await session.commit()
 
 def generate_mock_jwt(roles: list = None, sub: str = "curator-001") -> str:
     if roles is None:
@@ -59,77 +114,98 @@ class TestControlRoomFoundation(unittest.TestCase):
 
     def test_quarantine_inspection_and_resolution(self):
         """Verifies listing quarantine records and resolving a record with curator rationale."""
-        # 1. List Quarantine Records
-        list_res = self.client.get("/internal/v1/control-room/quarantine?status_filter=PENDING", headers=self.curator_headers)
-        self.assertEqual(list_res.status_code, 200)
-        q_records = list_res.json()
-        self.assertGreater(len(q_records), 0)
+        quarantine_id = asyncio.run(_create_quarantine_record())
+        try:
+            # 1. List Quarantine Records
+            list_res = self.client.get("/internal/v1/control-room/quarantine?status_filter=PENDING", headers=self.curator_headers)
+            self.assertEqual(list_res.status_code, 200)
+            q_records = list_res.json()
+            self.assertGreater(len(q_records), 0)
+            self.assertTrue(any(r["quarantine_id"] == quarantine_id for r in q_records))
 
-        quarantine_id = q_records[0]["quarantine_id"]
-
-        # 2. Resolve Quarantine Record
-        resolve_payload = {
-            "decision": "RESOLVE",
-            "rationale": "Validated payload schema structure manually against provider V2 API documentation."
-        }
-        resolve_res = self.client.post(
-            f"/internal/v1/control-room/quarantine/{quarantine_id}/resolve",
-            json=resolve_payload,
-            headers=self.curator_headers
-        )
-        self.assertEqual(resolve_res.status_code, 200)
-        r_data = resolve_res.json()
-        self.assertEqual(r_data["status"], "RESOLVED")
-        self.assertIn("integrity_hash", r_data)
+            # 2. Resolve Quarantine Record
+            resolve_payload = {
+                "decision": "RESOLVE",
+                "rationale": "Validated payload schema structure manually against provider V2 API documentation."
+            }
+            resolve_res = self.client.post(
+                f"/internal/v1/control-room/quarantine/{quarantine_id}/resolve",
+                json=resolve_payload,
+                headers=self.curator_headers
+            )
+            self.assertEqual(resolve_res.status_code, 200)
+            r_data = resolve_res.json()
+            self.assertEqual(r_data["status"], "RESOLVED")
+            self.assertIn("integrity_hash", r_data)
+        finally:
+            asyncio.run(_delete_quarantine_record(quarantine_id))
 
     def test_candidate_detail_and_governed_promotion(self):
         """Verifies candidate evidence inspection and governed promotion to CAT-1 Canonical Platform Data."""
-        candidate_id = "018f4a00-0000-7000-8000-cand00000001"
+        candidate_id = asyncio.run(_create_reconciliation_candidate())
+        try:
+            # 1. Get Candidate Detail & Evidence
+            detail_res = self.client.get(f"/internal/v1/control-room/candidates/{candidate_id}", headers=self.curator_headers)
+            self.assertEqual(detail_res.status_code, 200)
+            detail = detail_res.json()
+            self.assertEqual(detail["candidate_id"], candidate_id)
+            self.assertIn("evidence_summary", detail)
 
-        # 1. Get Candidate Detail & Evidence
-        detail_res = self.client.get(f"/internal/v1/control-room/candidates/{candidate_id}", headers=self.curator_headers)
-        self.assertEqual(detail_res.status_code, 200)
-        detail = detail_res.json()
-        self.assertEqual(detail["candidate_id"], candidate_id)
-        self.assertIn("evidence_summary", detail)
-
-        # 2. Promote Candidate
-        promote_payload = {
-            "rationale": "Cross-checked original title script and verified matching TMDB entity.",
-            "override_fields": {"canonical_title": "Inception (2010)"}
-        }
-        promote_res = self.client.post(
-            f"/internal/v1/control-room/candidates/{candidate_id}/promote",
-            json=promote_payload,
-            headers=self.curator_headers
-        )
-        self.assertEqual(promote_res.status_code, 200)
-        p_data = promote_res.json()
-        self.assertEqual(p_data["status"], "PROMOTED")
-        self.assertIn("integrity_hash", p_data)
+            # 2. Promote Candidate
+            promote_payload = {
+                "rationale": "Cross-checked original title script and verified matching TMDB entity.",
+                "override_fields": {"canonical_title": "Inception (2010)"}
+            }
+            promote_res = self.client.post(
+                f"/internal/v1/control-room/candidates/{candidate_id}/promote",
+                json=promote_payload,
+                headers=self.curator_headers
+            )
+            self.assertEqual(promote_res.status_code, 200)
+            p_data = promote_res.json()
+            self.assertEqual(p_data["status"], "PROMOTED")
+            self.assertIn("integrity_hash", p_data)
+        finally:
+            asyncio.run(_delete_reconciliation_candidate(candidate_id))
 
     def test_candidate_rejection_workflow(self):
         """Verifies candidate rejection with mandatory rationale validation."""
-        candidate_id = "018f4a00-0000-7000-8000-cand00000002"
-
-        reject_payload = {
-            "rationale": "False match detected: release dates differ by 15 years."
-        }
-        reject_res = self.client.post(
-            f"/internal/v1/control-room/candidates/{candidate_id}/reject",
-            json=reject_payload,
-            headers=self.curator_headers
-        )
-        self.assertEqual(reject_res.status_code, 200)
-        r_data = reject_res.json()
-        self.assertEqual(r_data["status"], "REJECTED")
+        candidate_id = asyncio.run(_create_reconciliation_candidate())
+        try:
+            reject_payload = {
+                "rationale": "False match detected: release dates differ by 15 years."
+            }
+            reject_res = self.client.post(
+                f"/internal/v1/control-room/candidates/{candidate_id}/reject",
+                json=reject_payload,
+                headers=self.curator_headers
+            )
+            self.assertEqual(reject_res.status_code, 200)
+            r_data = reject_res.json()
+            self.assertEqual(r_data["status"], "REJECTED")
+        finally:
+            asyncio.run(_delete_reconciliation_candidate(candidate_id))
 
     def test_audit_log_inspection_and_sha256_integrity(self):
         """Verifies GET /internal/v1/control-room/audit-log returns signed system audit trail."""
-        response = self.client.get("/internal/v1/control-room/audit-log", headers=self.curator_headers)
-        self.assertEqual(response.status_code, 200)
-        entries = response.json()
-        self.assertGreater(len(entries), 0)
+        # Generate a real audit event to inspect -- the audit log is
+        # honestly empty until something has actually happened (no
+        # fabricated "AUDIT_SYSTEM_INITIALIZATION" placeholder), so this
+        # test must not depend on incidental events from other tests.
+        candidate_id = asyncio.run(_create_reconciliation_candidate())
+        try:
+            self.client.post(
+                f"/internal/v1/control-room/candidates/{candidate_id}/reject",
+                json={"rationale": "Generating a real audit event for this test."},
+                headers=self.curator_headers
+            )
+
+            response = self.client.get("/internal/v1/control-room/audit-log", headers=self.curator_headers)
+            self.assertEqual(response.status_code, 200)
+            entries = response.json()
+            self.assertGreater(len(entries), 0)
+        finally:
+            asyncio.run(_delete_reconciliation_candidate(candidate_id))
 
         first = entries[0]
         self.assertIn("event_id", first)

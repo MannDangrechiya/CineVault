@@ -28,10 +28,14 @@ class ControlRoomRepository:
 
     async def get_summary_stats(self, db: Optional[AsyncSession]) -> ControlRoomSummaryStats:
         """Retrieves operational summary counts for Control Room administration dashboard."""
-        pending_candidates = 1
-        pending_proposals = 1
-        pending_quarantine = 1
-        promoted_records = 42
+        # Honest zero defaults -- if a query below fails partway through
+        # (local-dev-only, gated below), the response must not mix real
+        # counts with plausible-looking hardcoded placeholders (1, 1, 1, 42)
+        # for whichever counters didn't get a chance to run.
+        pending_candidates = 0
+        pending_proposals = 0
+        pending_quarantine = 0
+        promoted_records = 0
 
         if db is not None:
             try:
@@ -83,19 +87,20 @@ class ControlRoomRepository:
                 stmt = stmt.order_by(QuarantineRecordModel.detected_at.desc()).limit(limit).offset(offset)
                 res = await db.execute(stmt)
                 records = res.scalars().all()
-                if records:
-                    return [
-                        QuarantineRecordResponse(
-                            quarantine_id=str(r.quarantine_id),
-                            raw_payload_id=str(r.raw_payload_id) if r.raw_payload_id else None,
-                            provider_name=r.provider_name,
-                            failure_category=r.failure_category,
-                            diagnostic_details=r.diagnostic_details,
-                            review_status=r.review_status,
-                            detected_at=r.detected_at
-                        )
-                        for r in records
-                    ]
+                # Real result returned unconditionally, even if empty -- no
+                # quarantined records right now is honest, healthy state.
+                return [
+                    QuarantineRecordResponse(
+                        quarantine_id=str(r.quarantine_id),
+                        raw_payload_id=str(r.raw_payload_id) if r.raw_payload_id else None,
+                        provider_name=r.provider_name,
+                        failure_category=r.failure_category,
+                        diagnostic_details=r.diagnostic_details,
+                        review_status=r.review_status,
+                        detected_at=r.detected_at
+                    )
+                    for r in records
+                ]
             except Exception as e:
                 await db.rollback()
                 logger.error(f"Database query list_quarantine_records failed: {e}", exc_info=True)
@@ -120,10 +125,32 @@ class ControlRoomRepository:
         quarantine_id: str,
         actor_id: str,
         body: QuarantineResolveRequest
-    ) -> Dict[str, Any]:
-        """Resolves an ingestion quarantine record with logged audit rationale."""
+    ) -> Optional[Dict[str, Any]]:
+        """Resolves an ingestion quarantine record with logged audit rationale.
+
+        Returns None if `quarantine_id` doesn't match a real, existing
+        record in real-DB mode -- callers must turn that into a 404, not
+        report a fabricated success for a mutation that never happened."""
         new_status = "RESOLVED" if body.decision.upper() in ["RESOLVE", "REPROCESS"] else "DISCARDED"
         resolved_at = datetime.now(timezone.utc).isoformat()
+
+        if db is not None:
+            try:
+                q_uuid = uuid.UUID(quarantine_id) if len(quarantine_id) == 36 else None
+                if not q_uuid:
+                    return None
+                stmt = select(QuarantineRecordModel).where(QuarantineRecordModel.quarantine_id == q_uuid)
+                res = await db.execute(stmt)
+                rec = res.scalar_one_or_none()
+                if not rec:
+                    return None
+                rec.review_status = new_status
+                await db.flush()
+            except Exception as e:
+                await db.rollback()
+                logger.error(f"Database update resolve_quarantine_record failed: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         audit_record = audit_logger.log_event(
             event_type="AUDIT_QUARANTINE_RESOLUTION",
@@ -131,23 +158,6 @@ class ControlRoomRepository:
             target_id=quarantine_id,
             details={"decision": new_status, "rationale": body.rationale}
         )
-
-        if db is not None:
-            try:
-                q_uuid = uuid.UUID(quarantine_id) if len(quarantine_id) == 36 else None
-                if q_uuid:
-                    stmt = select(QuarantineRecordModel).where(QuarantineRecordModel.quarantine_id == q_uuid)
-                    res = await db.execute(stmt)
-                    rec = res.scalar_one_or_none()
-                    if rec:
-                        rec.review_status = new_status
-                        await db.flush()
-            except Exception as e:
-                await db.rollback()
-                logger.error(f"Database update resolve_quarantine_record failed: {e}", exc_info=True)
-                if not config.allow_seed_fallback:
-                    raise
-
         return {
             "status": new_status,
             "quarantine_id": quarantine_id,
@@ -161,38 +171,45 @@ class ControlRoomRepository:
         self,
         db: Optional[AsyncSession],
         candidate_id: str
-    ) -> CandidateDetailResponse:
-        """Retrieves detailed evidence & provenance breakdown for a reconciliation candidate."""
+    ) -> Optional[CandidateDetailResponse]:
+        """Retrieves detailed evidence & provenance breakdown for a reconciliation candidate.
+
+        Returns None on a genuine not-found in real-DB mode -- callers must
+        turn that into a 404, not a fabricated TMDB candidate detail for an
+        unrelated fake candidate."""
         if db is not None:
             try:
                 c_uuid = uuid.UUID(candidate_id) if len(candidate_id) == 36 else None
-                if c_uuid:
-                    stmt = select(ReconciliationCandidateModel).where(ReconciliationCandidateModel.candidate_id == c_uuid)
-                    res = await db.execute(stmt)
-                    cand = res.scalar_one_or_none()
-                    if cand:
-                        return CandidateDetailResponse(
-                            candidate_id=str(cand.candidate_id),
-                            provider_name=cand.provider_name,
-                            external_id=cand.external_id,
-                            candidate_title_id=str(cand.candidate_title_id) if cand.candidate_title_id else None,
-                            match_confidence=float(cand.match_confidence),
-                            match_rule_id=cand.match_rule_id,
-                            decision_status=cand.decision_status,
-                            evidence_summary={
-                                "rule_executed": cand.match_rule_id,
-                                "provider": cand.provider_name,
-                                "external_id": cand.external_id,
-                                "match_confidence": float(cand.match_confidence)
-                            },
-                            created_at=cand.created_at
-                        )
+                if not c_uuid:
+                    return None
+                stmt = select(ReconciliationCandidateModel).where(ReconciliationCandidateModel.candidate_id == c_uuid)
+                res = await db.execute(stmt)
+                cand = res.scalar_one_or_none()
+                if not cand:
+                    return None
+                return CandidateDetailResponse(
+                    candidate_id=str(cand.candidate_id),
+                    provider_name=cand.provider_name,
+                    external_id=cand.external_id,
+                    candidate_title_id=str(cand.candidate_title_id) if cand.candidate_title_id else None,
+                    match_confidence=float(cand.match_confidence),
+                    match_rule_id=cand.match_rule_id,
+                    decision_status=cand.decision_status,
+                    evidence_summary={
+                        "rule_executed": cand.match_rule_id,
+                        "provider": cand.provider_name,
+                        "external_id": cand.external_id,
+                        "match_confidence": float(cand.match_confidence)
+                    },
+                    created_at=cand.created_at
+                )
             except Exception as e:
                 await db.rollback()
                 logger.error(f"Database query get_candidate_detail failed: {e}", exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
+        # Seed fallback — local_development only when allow_seed_fallback=True
         return CandidateDetailResponse(
             candidate_id=candidate_id,
             provider_name="TMDB",
@@ -233,19 +250,11 @@ class ControlRoomRepository:
                 )
             )
 
-        if not results:
-            results.append(
-                ControlRoomAuditLogResponse(
-                    event_id=str(uuid.uuid4()),
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                    event_type="AUDIT_SYSTEM_INITIALIZATION",
-                    actor_id="system-control-room",
-                    target_id="cinevault-control-room",
-                    details={"mode": "GOVERNED_HUMAN_CURATION"},
-                    integrity_hash="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                )
-            )
-
+        # No fabricated "AUDIT_SYSTEM_INITIALIZATION" placeholder (with a
+        # bogus integrity_hash -- literally SHA-256 of an empty string, not
+        # a computed value) for a genuinely empty audit log: a service that
+        # just restarted with no events yet is honest, real state, not
+        # something to invent a fake "verified" entry for.
         return results
 
 control_room_repository = ControlRoomRepository()

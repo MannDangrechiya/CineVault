@@ -57,12 +57,15 @@ async def resolve_quarantine_record(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Resolves an ingestion quarantine record with logged curator audit rationale."""
-    return await control_room_repository.resolve_quarantine_record(
+    result = await control_room_repository.resolve_quarantine_record(
         db=db,
         quarantine_id=quarantine_id,
         actor_id=claims.sub,
         body=body
     )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Quarantine record '{quarantine_id}' not found.")
+    return result
 
 @router.get("/candidates", response_model=List[ReconciliationCandidateSummary], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def list_reconciliation_candidates(
@@ -79,10 +82,13 @@ async def get_candidate_detail(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Retrieves detailed evidence & provenance breakdown for a reconciliation candidate."""
-    return await control_room_repository.get_candidate_detail(
+    result = await control_room_repository.get_candidate_detail(
         db=db,
         candidate_id=candidate_id
     )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Reconciliation candidate '{candidate_id}' not found.")
+    return result
 
 @router.post("/candidates/{candidate_id}/promote", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def promote_candidate(
@@ -92,13 +98,16 @@ async def promote_candidate(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Approves human curation decision and promotes record to CAT-1 Canonical Platform Data."""
-    return await quality_repository.promote_candidate(
+    result = await quality_repository.promote_candidate(
         db=db,
         candidate_id=candidate_id,
         actor_id=claims.sub,
         rationale=body.rationale,
         override_fields=body.override_fields
     )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Reconciliation candidate '{candidate_id}' not found.")
+    return result
 
 @router.post("/candidates/{candidate_id}/reject", dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def reject_candidate(
@@ -108,12 +117,15 @@ async def reject_candidate(
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Rejects reconciliation candidate with logged curator audit rationale."""
-    return await quality_repository.reject_candidate(
+    result = await quality_repository.reject_candidate(
         db=db,
         candidate_id=candidate_id,
         actor_id=claims.sub,
         rationale=body.rationale
     )
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Reconciliation candidate '{candidate_id}' not found.")
+    return result
 
 @router.get("/audit-log", response_model=List[ControlRoomAuditLogResponse], dependencies=[Depends(enforce_rate_limit("INTERNAL_ADMIN"))])
 async def list_audit_log_entries(
