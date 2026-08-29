@@ -21,12 +21,6 @@ from services.api.schemas.social import (
     FriendshipUpdate,
     FriendshipStatusEnum,
 )
-from services.api.repositories.social import (
-    social_repository,
-    SEED_FRIENDSHIPS,
-    SEED_RECOMMENDATIONS,
-)
-from services.api.repositories.personal import SEED_WATCH_EVENTS
 from services.api.routers.auth import generate_dev_jwt
 
 client = TestClient(app)
@@ -179,6 +173,53 @@ def test_media_server_webhook_plex_scrobble():
     assert data["canonical_title"] == "The Dark Knight"
     assert "watch_event_id" in data
     assert data["watch_event_id"] is not None
+
+
+def test_media_server_webhook_unresolvable_title_returns_404():
+    """A webhook for a title that doesn't exist anywhere in the real catalog
+    must return a real 404, not invent a title (regression for the
+    _resolve_title_id / ingest_media_server_webhook fallback fix -- these
+    used to unconditionally derive a fabricated deterministic UUID and
+    proceed as if the title existed)."""
+    user_id = str(uuid.uuid4())
+    payload = {
+        "event": "media.scrobble",
+        "Account": {"title": f"user_{user_id[-6:]}"},
+        "Metadata": {
+            "title": "Totally Fictional Nonexistent Movie Title 999999",
+            "year": 2099,
+            # No guid/Guid -- no external ID to (mis)match either.
+        },
+        "Player": {"title": "CineVault Cinema Shield"},
+    }
+
+    response = client.post(
+        f"/automations/webhooks/media-server?user_id={user_id}",
+        json=payload,
+    )
+
+    assert response.status_code == 404
+    assert "Totally Fictional Nonexistent Movie Title 999999" in response.json()["error"]["message"]
+
+
+def test_media_server_webhook_no_title_metadata_returns_422():
+    """A webhook payload with no title metadata at all (nothing to resolve
+    an identity from) must be rejected as invalid input, not silently
+    mapped to a placeholder 'Unknown Title' identity."""
+    user_id = str(uuid.uuid4())
+    payload = {
+        "event": "media.scrobble",
+        "Account": {"title": f"user_{user_id[-6:]}"},
+        "Metadata": {},
+        "Player": {"title": "CineVault Cinema Shield"},
+    }
+
+    response = client.post(
+        f"/automations/webhooks/media-server?user_id={user_id}",
+        json=payload,
+    )
+
+    assert response.status_code == 422
 
 
 def test_media_server_webhook_jellyfin_item_finished():
@@ -371,12 +412,17 @@ def test_smart_watchlist_categorization_logic():
     - weekend_epics: strictly > 150 mins
     - quick_watches: strictly < 100 mins
     - friend_recommended: ACCEPTED recommendations
+
+    Against the real catalog (see conftest.py), the runtime-bucket
+    assertions can't require non-empty results: canonical.edition only has
+    2 rows with a runtime at all (documented, won't-fix data gap -- see
+    WEB_FEATURE_AUDIT.md "Known gaps", no free source carries edition-level
+    runtime at this catalog's scale). What matters is that IF a title is
+    returned in a bucket, it actually respects that bucket's boundary --
+    that's the logic under test, not how much real runtime data exists.
     """
     user_id = str(uuid.uuid4())
     token = get_test_token(user_id)
-
-    # Clear watch events for this fresh user
-    SEED_WATCH_EVENTS[user_id] = []
 
     response = client.get(
         "/automations/smart-watchlist",
@@ -393,13 +439,11 @@ def test_smart_watchlist_categorization_logic():
     quick_watches = data["quick_watches"]
 
     # Verify weekend epics runtime constraint (> 150 mins)
-    assert len(weekend_epics) > 0
     for item in weekend_epics:
         assert item["runtime_minutes"] is not None
         assert item["runtime_minutes"] > 150, f"Title {item['canonical_title']} runtime {item['runtime_minutes']} <= 150"
 
     # Verify quick watches runtime constraint (< 100 mins)
-    assert len(quick_watches) > 0
     for item in quick_watches:
         assert item["runtime_minutes"] is not None
         assert item["runtime_minutes"] < 100, f"Title {item['canonical_title']} runtime {item['runtime_minutes']} >= 100"
@@ -463,3 +507,25 @@ def test_smart_watchlist_friend_recommended_inclusion():
     assert rec_item["canonical_title"] == "Inception"
     assert rec_item["recommendation_note"] == "Mind-bending dream architecture!"
     assert rec_item["recommended_by"] == user_a
+
+
+def test_smart_watchlist_never_leaks_demo_catalog_in_real_db_mode():
+    """Regression: get_smart_watchlist used to unconditionally mix the
+    hardcoded demo catalog (SEED_FALLBACK_TITLES, e.g. a fake 'Parasite' at
+    title_id '018f2e4a-7b31-...') and demo recommendations
+    (SEED_RECOMMENDATIONS) into every real user's response, regardless of
+    whether Postgres was up and working. Against the real DB (the default,
+    see conftest.py), none of those fabricated demo IDs should ever appear."""
+    user_id = str(uuid.uuid4())
+    token = get_test_token(user_id)
+
+    response = client.get(
+        "/automations/smart-watchlist",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    all_items = data["weekend_epics"] + data["quick_watches"] + data["friend_recommended"]
+    demo_title_ids = {item["title_id"] for item in all_items if item["title_id"].startswith("018f2e4a-7b31-")}
+    assert not demo_title_ids, f"demo/seed title IDs leaked into a real-DB-mode response: {demo_title_ids}"

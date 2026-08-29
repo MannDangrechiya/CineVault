@@ -151,11 +151,25 @@ async def _resolve_title_id(
 ) -> Tuple[Optional[uuid.UUID], Optional[str]]:
     """
     Resolves canonical title UUID and title name from external IDs or title metadata.
+
+    Production / real DB mode (db is not None): only ever resolves against
+    real canonical.title / canonical.title_external_id rows. A genuine
+    not-found returns (None, None) -- it must NEVER fall through to the
+    hardcoded demo catalog (SEED_EXTERNAL_MAPPINGS / SEED_FALLBACK_TITLES) or
+    a name-derived UUID; callers are responsible for turning that into a
+    real 404/422, not inventing an identity.
+
+    Explicit local-dev seed mode (db is None): this only happens when
+    get_db() has already gated it behind config.allow_seed_fallback (see
+    database.py) -- i.e. local development without Postgres running. In
+    that case the seed/demo fallback chain below is a deliberate, explicitly
+    gated development convenience, not something reachable in staging/prod.
     """
     metadata = payload.Metadata or {}
     item = payload.Item or {}
 
-    # Check for direct title_id in metadata
+    # Check for direct title_id in metadata (an explicit ID is trusted as-is
+    # in both modes -- it isn't an invented identity, the caller supplied it)
     raw_title_id = metadata.get("title_id") or metadata.get("id") or item.get("title_id")
     if raw_title_id:
         try:
@@ -164,9 +178,10 @@ async def _resolve_title_id(
             pass
 
     external_ids = _extract_external_identifiers(payload)
+    title_name = metadata.get("title") or item.get("Name")
 
-    # 1. Try resolving via Database
     if db is not None:
+        # Real DB mode: resolve strictly against real data, no demo fallback.
         for provider, ext_id in external_ids:
             clean_id = ext_id.strip()
             stmt = (
@@ -179,8 +194,6 @@ async def _resolve_title_id(
             if mapping and mapping.title:
                 return mapping.title_id, mapping.title.canonical_title
 
-        # Check by canonical_title name if provided
-        title_name = metadata.get("title") or item.get("Name")
         if title_name:
             stmt = select(TitleModel).where(TitleModel.canonical_title.ilike(title_name))
             res = await db.execute(stmt)
@@ -188,23 +201,25 @@ async def _resolve_title_id(
             if title_row:
                 return title_row.title_id, title_row.canonical_title
 
-    # 2. Try resolving via Seed Mappings & Seed Titles
+        # Genuine not-found against the real catalog -- do not invent one.
+        return None, None
+
+    # Explicit local-dev seed mode only (db is None).
     for provider, ext_id in external_ids:
         clean_id = ext_id.strip()
         if clean_id in SEED_EXTERNAL_MAPPINGS:
             tid_str = SEED_EXTERNAL_MAPPINGS[clean_id]
-            title_name = SEED_FALLBACK_TITLES.get(tid_str, {}).get("canonical_title", "Canonical Title")
-            return uuid.UUID(tid_str), title_name
+            seed_title_name = SEED_FALLBACK_TITLES.get(tid_str, {}).get("canonical_title", "Canonical Title")
+            return uuid.UUID(tid_str), seed_title_name
 
-    # Check seed titles by name
-    title_name = metadata.get("title") or item.get("Name")
     if title_name:
         for tid_str, s_data in SEED_FALLBACK_TITLES.items():
             if s_data.get("canonical_title", "").lower() == str(title_name).lower():
                 return uuid.UUID(tid_str), s_data.get("canonical_title")
 
-    # Fallback to deterministic UUID if title name was provided
-    if title_name:
+        # Deterministic UUID derived from the title name -- a documented
+        # local-dev-only convenience so webhook testing works without a DB;
+        # never reached outside the config.allow_seed_fallback gate above.
         derived_uuid = resolve_personal_uuid(str(title_name), "title_id")
         return derived_uuid, str(title_name)
 
@@ -241,8 +256,34 @@ async def ingest_media_server_webhook(
     title_uuid, canonical_title = await _resolve_title_id(db, payload)
 
     if not title_uuid:
-        # Fallback to deterministic title UUID so webhook never drops unmapped events silently
-        raw_name = (payload.Metadata or {}).get("title") or (payload.Item or {}).get("Name") or "Unknown Title"
+        raw_name = (payload.Metadata or {}).get("title") or (payload.Item or {}).get("Name")
+
+        # A payload with no title metadata at all has nothing to resolve an
+        # identity from -- that's a malformed request regardless of
+        # environment, checked before the db-mode branch below.
+        if not raw_name:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Webhook payload has no title metadata to resolve (no Metadata.title or Item.Name).",
+            )
+
+        if db is not None:
+            # Real DB mode: a title that cannot be resolved against the real
+            # catalog is a real error -- never invent an identity for it
+            # (that would create a watch_event/recommendation referencing a
+            # title that doesn't exist).
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    f"Could not resolve a canonical title for this webhook event ({raw_name!r}). "
+                    "No matching external ID or title name was found in the catalog."
+                ),
+            )
+
+        # db is None only when config.allow_seed_fallback is explicitly true
+        # (local dev without Postgres, see database.py's get_db()). A
+        # deterministic fallback UUID keeps local webhook testing usable
+        # without a DB.
         title_uuid = resolve_personal_uuid(str(raw_name), "title_id")
         canonical_title = str(raw_name)
 
@@ -390,95 +431,93 @@ async def get_smart_watchlist(
     watched_title_ids = set()
 
     if db is not None:
-        try:
-            stmt = select(WatchEventModel.title_id).where(
-                and_(
-                    WatchEventModel.user_id == active_user_uuid,
-                    WatchEventModel.is_tombstoned == False,
-                )
+        # Real DB mode: watched titles come strictly from real watch_event
+        # rows. A query failure here is a real error, not "no watch
+        # history" -- surface it rather than silently returning a possibly-
+        # incomplete list.
+        stmt = select(WatchEventModel.title_id).where(
+            and_(
+                WatchEventModel.user_id == active_user_uuid,
+                WatchEventModel.is_tombstoned == False,
             )
-            res = await db.execute(stmt)
-            for tid in res.scalars().all():
-                watched_title_ids.add(str(tid))
-        except Exception as exc:
-            logger.warning(f"Error querying watched titles from DB: {exc}")
-
-    # Include in-memory watch events
-    user_key = str(active_user_uuid)
-    for we in SEED_WATCH_EVENTS.get(user_key, []):
-        watched_title_ids.add(str(we.title_id))
+        )
+        res = await db.execute(stmt)
+        for tid in res.scalars().all():
+            watched_title_ids.add(str(tid))
+    else:
+        # db is None only when config.allow_seed_fallback is explicitly true
+        # (local dev without Postgres, see database.py's get_db()).
+        user_key = str(active_user_uuid)
+        for we in SEED_WATCH_EVENTS.get(user_key, []):
+            watched_title_ids.add(str(we.title_id))
 
     # 3. Collect catalog titles with canonical metadata and runtimes
     catalog_items: Dict[str, Dict[str, Any]] = {}
 
-    # Seed catalog baseline
-    for tid_str, title_data in SEED_FALLBACK_TITLES.items():
-        runtime = title_data.get("primary_edition", {}).get("runtime_minutes")
-        catalog_items[tid_str] = {
-            "title_id": tid_str,
-            "canonical_title": title_data.get("canonical_title", "Untitled"),
-            "runtime_minutes": runtime,
-            "production_year": title_data.get("production_year"),
-            "genres": title_data.get("genres", []),
-            "poster_url": title_data.get("poster_url"),
-            "backdrop_url": title_data.get("backdrop_url"),
-        }
-
-    # If DB available, query TitleModel and primary EditionModel
     if db is not None:
-        try:
-            stmt = select(TitleModel).options(selectinload(TitleModel.editions), selectinload(TitleModel.genres))
-            res = await db.execute(stmt)
-            db_titles = res.scalars().all()
-            for t in db_titles:
-                t_id_str = str(t.title_id)
-                runtime = None
-                if t.editions:
-                    runtime = t.editions[0].runtime_minutes
-                genres = [g.name for g in t.genres] if hasattr(t, "genres") and t.genres else []
-                catalog_items[t_id_str] = {
-                    "title_id": t_id_str,
-                    "canonical_title": t.canonical_title,
-                    "runtime_minutes": runtime,
-                    "production_year": t.production_year,
-                    "genres": genres,
-                    "poster_url": t.poster_url,
-                    "backdrop_url": t.backdrop_url,
-                }
-        except Exception as exc:
-            logger.warning(f"Error querying titles from DB: {exc}")
+        # Real DB mode: catalog comes strictly from canonical.title. The
+        # hardcoded demo catalog (SEED_FALLBACK_TITLES) must never be mixed
+        # into a real response just because it's always been there --
+        # that would show fabricated demo movies alongside genuine ones to
+        # every real user, unconditionally, regardless of DB health.
+        stmt = select(TitleModel).options(selectinload(TitleModel.editions), selectinload(TitleModel.genres))
+        res = await db.execute(stmt)
+        db_titles = res.scalars().all()
+        for t in db_titles:
+            t_id_str = str(t.title_id)
+            runtime = None
+            if t.editions:
+                runtime = t.editions[0].runtime_minutes
+            genres = [g.name for g in t.genres] if hasattr(t, "genres") and t.genres else []
+            catalog_items[t_id_str] = {
+                "title_id": t_id_str,
+                "canonical_title": t.canonical_title,
+                "runtime_minutes": runtime,
+                "production_year": t.production_year,
+                "genres": genres,
+                "poster_url": t.poster_url,
+                "backdrop_url": t.backdrop_url,
+            }
+    else:
+        for tid_str, title_data in SEED_FALLBACK_TITLES.items():
+            runtime = title_data.get("primary_edition", {}).get("runtime_minutes")
+            catalog_items[tid_str] = {
+                "title_id": tid_str,
+                "canonical_title": title_data.get("canonical_title", "Untitled"),
+                "runtime_minutes": runtime,
+                "production_year": title_data.get("production_year"),
+                "genres": title_data.get("genres", []),
+                "poster_url": title_data.get("poster_url"),
+                "backdrop_url": title_data.get("backdrop_url"),
+            }
 
     # 4. Collect friend recommendations in ACCEPTED status
     accepted_recommendations: List[Dict[str, Any]] = []
 
     if db is not None:
-        try:
-            stmt = select(RecommendationModel).where(
-                and_(
-                    RecommendationModel.recipient_id == active_user_uuid,
-                    RecommendationModel.status == RecommendationStatusEnum.ACCEPTED.value,
-                )
+        stmt = select(RecommendationModel).where(
+            and_(
+                RecommendationModel.recipient_id == active_user_uuid,
+                RecommendationModel.status == RecommendationStatusEnum.ACCEPTED.value,
             )
-            res = await db.execute(stmt)
-            recs = res.scalars().all()
-            for r in recs:
-                accepted_recommendations.append({
-                    "title_id": str(r.title_id),
-                    "context_note": r.context_note,
-                    "sender_id": str(r.sender_id),
-                })
-        except Exception as exc:
-            logger.warning(f"Error querying recommendations from DB: {exc}")
-
-    # In-memory recommendations
-    for r in SEED_RECOMMENDATIONS.values():
-        rec_recipient = resolve_social_uuid(r.recipient_id, "user_id")
-        if rec_recipient == active_user_uuid and r.status == RecommendationStatusEnum.ACCEPTED:
+        )
+        res = await db.execute(stmt)
+        recs = res.scalars().all()
+        for r in recs:
             accepted_recommendations.append({
                 "title_id": str(r.title_id),
                 "context_note": r.context_note,
                 "sender_id": str(r.sender_id),
             })
+    else:
+        for r in SEED_RECOMMENDATIONS.values():
+            rec_recipient = resolve_social_uuid(r.recipient_id, "user_id")
+            if rec_recipient == active_user_uuid and r.status == RecommendationStatusEnum.ACCEPTED:
+                accepted_recommendations.append({
+                    "title_id": str(r.title_id),
+                    "context_note": r.context_note,
+                    "sender_id": str(r.sender_id),
+                })
 
     # 5. Partition titles into SmartWatchlistResponse categories
     weekend_epics: List[SmartWatchlistItem] = []
