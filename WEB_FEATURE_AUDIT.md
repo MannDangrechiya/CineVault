@@ -537,6 +537,40 @@ real 88,979-title catalog.
   "explicitly forced to mock" apart. Re-verified: full targeted suite (498
   tests) passes clean with the real key still in `.env`.
 
+## Fixed this session (session 5, 2026-08-29)
+
+**Session goal (CineVault OS web-first production-completion initiative):**
+confirmed repository baseline (clean, `master`, PLAN.md/HANDOFF.md marked
+Part 1+2 done, Part 3 = Flutter mobile parity, now out of scope), then
+started on this doc's own still-open "architectural gap" item above.
+
+- **Fixed the one confirmed *currently exploitable* dangerous silent
+  fallback:** `database.py`'s `get_db()` yielded `None` on any DB
+  connection failure in *every* environment (including prod), regardless
+  of `config.allow_seed_fallback`. `routers/personal.py`'s import
+  preview/apply endpoints then fabricated plausible-looking title matches,
+  confidence scores, and a demo "conflict" on that path. Fixed both (see
+  "Architectural gap" entry above for detail). Commit `ad7d7d0`.
+- **Found and fixed a much bigger, different problem while verifying the
+  above with tests:** `tests/conftest.py` had an `autouse=True` fixture
+  defaulting *every* backend test's `get_db` to `None` — only 2 of 83 test
+  files opted out. That means most "integration tests" never actually
+  touched Postgres despite their names/docstrings. Flipped the default to
+  real Postgres and ran the full suite (bulk-ingestion stage tests excluded
+  per this doc's own existing convention, see below): **only 10/512 tests
+  failed**, all now fixed — see the "test(db): run backend suite against
+  real Postgres by default" commit for the itemized list. Two were genuine
+  app bugs the mock path had been masking (the `origin_country` filter, and
+  a taste-profile test checking the wrong storage location); the rest were
+  stale hardcoded title UUIDs in test fixtures. Also fixed a test-isolation
+  bug (`test_phase34_full_product_qa.py` was polluting `get_db` for the
+  rest of the pytest session via a module-level override with no
+  teardown). Commit `768a221`.
+- Two more findings surfaced along the way, **not fixed this session** —
+  see "Known gaps" below: duplicate catalog rows for at least one
+  well-known title, and an ungated demo-data fallback in
+  `automation.py`'s `_resolve_title_id`.
+
 ## Verified working, no changes needed
 
 - [x] Movies/Series search (tested "FIFA" → correct 7-result match)
@@ -606,13 +640,20 @@ real 88,979-title catalog.
   confirm) — the same "wire into onboarding, or leave as a working-but-unused
   endpoint" decision from session 3 still stands, now moot from a
   reliability standpoint since it no longer 502s.
-- [ ] **`origin_country` is `null` for virtually every title** —
-  `canonical.title_country` is empty (0 rows). Same root cause as above: the
-  bulk IMDb importer (`services/api/scripts/seed_bulk_imdb.py`) never
-  ingested country data, only title/year/content-type. IMDb's dataset
-  doesn't carry country directly — would need a `title.akas.tsv.gz` join or
-  a TMDB backfill (same pattern as the genre backfill script, could be
-  adapted).
+- [x] ~~`origin_country` is `null` for virtually every title~~ — **data
+  backfilled in a later session** (`ae6741f`/`b35d328`, IMDb country-of-origin
+  backfill, 99.98% coverage into `canonical.title_country`), but **the API
+  never actually surfaced it** until session 5 (2026-08-29): `list_titles`'s
+  real-DB query path (used by `GET /v1/titles`) never joined
+  `canonical.title_country` at all — the `origin_country` query param was
+  silently ignored (only the in-memory seed fallback ever implemented the
+  filter) and the response field was hardcoded to `None` for every real
+  title, regardless of what the now-backfilled data said. Fixed: filters via
+  `TitleModel.countries.any(...)` and populates the response from the real
+  `countries` relationship. Caught by flipping the test suite to run
+  against real Postgres by default (see session 5 below) — a contract test
+  asserting the filter actually narrows results had been silently passing
+  against the mock fallback the whole time.
 - [x] ~~Known infra flakiness: Postgres, the API server, and the web dev
   server have all independently died on this machine~~ — **mitigations
   applied and DB stability verified, session 4.** Postgres exits on its own
@@ -643,26 +684,26 @@ real 88,979-title catalog.
   both "Up"), `netstat -ano | grep ":8000"` and `:3000"` (both actually
   LISTENING, not just a process existing). Restart commands are in "How to
   resume" below, including a `.next` cache gotcha a previous session hit.
-- [ ] **Architectural gap: several `services/api/repositories/*.py` methods
-  swallow real database errors into a false-empty or false-success response**
-  instead of surfacing a 5xx. Found while diagnosing why a successful-looking
-  Import apply (`applied_count: 2`) briefly didn't show up on Watch History:
-  `apply_user_import` and `list_history` (and ~59 other call sites across 9
-  repository files, `grep -c allow_seed_fallback services/api/repositories/`)
-  share a pattern — `try: <real DB work> except Exception: rollback(); if not
-  config.allow_seed_fallback: raise` — else fall through to a fabricated
-  "success" (`apply_user_import`, reporting an `applied_count` that doesn't
-  reflect what was actually committed after the rollback) or a silent empty
-  page (`list_history`, indistinguishable in the UI from "you have no watch
-  history yet"). This is deliberate for the *"no DB configured at all, pure
-  local dev"* case (per the code's own comments), but the exact same
-  fallback fires for a *transient* failure on an otherwise-configured DB
-  (a Postgres restart mid-query, a pool blip) — conflating "not configured"
-  with "briefly unavailable" is the bug. Root-caused, not fixed: a proper
-  fix means threading a distinct "was the failure transient vs. no-db" signal
-  through ~60 call sites, which is a real architectural change, not a
-  same-session quick fix. Worth a dedicated pass if this DB flakiness keeps
-  recurring on this machine.
+- [x] ~~Architectural gap: several `services/api/repositories/*.py` methods
+  swallow real database errors into a false-empty or false-success
+  response~~ — **the most dangerous instance fixed, session 5 (2026-08-29).**
+  `database.py`'s `get_db()` was yielding `None` on *any* PgBouncer
+  connection failure in *every* environment, including production/staging,
+  regardless of `config.allow_seed_fallback` (which is correctly
+  environment-gated everywhere else in the codebase). Combined with
+  `routers/personal.py`'s import preview/apply endpoints, a real DB outage
+  in prod would silently return **fabricated** title matches, confidence
+  scores, and a fake demo "conflict" — a 200 OK with plausible invented data
+  instead of a real error. Fixed: `get_db()` now only yields `None` when
+  `allow_seed_fallback` is explicitly true (local-dev-only by default); the
+  router's two simulation branches were dead code once that changed, so
+  removed — the underlying repository functions already had an honest
+  db=None path (zero matches, zero applied) and now run unconditionally.
+  The broader "~60 call sites conflate not-configured with transiently
+  unavailable" pattern still exists as a lower-severity residual risk (most
+  sampled sites return honest empty/error state already, gated correctly by
+  `allow_seed_fallback`) — not re-audited site-by-site this session, only
+  the `get_db()` root cause and its one confirmed-dangerous consumer.
 - [ ] **Minor: "Add to Watchlist"/"Add to Library" buttons don't reflect
   already-added state after a page reload.** `isSavedToWatchlist` and
   `isAddedToLibrary` on the movie/series detail pages are plain client-side
@@ -676,6 +717,33 @@ real 88,979-title catalog.
   small new one, or a client-side check against the already-fetched
   watchlist/library lists). Not fixed this session — cosmetic, not data
   loss or fabrication.
+- [ ] **Duplicate catalog rows for at least some well-known titles** —
+  found session 5 (2026-08-29) while fixing stale test fixtures: the real
+  catalog has more than one row for "Parasite" (2019) and likely others —
+  an older placeholder-style seeded row (`title_id` like
+  `10000000-0000-...`) alongside a separate row from the later bulk IMDb
+  ingestion (`title_id` like `01a010cc-...`). Different code paths pick
+  different rows depending on match strategy (exact `ilike` vs. a plain
+  search), which can make two features disagree about which UUID "Parasite"
+  is. Not investigated further or deduplicated this session — worth a
+  dedicated pass to find the full extent (a `GROUP BY canonical_title,
+  production_year HAVING count(*) > 1` query would surface them) and decide
+  a merge/retirement strategy consistent with ADR-001's identity rules.
+- [ ] **`services/api/routers/automation.py`'s `_resolve_title_id`
+  unconditionally falls through to hardcoded demo titles** (`Parasite`,
+  `Inception`, etc. via `SEED_FALLBACK_TITLES`/`SEED_EXTERNAL_MAPPINGS`), or
+  even a fully fabricated deterministic UUID derived from the title string,
+  whenever a real DB lookup finds no match — **regardless of
+  `config.allow_seed_fallback`**, unlike every other fallback path audited
+  this session. Found while fixing session 5's test fixtures (grepped
+  `automation.py` after noticing `test_v2_automations.py` imports
+  `SEED_FRIENDSHIPS`/`SEED_RECOMMENDATIONS`/`SEED_WATCH_EVENTS` directly).
+  Not fixed: a real media-server webhook for a title genuinely absent from
+  the catalog would currently get silently mapped to one of a handful of
+  hardcoded demo films in *any* environment, including production — the
+  same class of bug as the `get_db()`/import-preview one fixed this session,
+  just in a different router. Needs the same treatment: gate behind
+  `allow_seed_fallback`, return a real "title not found" response otherwise.
 
 ## Test residue in the dev account
 

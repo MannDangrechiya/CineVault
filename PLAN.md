@@ -548,6 +548,13 @@ re-confirmation).
 
 ## Part 3 — Flutter Mobile App Feature Parity
 
+**Status: deferred / out of scope (2026-08-29).** The project owner has
+directed a web-first production-completion push — see Part 4 below. Do not
+work on Flutter/mobile until Part 4's web work is substantially complete,
+except where a backend/API contract change is required and would also
+benefit mobile (document such changes in Part 4, keep the mobile
+implementation itself out of scope).
+
 The Flutter mobile app (`apps/mobile/`) has 10 screens and 48 Dart files
 covering: login, catalog browsing, search, title detail, recommendations,
 AI assistant, library, control room, swipe discovery, and sync status.
@@ -634,3 +641,51 @@ Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 Each item is one focused PR. The data layer (3.1) is the only hard
 dependency; after that, items 3.2–3.9 can be done in any order.
+
+---
+
+## Part 4 — Web-First Production Completion (active track)
+
+Started 2026-08-29 per project owner directive: make the web app fully
+functional, real-data-backed, tested, and production-ready before any
+further mobile work. Full scope (13 phases, W1–W13) is tracked in the
+originating task; this section is a compact status log, not a restatement
+of the full plan. Status legend: `[ ]` not started, `[~]` in progress,
+`[x]` done, `[!]` blocked.
+
+### W1 — Repository & Git Baseline `[x]`
+- [x] Verified clean working tree on `master`, up to date with origin, no
+      stray uncommitted work. Confirmed PLAN.md/HANDOFF.md/WEB_FEATURE_AUDIT.md
+      are current (audit already tracks 4 prior sessions of real findings).
+
+### W2 — Real Database Foundation `[~]`
+- [x] Fixed the confirmed dangerous silent DB fallback: `get_db()` yielded
+      `None` on connection failure in every environment regardless of
+      `config.allow_seed_fallback`; `routers/personal.py`'s import
+      preview/apply endpoints fabricated data on that path. See
+      WEB_FEATURE_AUDIT.md session 5. Commit `ad7d7d0`.
+- [x] Flipped `tests/conftest.py` to run the backend suite against real
+      Postgres by default (was defaulting every test to `db=None`/mock via
+      an autouse fixture — only 2/83 files opted out). Fixed the 10 real
+      failures this surfaced (7 stale test fixtures, 2 genuine app bugs,
+      1 test-isolation bug). 506 passed, 6 deselected (slow bulk-ingestion
+      stage tests, existing convention), 0 failed. Commit `768a221`.
+- [ ] Broader re-audit of the remaining `allow_seed_fallback` call sites
+      (WEB_FEATURE_AUDIT.md's "Known gaps" still lists this as only
+      partially closed — most sampled sites already return honest
+      empty/error state, not re-verified site-by-site).
+- [ ] Fix `automation.py`'s `_resolve_title_id` ungated fallback to
+      hardcoded demo titles (found this session, see WEB_FEATURE_AUDIT.md
+      "Known gaps" — same class of bug as the one just fixed, different
+      router, not yet gated behind `allow_seed_fallback`).
+- [ ] Investigate/dedupe the duplicate catalog rows found this session
+      (e.g. two "Parasite" (2019) rows) — see WEB_FEATURE_AUDIT.md "Known
+      gaps".
+- [ ] Migration-from-scratch verification (empty Postgres → Flyway →
+      schema → API) not yet re-run this track.
+
+### W3–W13
+Not started. See the master task for full phase breakdown (core web
+reliability, series/tracking, data completeness, recommendations/AI,
+social, import/export, search quality, UX/accessibility, security, full
+QA, production readiness).
