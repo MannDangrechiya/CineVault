@@ -4,7 +4,6 @@
 import io
 import logging
 from typing import List, Optional
-from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, status
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
@@ -21,7 +20,7 @@ from ..schemas.personal import (
     PersonalDataConflictResponse, PersonalDataConflictResolveRequest,
     UserDashboardMetricsResponse,
     PersonalDataExportResponse,
-    ImportPreviewRequest, ImportPreviewResponse, ImportConflictItem, ImportItemVerdict,
+    ImportPreviewRequest, ImportPreviewResponse,
     ImportApplyRequest, ImportApplyResponse, PdfExtractResponse,
     HistoryItemResponse, HistoryPageResponse,
     CollectionItemResponse, CollectionCreateRequest,
@@ -376,64 +375,12 @@ async def preview_personal_import(
 ):
     """Previews personal library import, validating matches and detecting conflicts."""
     user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
-    
-    # If DB is not connected, provide a rich matching preview simulation
-    if db is None:
-        matched = 0
-        unmatched = 0
-        conflicts = []
-        item_verdicts = []
-        for idx, item in enumerate(body.items):
-            title = (item.canonical_title or "").strip()
-            is_unmatched = not title or "nonexistent" in title.lower() or "unknown" in title.lower() or (item.production_year and item.production_year > 2050)
-            if not is_unmatched:
-                matched += 1
-                confidence = 0.98 if item.production_year else 0.85
-                verdict = "EXACT_MATCH" if item.production_year else "PROBABLE_MATCH"
-                item_verdicts.append(
-                    ImportItemVerdict(
-                        index=idx,
-                        canonical_title=item.canonical_title,
-                        production_year=item.production_year,
-                        matched=True,
-                        matched_title_id=f"sim-title-{idx}",
-                        confidence_score=confidence,
-                        verdict=verdict,
-                    )
-                )
-                # If rating is 5 and title mentions dune or oppenheimer, simulate a possible conflict for demo
-                if item.rating_value and item.rating_value == 5 and "dune" in item.canonical_title.lower():
-                    conflicts.append(
-                        ImportConflictItem(
-                            title_id=f"sim-{idx}",
-                            canonical_title=item.canonical_title,
-                            field_name="rating_value",
-                            existing_value=4,
-                            imported_value=5
-                        )
-                    )
-            else:
-                unmatched += 1
-                item_verdicts.append(
-                    ImportItemVerdict(
-                        index=idx,
-                        canonical_title=item.canonical_title or "Unknown",
-                        production_year=item.production_year,
-                        matched=False,
-                        matched_title_id=None,
-                        confidence_score=0.0,
-                        verdict="UNMATCHED",
-                    )
-                )
-        return ImportPreviewResponse(
-            total_items=len(body.items),
-            matched_titles=matched,
-            unmatched_titles=unmatched,
-            conflicts_count=len(conflicts),
-            conflicts=conflicts,
-            item_verdicts=item_verdicts,
-        )
 
+    # No `db is None` branch here: get_db() only ever yields None when
+    # config.allow_seed_fallback is explicitly enabled (local dev without
+    # Docker). preview_user_import already handles db=None honestly by
+    # returning zero matches/conflicts -- it never fabricates simulated
+    # title matches or confidence scores.
     return await personal_repository.preview_user_import(
         db=db,
         user_id=user_id,
@@ -449,17 +396,10 @@ async def apply_personal_import(
     """Applies imported personal library records using chosen conflict resolution strategy."""
     user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
 
-    if db is None:
-        # No database connection at all (local dev without DB) -- nothing can be
-        # persisted, so just report the would-be-applied count. No fabricated
-        # in-memory history rows.
-        return ImportApplyResponse(
-            applied_count=len(body.items),
-            conflicts_resolved=0,
-            strategy_applied=body.conflict_strategy.value,
-            applied_at=datetime.now(timezone.utc).isoformat()
-        )
-
+    # No `db is None` branch here: get_db() only ever yields None when
+    # config.allow_seed_fallback is explicitly enabled (local dev without
+    # Docker). apply_user_import already handles db=None honestly by
+    # reporting applied_count=0 -- it never fabricates persisted rows.
     return await personal_repository.apply_user_import(
         db=db,
         user_id=user_id,

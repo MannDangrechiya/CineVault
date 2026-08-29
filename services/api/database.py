@@ -4,6 +4,7 @@
 import socket
 import logging
 from typing import Dict, Any, AsyncGenerator, Optional
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool
 from .config import config
@@ -38,7 +39,15 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 async def get_db() -> AsyncGenerator[Optional[AsyncSession], None]:
-    """Dependency for providing asynchronous database session per request."""
+    """Dependency for providing asynchronous database session per request.
+
+    On connection failure, this only degrades to `yield None` (letting individual
+    repositories fall back to their explicit dev-only in-memory paths) when
+    `config.allow_seed_fallback` is set — which is only true by default in
+    local_development (see config.py). In every other environment a connection
+    failure raises a real 503 so production/staging outages surface as errors
+    instead of silently masquerading as empty or fabricated data.
+    """
     try:
         async with AsyncSessionLocal() as session:
             try:
@@ -48,8 +57,15 @@ async def get_db() -> AsyncGenerator[Optional[AsyncSession], None]:
                 await session.rollback()
                 raise
     except (socket.error, OSError) as e:
-        logger.warning(f"Database connection unavailable, falling back to seed repository: {e}")
-        yield None
+        if config.allow_seed_fallback:
+            logger.warning(f"Database connection unavailable, falling back to seed repository: {e}")
+            yield None
+        else:
+            logger.error(f"Database connection unavailable: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database connection unavailable",
+            )
 
 class DatabaseManager:
     """Manages PgBouncer connection pool checks and health status."""

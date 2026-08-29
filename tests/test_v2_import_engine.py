@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.api.main import app
+from services.api.database import get_db
 from services.api.schemas.personal import (
     ImportItemPayload,
     ImportPreviewRequest,
@@ -62,7 +63,10 @@ def test_import_schemas_validation():
 # -----------------------------------------------------------------------------
 
 def test_personal_import_preview_endpoint():
-    """Tests POST /v1/personal/import/preview."""
+    """Tests POST /v1/personal/import/preview against the real catalog (conftest's
+    default get_db=None override is popped here so this exercises real title
+    matching, not the router's removed in-memory simulation)."""
+    app.dependency_overrides.pop(get_db, None)
     token = get_test_token()
     payload = {
         "items": [
@@ -100,7 +104,10 @@ def test_personal_import_preview_endpoint():
 
 
 def test_personal_import_apply_endpoint():
-    """Tests POST /v1/personal/import/apply with conflict strategy."""
+    """Tests POST /v1/personal/import/apply with conflict strategy, against the
+    real catalog (see test_personal_import_preview_endpoint for why the get_db
+    override is popped)."""
+    app.dependency_overrides.pop(get_db, None)
     token = get_test_token()
     payload = {
         "items": [
