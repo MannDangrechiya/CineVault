@@ -658,7 +658,7 @@ of the full plan. Status legend: `[ ]` not started, `[~]` in progress,
       stray uncommitted work. Confirmed PLAN.md/HANDOFF.md/WEB_FEATURE_AUDIT.md
       are current (audit already tracks 4 prior sessions of real findings).
 
-### W2 — Real Database Foundation `[~]`
+### W2 — Real Database Foundation `[x]` COMPLETE (2026-08-29)
 - [x] Fixed the confirmed dangerous silent DB fallback: `get_db()` yielded
       `None` on connection failure in every environment regardless of
       `config.allow_seed_fallback`; `routers/personal.py`'s import
@@ -670,19 +670,85 @@ of the full plan. Status legend: `[ ]` not started, `[~]` in progress,
       failures this surfaced (7 stale test fixtures, 2 genuine app bugs,
       1 test-isolation bug). 506 passed, 6 deselected (slow bulk-ingestion
       stage tests, existing convention), 0 failed. Commit `768a221`.
-- [ ] Broader re-audit of the remaining `allow_seed_fallback` call sites
-      (WEB_FEATURE_AUDIT.md's "Known gaps" still lists this as only
-      partially closed — most sampled sites already return honest
-      empty/error state, not re-verified site-by-site).
-- [ ] Fix `automation.py`'s `_resolve_title_id` ungated fallback to
-      hardcoded demo titles (found this session, see WEB_FEATURE_AUDIT.md
-      "Known gaps" — same class of bug as the one just fixed, different
-      router, not yet gated behind `allow_seed_fallback`).
-- [ ] Investigate/dedupe the duplicate catalog rows found this session
-      (e.g. two "Parasite" (2019) rows) — see WEB_FEATURE_AUDIT.md "Known
-      gaps".
-- [ ] Migration-from-scratch verification (empty Postgres → Flyway →
-      schema → API) not yet re-run this track.
+- [x] Fixed `automation.py`'s `_resolve_title_id`/`ingest_media_server_webhook`/
+      `get_smart_watchlist` ungated fallback to hardcoded demo data —
+      gated behind `db is None` (⇔ `allow_seed_fallback`) like everywhere
+      else; unresolvable webhook titles now 404/422 instead of fabricating
+      an identity. Commit `4a1adef`.
+- [x] Investigated the duplicate-catalog-rows concern — **found: no true
+      duplicates.** The original claim was a test-helper bug, not a data
+      problem. Verified the DB's existing uniqueness constraints
+      (`uq_canonical_title_year_type`, `unique_provider_title_mapping`)
+      are live and enforced. Commit `9306cdc`.
+- [x] Full re-audit of the remaining `allow_seed_fallback`/`db is None`
+      call sites (~97 sites across 17 files, via 5 parallel classification
+      passes) — every confirmed dangerous (empty-result-becomes-fabricated-
+      data) site fixed across `canonical.py`, `search.py`, `quality.py`,
+      `control_room.py`, `ingestion.py`, `recommendations.py`,
+      `ai_assistant.py`, `storage.py`. `personal.py` (32 sites), `social.py`,
+      `sync.py`, `config.py` were already correctly gated — no changes
+      needed. Full write-up in WEB_FEATURE_AUDIT.md session 6. Commits
+      `7fb87da`, `6b5d41d`, `cec5801`, `93731ab`, `24e01f4`.
+      **Deliberately not fixed** (flagged for a dedicated pass, see
+      WEB_FEATURE_AUDIT.md session 6): three subtler issues in
+      `ingestion/pipeline.py` (silently-disabled Level-1 exact-match on a
+      preload failure, a misrepresented "MATCHED" status in `db is None`
+      mode, and silently-dropped metadata-conflict/provenance persistence
+      failures) — the ingestion pipeline is sensitive enough that a rushed
+      fix without full regression time felt riskier than leaving it
+      documented.
+- [x] Migration-from-scratch verification: ran all 26 migrations against
+      an isolated, empty throwaway Postgres (not the shared dev DB) — clean
+      pass, all 6 logical schemas + pgvector/pg_trgm + both catalog
+      uniqueness constraints + 34 cross-schema FKs to `canonical.title`
+      confirmed present afterward. No migration changes needed.
+- [x] DB-outage safety behaviorally verified:
+      `tests/test_db_outage_safety.py` simulates a connection failure and
+      confirms a real 503 (not fabricated data) in both a direct `get_db()`
+      test and an end-to-end request through a real router. Commit
+      `39eac59`.
+- [x] Fixed CI: `ci.yml`'s Postgres service was never actually migrated
+      (the referenced `scripts/validate_migrations.py` doesn't exist) and
+      the pytest step's env vars didn't match the service's real
+      credentials — both invisible until this session's conftest.py fix
+      made the suite actually depend on real Postgres. Added real
+      init-schemas/Flyway steps and corrected env vars. Also fixed
+      `release-gate.yml`, which referenced two test files that don't
+      exist in the repo (`test_phase28_security_hardening.py`,
+      `test_phase30_backup_disaster_recovery.py`) — the release gate has
+      never been able to run. Pointed at the real `test_security_hardening.py`;
+      no equivalent exists for phase 30 (backup/DR) — see WEB_FEATURE_AUDIT.md
+      "Known gaps", flagged as a separate, larger gap. Commit `cb8728d`.
+- [x] Found and fixed a real, previously-invisible defect during the final
+      regression run: `ai_assistant.py`'s `stage_ai_proposal` has always
+      written fields (`provider_name`/`prompt_version`/`submitted_by`)
+      that didn't exist on `quality.ai_proposal_staging` — every real
+      write has always failed silently, masked by the (now-fixed)
+      `list_ai_proposals` fabrication. Added
+      `V3.5__add_ai_proposal_provenance_columns.sql` (additive, no data
+      loss) + matching ORM model update. Commit `9ff1f98`.
+- [x] Full regression suite re-run after all of the above: **515 passed,
+      6 deselected (slow bulk-ingestion stage tests, existing
+      convention), 0 failed**, against live Postgres.
+
+**W2 status: COMPLETE.** All release-gate criteria met: no dangerous
+production seed fallback remains in the audited paths (automation.py,
+canonical.py, search.py, quality.py, control_room.py, ingestion.py,
+recommendations.py, ai_assistant.py, storage.py); the duplicate-catalog
+concern was investigated and closed (no true duplicates); personal-data
+integrity was never touched (all fixes/migrations this track were in
+canonical/quality/ingestion schemas); the migration chain was verified
+from empty; the real-Postgres-by-default test suite passes clean; no
+test depends on an accidental `db=None` (the old autouse override is
+gone, remaining `db=None` sites are explicit, intentional test-only
+calls); a production DB outage is behaviorally confirmed to 503 rather
+than fabricate data; CI now actually migrates and connects to its
+Postgres service instead of silently skipping real-DB testing.
+**Deliberately left open** (documented, not fixed): three subtler
+`ingestion/pipeline.py` issues (see WEB_FEATURE_AUDIT.md session 6) and
+the complete absence of backup/disaster-recovery test coverage (phase
+30) — both flagged for dedicated future sessions rather than rushed
+fixes in this pass.
 
 ### W3–W13
 Not started. See the master task for full phase breakdown (core web

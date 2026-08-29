@@ -571,6 +571,158 @@ started on this doc's own still-open "architectural gap" item above.
   well-known title, and an ungated demo-data fallback in
   `automation.py`'s `_resolve_title_id`.
 
+## Fixed this session (session 6, 2026-08-29) — W2 completion
+
+**Session goal:** finish the remaining W2 reliability work flagged at the
+end of session 5 — the automation.py fallback gap, the duplicate-catalog
+question, a full audit of the remaining `allow_seed_fallback`/`db is None`
+call sites, a real-DB regression run, migration verification, and a
+behavioral DB-outage safety check.
+
+- **Automation fallback gated** — see the "Known gaps" entry above for
+  detail. `_resolve_title_id`, `ingest_media_server_webhook`, and
+  `get_smart_watchlist` no longer fall back to demo data regardless of DB
+  health; all three are now gated exactly like the rest of the codebase.
+- **Duplicate catalog investigation closed** — see the "Known gaps" entry
+  above. No true duplicates exist; the original claim traced back to a
+  test-helper bug, not a data problem. Added
+  `tests/test_catalog_identity_constraints.py` to keep it that way.
+- **Full fallback-site audit (~97 `db is None`/`allow_seed_fallback` sites
+  across 17 files) — classified and every confirmed-dangerous one fixed.**
+  `repositories/personal.py`'s 32 sites were already correctly gated
+  (Category A, the established safe pattern — no changes needed).
+  `storage.py`, `ai_assistant.py`, `sync.py`, `social.py`, `config.py` were
+  mostly already safe with one exception each (see below). The systemic
+  problem was in `canonical.py`, `search.py`, `quality.py`,
+  `control_room.py`, `ingestion.py`, and `recommendations.py`: the
+  except-block gating on `allow_seed_fallback` was correct everywhere, but
+  a *second*, ungated fallback path existed for the case where a real,
+  healthy query simply returned zero rows / no match (not an exception) —
+  that case fell through unconditionally to hardcoded seed/demo data
+  regardless of environment. Fixed across:
+  - `canonical.py`: `list_titles`, `get_genres`, `get_title_releases`
+    (return real empty results honestly), `get_title_by_id`,
+    `lookup_title` (genuine not-found → `None`, not `SEED_FALLBACK_TITLES`),
+    `get_title_availability` (demo Watcha/Naver offers only when `db is
+    None`), `get_provenance` (previously didn't check `db` *at all* —
+    rewired to query the real `quality.field_provenance` table), and
+    `get_metadata_history` (removed a fabricated "Initial Canonical
+    Ingestion" placeholder — see note in that entry above about the
+    underlying in-memory-only audit log).
+  - `search.py`: `search_catalog`'s canned "parasite"/"your name"/
+    "director" demo hits only fire when a real query didn't run or
+    genuinely failed, not whenever it found nothing.
+  - `quality.py` + `control_room.py`: `list_reconciliation_candidates`,
+    `list_metadata_conflicts`, `list_ai_proposals`, `list_quarantine_records`
+    return real empty results honestly; `resolve_metadata_conflict`,
+    `promote_candidate`, `reject_candidate`, `resolve_quarantine_record`,
+    `get_candidate_detail` were reporting a fabricated success/detail even
+    when the target ID didn't match any real row — now return `None` on a
+    genuine not-found, routed to a real 404. `get_summary_stats`'s
+    hardcoded placeholder counters (1, 1, 1, 42) replaced with honest
+    zeros. `list_audit_log_entries`'s fabricated "AUDIT_SYSTEM_INITIALIZATION"
+    entry (with a bogus integrity_hash — literally SHA-256 of an empty
+    string) removed for a genuinely empty audit log.
+  - `ingestion.py`: `list_ingestion_runs`, `list_candidate_titles`,
+    `list_field_provenance` (same empty-result fix); `get_raw_payload_by_id`
+    (genuine not-found → `None` → 404, was fabricating a fake "Parasite"
+    TMDB payload that kept the caller's requested ID).
+  - `recommendations.py`: `explain_recommendation` (a title outside the
+    top-20 ranked candidates — a normal case — was unconditionally
+    fabricating "Target Title"/75.0-score/"Inception"; now looks up the
+    real title honestly); the seed-title lookup's `SEED_CATALOG` scan
+    gated behind `db is None`. Also fixed a related, non-fallback
+    correctness bug found in the same file: the candidate-pool query
+    filtered `status_flag != "DELETED"`, but nothing anywhere ever sets
+    that value (only `"ACTIVE"`/`"RETIRED"` are used) — dead code that let
+    retired/merged-away duplicate titles keep appearing as recommendation
+    candidates. Changed to `!= "RETIRED"`.
+  - `ai_assistant.py`: `compare_titles` (was falling back to placeholder
+    "Title 1"/"Title 2" for a genuine not-found, and swallowing every
+    exception unconditionally with no `allow_seed_fallback` check at
+    all — the only such gap found in this file).
+  - `storage.py`: `get_presigned_url` (the one ungated fallback in an
+    otherwise disciplined file — fell back to a direct/public URL on any
+    exception in any environment; now raises in staging/production).
+  - **Not fixed, flagged for a dedicated pass:** `ingestion/pipeline.py`
+    has three subtler issues of the same family, found during the audit
+    but deliberately left alone this session given the ingestion
+    pipeline's sensitivity and the time available to verify a fix
+    wouldn't introduce a regression: (1) a silently-swallowed external-ID-
+    map preload failure permanently disables Level-1 exact-match for an
+    entire ingestion run with no logging and no `allow_seed_fallback`
+    gate; (2) when `db is None`, unmatched/uncreated items are reported
+    with status `"MATCHED"` regardless of their real match_status,
+    misrepresenting pipeline outcomes; (3) metadata-conflict and
+    field-provenance persistence failures are logged and silently dropped
+    with no `allow_seed_fallback` gate and no re-raise — a genuine
+    silent-data-loss path in the audit/conflict trail, independent of
+    environment.
+  - Every fix above came with new or updated real-DB test coverage in the
+    same commit (see git log on `fix/db-fallback-safety`) — tests that
+    were unknowingly asserting against the removed fabrication were fixed
+    at their root cause (a stale fixture UUID, a missing fixture row, or
+    a genuinely sparse real-data assumption), never weakened to hide a
+    real bug.
+- **Migration verification** — spun up an isolated throwaway Postgres +
+  Flyway pair (not the shared dev DB) and ran all 26 migrations from
+  empty. Clean pass; full write-up in `PLAN.md` Part 4.
+- **DB-outage safety, behaviorally verified** — new
+  `tests/test_db_outage_safety.py` simulates a connection failure and
+  confirms `get_db()` raises a real 503 when `allow_seed_fallback=False`,
+  and that a real end-to-end request through a real router returns 503
+  with zero fabricated catalog data in the body.
+- **CI was silently not testing against real Postgres at all, and the
+  release gate has never been able to run** — found while sanity-checking
+  that the conftest.py real-DB-by-default change (earlier this branch)
+  would actually work in CI, not just locally. `ci.yml` already had a real
+  `postgres:` service container and set `ENVIRONMENT=test`/
+  `ALLOW_SEED_FALLBACK=true`, but its "Validate SQL Migrations" step ran
+  `python scripts/validate_migrations.py` — a script that doesn't exist
+  anywhere in the repo, always silently no-op'd via `|| echo` — so the
+  service container's schema was never actually created. Separately, the
+  pytest step set `DB_HOST`/`DB_PORT` env vars that `services/api/config.py`
+  never reads (it reads `POSTGRES_HOST`/`POSTGRES_PORT` or
+  `PGBOUNCER_HOST`/`PGBOUNCER_PORT`, plus `POSTGRES_USER`/`PASSWORD`/`DB`,
+  none of which were set for that step) — even a migrated database would
+  have been unreachable with the wrong credentials. Neither gap mattered
+  before this session (every test ran against the autouse `db=None`
+  override regardless), but both had to be fixed for CI to actually pass
+  now. Fixed: added a step to apply `packages/config/postgres/init-schemas.sql`
+  and a real Flyway migration step before pytest runs, and corrected the
+  pytest step's env vars to match the service's real credentials.
+  Separately, `release-gate.yml` referenced
+  `tests/test_phase28_security_hardening.py` and
+  `tests/test_phase30_backup_disaster_recovery.py`, **neither of which
+  exists in the repo** — the release gate has never actually been able to
+  run for any tagged release, failing immediately on "file or directory
+  not found". Pointed it at `test_security_hardening.py` (the real
+  equivalent for phase 28). **No test file exists anywhere for phase 30
+  (backup/disaster-recovery)** despite `CHANGELOG.md` claiming that phase
+  shipped (backup manifests, RPO/RTO tracking, restore validity gates) —
+  this is a separate, larger gap (no backup/DR test coverage at all,
+  possibly no working implementation either) that needs its own dedicated
+  session; flagged here, not investigated further or fixed.
+- **A real, previously-invisible defect found by the final regression
+  run**: `ai_assistant.py`'s `stage_ai_proposal` has always constructed
+  `AIProposalStagingModel` with `provider_name`/`prompt_version`/
+  `submitted_by` fields that the original `V1.5__create_quality_tables.sql`
+  table never had — every real INSERT has always raised a SQLAlchemy
+  `TypeError`, silently swallowed by the `allow_seed_fallback` exception
+  handler. **No AI proposal has ever actually been persisted to a real
+  database.** This was invisible before this session because
+  `list_ai_proposals` (fixed earlier this session) used to fabricate a
+  fake pending proposal regardless of what was actually in the table,
+  masking the absence of real writes entirely. Fixed with a new,
+  additive migration (`V3.5__add_ai_proposal_provenance_columns.sql`,
+  three nullable columns, no data loss) and a matching ORM model update;
+  applied to the local dev DB, catalog data confirmed untouched (89,091
+  titles).
+- **Full regression**: ran the full suite (bulk-ingestion stage tests
+  excluded per the existing convention) after all of the above — see
+  **515 passed, 6 deselected, 0 failed** against live Postgres — see
+  `PLAN.md` Part 4 for the full W2-complete release-gate checklist.
+
 ## Verified working, no changes needed
 
 - [x] Movies/Series search (tested "FIFA" → correct 7-result match)
@@ -699,11 +851,8 @@ started on this doc's own still-open "architectural gap" item above.
   router's two simulation branches were dead code once that changed, so
   removed — the underlying repository functions already had an honest
   db=None path (zero matches, zero applied) and now run unconditionally.
-  The broader "~60 call sites conflate not-configured with transiently
-  unavailable" pattern still exists as a lower-severity residual risk (most
-  sampled sites return honest empty/error state already, gated correctly by
-  `allow_seed_fallback`) — not re-audited site-by-site this session, only
-  the `get_db()` root cause and its one confirmed-dangerous consumer.
+  **The broader ~60-call-site pattern was fully audited and closed in
+  session 6 (2026-08-29)** — see the dedicated write-up below.
 - [ ] **Minor: "Add to Watchlist"/"Add to Library" buttons don't reflect
   already-added state after a page reload.** `isSavedToWatchlist` and
   `isAddedToLibrary` on the movie/series detail pages are plain client-side
@@ -717,33 +866,41 @@ started on this doc's own still-open "architectural gap" item above.
   small new one, or a client-side check against the already-fetched
   watchlist/library lists). Not fixed this session — cosmetic, not data
   loss or fabrication.
-- [ ] **Duplicate catalog rows for at least some well-known titles** —
-  found session 5 (2026-08-29) while fixing stale test fixtures: the real
-  catalog has more than one row for "Parasite" (2019) and likely others —
-  an older placeholder-style seeded row (`title_id` like
-  `10000000-0000-...`) alongside a separate row from the later bulk IMDb
-  ingestion (`title_id` like `01a010cc-...`). Different code paths pick
-  different rows depending on match strategy (exact `ilike` vs. a plain
-  search), which can make two features disagree about which UUID "Parasite"
-  is. Not investigated further or deduplicated this session — worth a
-  dedicated pass to find the full extent (a `GROUP BY canonical_title,
-  production_year HAVING count(*) > 1` query would surface them) and decide
-  a merge/retirement strategy consistent with ADR-001's identity rules.
-- [ ] **`services/api/routers/automation.py`'s `_resolve_title_id`
-  unconditionally falls through to hardcoded demo titles** (`Parasite`,
-  `Inception`, etc. via `SEED_FALLBACK_TITLES`/`SEED_EXTERNAL_MAPPINGS`), or
-  even a fully fabricated deterministic UUID derived from the title string,
-  whenever a real DB lookup finds no match — **regardless of
-  `config.allow_seed_fallback`**, unlike every other fallback path audited
-  this session. Found while fixing session 5's test fixtures (grepped
-  `automation.py` after noticing `test_v2_automations.py` imports
-  `SEED_FRIENDSHIPS`/`SEED_RECOMMENDATIONS`/`SEED_WATCH_EVENTS` directly).
-  Not fixed: a real media-server webhook for a title genuinely absent from
-  the catalog would currently get silently mapped to one of a handful of
-  hardcoded demo films in *any* environment, including production — the
-  same class of bug as the `get_db()`/import-preview one fixed this session,
-  just in a different router. Needs the same treatment: gate behind
-  `allow_seed_fallback`, return a real "title not found" response otherwise.
+- [x] ~~Duplicate catalog rows for at least some well-known titles~~ —
+  **investigated and closed, session 6 (2026-08-29): no true duplicates
+  exist.** The original "Parasite (2019) has two rows" claim was a false
+  alarm caused by a bug in the *test helper* that raised it (querying
+  `/v1/titles?q=...`, a parameter that endpoint silently ignores — the
+  "second Parasite" was actually an arbitrary same-year title). A broader
+  sweep found 158 `(canonical_title, production_year)` groups with more
+  than one row (e.g. "Beauty and the Beast" 1987 has both a movie and an
+  unrelated TV special) — every sampled group differs by `content_type_id`
+  and/or has a distinct real IMDb external ID; zero external IDs map to
+  more than one `title_id` anywhere in the catalog. These are legitimately
+  distinct real-world works sharing a title+year, not ingestion
+  duplicates. The database already enforces the correct identity model via
+  two existing constraints (`V2.2__add_catalog_uniqueness_constraints.sql`):
+  `uq_canonical_title_year_type` and `unique_provider_title_mapping` — added
+  `tests/test_catalog_identity_constraints.py` to verify both are actually
+  live and enforced. No catalog changes were made or needed.
+- [x] ~~`services/api/routers/automation.py`'s `_resolve_title_id`
+  unconditionally falls through to hardcoded demo titles~~ — **fixed,
+  session 6 (2026-08-29).** Real-DB-mode lookups now return a genuine
+  not-found instead of falling through to `SEED_FALLBACK_TITLES`/
+  `SEED_EXTERNAL_MAPPINGS`; the demo/seed chain only runs when `db is None`
+  (which, per `database.py`'s `get_db()`, only happens when
+  `allow_seed_fallback` is explicitly true). `ingest_media_server_webhook`
+  now returns a real 404 for an unresolvable title (422 for a payload with
+  no title metadata at all) instead of deriving a fabricated UUID.
+  `get_smart_watchlist` had the same class of bug in a more severe form —
+  it mixed the entire hardcoded demo catalog, demo watch events, and demo
+  recommendations into *every* real user's response *unconditionally*,
+  regardless of DB health (not even gated on `db is None`) — also fixed,
+  now only populates from `SEED_FALLBACK_TITLES`/`SEED_WATCH_EVENTS`/
+  `SEED_RECOMMENDATIONS` in the `db is None` branch. Regression coverage
+  added in `test_v2_automations.py` (unresolvable-title → 404,
+  no-metadata → 422, no demo IDs ever leak into a real-DB-mode
+  smart-watchlist response).
 
 ## Test residue in the dev account
 
