@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 export interface AuthUser {
   sub: string;
@@ -30,6 +31,8 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const prevUserSubRef = useRef<string | null>(null);
 
   const fetchCurrentUser = useCallback(async () => {
     try {
@@ -38,11 +41,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         if (data.authenticated && data.user) {
-          setUser(data.user);
+          const newUser = data.user;
+          if (prevUserSubRef.current && prevUserSubRef.current !== newUser.sub) {
+            queryClient.clear();
+          }
+          prevUserSubRef.current = newUser.sub;
+          setUser(newUser);
         } else {
+          if (prevUserSubRef.current) {
+            queryClient.clear();
+          }
+          prevUserSubRef.current = null;
           setUser(null);
         }
       } else {
+        if (prevUserSubRef.current) {
+          queryClient.clear();
+        }
+        prevUserSubRef.current = null;
         setUser(null);
       }
     } catch {
@@ -50,18 +66,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     fetchCurrentUser();
   }, [fetchCurrentUser]);
 
   const login = (returnTo?: string) => {
+    queryClient.clear();
     const target = returnTo ? `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}` : "/api/auth/login";
     window.location.href = target;
   };
 
   const logout = () => {
+    queryClient.clear();
     window.location.href = "/api/auth/logout";
   };
 

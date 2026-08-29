@@ -101,7 +101,7 @@ export default function CollectionDetailPage() {
             </div>
             <h3 className="text-base font-bold text-zinc-100 mb-1">No Titles Yet</h3>
             <p className="text-xs sm:text-sm text-zinc-400 max-w-md mb-6 leading-relaxed">
-              Add titles to this collection from any movie or series page using "Add to Collection."
+              Add titles to this collection from any movie or series page using &ldquo;Add to Collection.&rdquo;
             </p>
             <Link
               href="/movies"

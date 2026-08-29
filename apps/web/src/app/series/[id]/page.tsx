@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -585,9 +586,9 @@ export default function SeriesDetailPage() {
             {myCollections.length === 0 ? (
               <p className="text-xs text-zinc-500 text-center py-6">
                 You don&apos;t have any collections yet.{" "}
-                <a href="/collections" className="text-cyan-400 hover:underline">
+                <Link href="/collections" className="text-cyan-400 hover:underline">
                   Create one first
-                </a>
+                </Link>
                 .
               </p>
             ) : (

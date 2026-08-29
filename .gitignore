@@ -82,3 +82,7 @@ hive/
 roster.json
 roster-backups/
 .claude/worktrees/
+
+# E2E Test Outputs
+apps/web/e2e/screenshots/
+apps/web/e2e/results_*.json
