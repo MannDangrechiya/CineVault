@@ -27,6 +27,8 @@ import {
   Vote,
   Search,
   Plus,
+  Eye,
+  Star,
 } from "lucide-react";
 import {
   getRecommendations,
@@ -38,6 +40,7 @@ import {
   getReferralStats,
   createPickRoom,
   type RecommendationItem,
+  type RecommendationStatus,
   type CompatibilityResponse,
   type LeaderboardResponse,
 } from "@/lib/api/personal";
@@ -532,8 +535,16 @@ export default function SocialRecommendationsPage() {
   }, [tasteMatches]);
 
   const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: "ACCEPTED" | "REJECTED"; titleId: string }) =>
-      updateRecommendationStatus(id, status),
+    mutationFn: ({
+      id,
+      status,
+      rating,
+    }: {
+      id: string;
+      status: RecommendationStatus;
+      titleId: string;
+      rating?: number;
+    }) => updateRecommendationStatus(id, status, rating),
     onSuccess: async (_result, variables) => {
       if (variables.status === "ACCEPTED") {
         try {
@@ -547,8 +558,8 @@ export default function SocialRecommendationsPage() {
     },
   });
 
-  const handleAction = (rec: RecommendationItem, newStatus: "ACCEPTED" | "REJECTED") => {
-    updateStatusMutation.mutate({ id: rec.recommendation_id, status: newStatus, titleId: rec.title_id });
+  const handleAction = (rec: RecommendationItem, newStatus: RecommendationStatus, rating?: number) => {
+    updateStatusMutation.mutate({ id: rec.recommendation_id, status: newStatus, titleId: rec.title_id, rating });
   };
 
   const isLoading = isLoadingReceived || isLoadingSent;
@@ -997,17 +1008,67 @@ export default function SocialRecommendationsPage() {
                     </div>
                   </div>
 
-                  {/* ACTION BUTTONS (ACCEPT / DISMISS) -- inbox only, sent items are read-only */}
+                  {/* ACTION BUTTONS -- state machine: SENT -> ACCEPTED -> WATCHED -> RATED.
+                      Only the recipient (inbox tab) drives transitions; sent-tab items are read-only. */}
                   <div className="flex items-center justify-between pt-1">
-                    {isAccepted ? (
-                      <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
-                        <Check className="w-4 h-4" />
-                        <span>{isSent ? "Accepted" : "Accepted & Added to Watchlist"}</span>
-                      </div>
-                    ) : isRejected ? (
+                    {rec.status === "REJECTED" ? (
                       <div className="flex items-center gap-2 text-xs text-zinc-500">
                         <X className="w-4 h-4" />
                         <span>Recommendation Dismissed</span>
+                      </div>
+                    ) : rec.status === "RATED" ? (
+                      <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+                        <Star className="w-4 h-4 fill-amber-400" />
+                        <span>
+                          {isSent
+                            ? `Rated ${rec.recipient_actual_rating ?? "?"}/10 by ${otherPartyName || "your friend"}`
+                            : `You Rated It ${rec.recipient_actual_rating ?? "?"}/10`}
+                        </span>
+                      </div>
+                    ) : rec.status === "WATCHED" && isSent ? (
+                      <div className="flex items-center gap-2 text-xs text-zinc-400">
+                        <Eye className="w-4 h-4" />
+                        <span>{otherPartyName || "Your friend"} watched it</span>
+                      </div>
+                    ) : rec.status === "WATCHED" ? (
+                      <div className="w-full space-y-2">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
+                          <Eye className="w-4 h-4" />
+                          <span>Watched — Rate It</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {Array.from({ length: 10 }, (_, i) => i + 1).map((value) => (
+                            <button
+                              key={value}
+                              onClick={() => handleAction(rec, "RATED", value)}
+                              disabled={updateStatusMutation.isPending}
+                              title={`Rate ${value}/10`}
+                              className="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold text-zinc-400 bg-zinc-900/80 hover:bg-amber-500/20 hover:text-amber-300 border border-zinc-800 hover:border-amber-500/40 transition-all cursor-pointer"
+                            >
+                              {value}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : rec.status === "ACCEPTED" && isSent ? (
+                      <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
+                        <Check className="w-4 h-4" />
+                        <span>Accepted</span>
+                      </div>
+                    ) : rec.status === "ACCEPTED" ? (
+                      <div className="w-full flex items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
+                          <Check className="w-4 h-4" />
+                          <span>Accepted & Watchlisted</span>
+                        </div>
+                        <button
+                          onClick={() => handleAction(rec, "WATCHED")}
+                          disabled={updateStatusMutation.isPending}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 border border-violet-500 shadow-md shadow-violet-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Mark as Watched</span>
+                        </button>
                       </div>
                     ) : isSent ? (
                       <div className="flex items-center gap-2 text-xs text-zinc-500">

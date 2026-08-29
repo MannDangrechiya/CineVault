@@ -66,6 +66,7 @@ export interface RecommendationItem {
   poster_url: string | null;
   production_year: number | null;
   status: "SENT" | "ACCEPTED" | "REJECTED" | "WATCHED" | "RATED";
+  recipient_actual_rating: number | null;
   context_note: string | null;
   sent_at: string;
   updated_at: string;
@@ -144,13 +145,21 @@ export async function getRecommendations(
   return await apiFetch<RecommendationItem[]>(`/social/recommendations${qs}`);
 }
 
+export type RecommendationStatus = "ACCEPTED" | "REJECTED" | "WATCHED" | "RATED";
+
 export async function updateRecommendationStatus(
   id: string,
-  status: "ACCEPTED" | "REJECTED"
+  status: RecommendationStatus,
+  recipientActualRating?: number
 ): Promise<RecommendationItem> {
   return await apiFetch<RecommendationItem>(`/social/recommendations/${encodeURIComponent(id)}`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({
+      status,
+      // Backend requires this when (and only validates it for) status=RATED;
+      // omit it otherwise so pydantic doesn't see a stray field.
+      ...(recipientActualRating !== undefined && { recipient_actual_rating: recipientActualRating }),
+    }),
   });
 }
 
