@@ -36,6 +36,9 @@ class AIProposalStagingModel(Base):
     confidence_score: Mapped[float] = mapped_column(Numeric(4, 3), nullable=False)
     evidence_payload: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False)
     review_status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
+    provider_name: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    prompt_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    submitted_by: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow, nullable=False)
 
 class MetadataConflictModel(Base):
