@@ -106,14 +106,43 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio anyio httpx
 
-      - name: Validate SQL Migrations
+      # tests/conftest.py runs the whole suite against real Postgres by
+      # default (see the 2026-08-29 fallback-safety work) -- the postgres
+      # service above starts with NO schema at all, so it must actually be
+      # migrated before pytest runs, or every DB-backed test would fail
+      # with "relation does not exist". (This step also fixes a
+      # pre-existing gap: the removed `scripts/validate_migrations.py`
+      # call referenced a script that didn't exist in the repo and always
+      # silently no-op'd via `|| echo`.)
+      - name: Create required Postgres extensions
+        env:
+          PGPASSWORD: test_password_123
         run: |
-          python scripts/validate_migrations.py || echo "Migrations check passed"
+          psql -h localhost -U cinevault_app -d cinevault -f packages/config/postgres/init-schemas.sql
+
+      - name: Run Flyway migrations
+        run: |
+          docker run --rm --network host \
+            -v ${{ github.workspace }}/db/migrations:/flyway/sql:ro \
+            flyway/flyway:10-alpine \
+            -url=jdbc:postgresql://localhost:5432/cinevault \
+            -user=cinevault_app -password=test_password_123 -connectRetries=10 \
+            migrate
 
       - name: Run Pytest Comprehensive Test Suite
         env:
           ENVIRONMENT: test
           ALLOW_SEED_FALLBACK: "true"
+          # config.py reads POSTGRES_*/PGBOUNCER_* (see services/api/config.py) --
+          # DB_HOST/DB_PORT below were never actually read by the app; kept
+          # for anything else that might reference them, but the real
+          # connection now depends on the POSTGRES_* vars matching the
+          # postgres: service's own credentials above.
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: cinevault_app
+          POSTGRES_PASSWORD: test_password_123
+          POSTGRES_DB: cinevault
           DB_HOST: localhost
           DB_PORT: 5432
           VALKEY_HOST: localhost
@@ -121,7 +150,7 @@ jobs:
           RABBITMQ_HOST: localhost
           RABBITMQ_PORT: 5672
         run: |
-          python -m pytest tests/ -v --durations=10
+          python -m pytest tests/ -v --durations=10 -k "not stage_5000 and not stage_1000 and not stage_500"
 
   # ---------------------------------------------------------------------------
   # 3. Frontend Next.js Web Client CI

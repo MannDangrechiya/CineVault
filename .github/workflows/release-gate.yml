@@ -46,7 +46,17 @@ jobs:
       - name: Enforce Release Gate Safety Check
         run: |
           echo "Verifying all release criteria and quality gates..."
-          python -m pytest tests/test_phase28_security_hardening.py tests/test_phase30_backup_disaster_recovery.py -v
+          # Found 2026-08-29: this previously referenced
+          # tests/test_phase28_security_hardening.py and
+          # tests/test_phase30_backup_disaster_recovery.py, neither of
+          # which exists in the repo -- pytest would fail immediately with
+          # "file or directory not found", meaning this release gate has
+          # never actually been able to run. test_security_hardening.py is
+          # the real equivalent for phase 28. No test file exists anywhere
+          # for phase 30 (backup/disaster-recovery) -- that's a separate,
+          # larger gap (no backup/DR test coverage at all) flagged in
+          # WEB_FEATURE_AUDIT.md for a dedicated session; not fixed here.
+          python -m pytest tests/test_security_hardening.py -v
 
       - name: Production Deployment Gate Confirmation
         if: ${{ inputs.target_environment == 'production' }}
