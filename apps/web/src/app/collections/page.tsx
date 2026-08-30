@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -19,6 +19,7 @@ import {
   deleteCollection,
 } from "@/lib/api/collections";
 import { EmptyState, ErrorState } from "@/components/ui/States";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 function CollectionsSkeleton() {
   return (
@@ -54,6 +55,9 @@ export default function CollectionsPage() {
   const [tagsInput, setTagsInput] = useState("");
   const [bannerUrl, setBannerUrl] = useState("");
   const [isPrivate, setIsPrivate] = useState(true);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(isCreateOpen, () => setIsCreateOpen(false), modalRef);
 
   const queryClient = useQueryClient();
 
@@ -191,9 +195,10 @@ export default function CollectionsPage() {
                             <button
                               onClick={() => deleteMutation.mutate(col.id)}
                               title="Delete Collection"
+                              aria-label="Delete Collection"
                               className="p-1 rounded-full bg-zinc-950/80 backdrop-blur-md text-zinc-400 hover:text-red-400 border border-zinc-800 hover:border-red-500/40 transition-colors cursor-pointer"
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-3 h-3" aria-hidden="true" />
                             </button>
                           )}
                         </div>
@@ -234,7 +239,7 @@ export default function CollectionsPage() {
                       className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold text-violet-300 bg-violet-600/10 hover:bg-violet-600/20 border border-violet-500/30 transition-all flex items-center justify-center gap-2"
                     >
                       <span>Explore Collection</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
+                      <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
                     </Link>
                   </div>
                 </div>
@@ -246,15 +251,16 @@ export default function CollectionsPage() {
 
       {/* Create Collection Modal */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-900 border border-zinc-800 shadow-2xl shadow-violet-950/20 space-y-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="create-collection-title">
+          <div ref={modalRef} className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-900 border border-zinc-800 shadow-2xl shadow-violet-950/20 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-violet-600/15 border border-violet-500/30 text-violet-400">
-                  <FolderPlus className="w-4 h-4" />
+                  <FolderPlus className="w-4 h-4" aria-hidden="true" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-zinc-100">
+                  <h3 id="create-collection-title" className="text-sm font-bold text-zinc-100">
                     Create New Collection
                   </h3>
                   <p className="text-[11px] text-zinc-400">
@@ -265,9 +271,10 @@ export default function CollectionsPage() {
 
               <button
                 onClick={() => setIsCreateOpen(false)}
+                aria-label="Close modal"
                 className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 

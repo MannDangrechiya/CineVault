@@ -1083,7 +1083,77 @@ transparent, recoverable, and free-first.
 injection security, conflict strategies, user isolation, and web UX workflows are
 verified and production-ready.
 
-### W9–W13
-Not started. See the master task for full phase breakdown (search quality, UX/accessibility, security, full QA, production readiness).
+### W11 — Production Security & Disaster Recovery Hardening `[x]` COMPLETE (2026-08-30)
+
+**Goal:** Zero-trust authentication, robust RBAC boundaries, strict IDOR protection, CSRF prevention, SQLi & formula injection defense, security headers, and real PostgreSQL backup & disaster recovery verification.
+
+#### Real Backup & Disaster Recovery Verification (Phase 30)
+- [x] Executed real PostgreSQL custom binary dump (`pg_dump -F c`) against live `cinevault-local-postgres`.
+- [x] Dropped source database and simulated full loss/disaster recovery.
+- [x] Restored to clean target database using binary `pg_restore`.
+- [x] Verified full relational integrity across all 6 logical schemas (`canonical`, `personal`, `social`, `quality`, `ingestion`, `audit`).
+- [x] Verified 384-dimensional `pgvector` embeddings (`taste_vector <=> target_vector` cosine distance calculation) in restored database.
+- [x] Verified active foreign key constraints in restored database.
+- [x] Automated test: `tests/test_phase30_backup_disaster_recovery.py` (1 PASSED in 11.43s).
+
+#### Production Security & Zero-Trust Hardening
+- [x] Zero-Trust Authentication: all personal, admin, control-room, and automation endpoints require valid tokens; unauthenticated requests rejected with 401.
+- [x] JWT Hardening: rejects malformed tokens, expired tokens, `alg=none`, and mock dev signatures in production mode.
+- [x] RBAC Boundaries: `/internal/v1/control-room/*` gated by `require_curator` (403 for standard users); `/admin/*` gated by `require_system_admin` (403 for standard and curator users).
+- [x] IDOR Defense: personal data access exclusively bound to token `sub` claims; automations scoped to caller.
+- [x] Next.js BFF Proxy CSRF Defense: validates `Origin`/`Referer` against `Host` on state-changing methods (`POST`, `PUT`, `PATCH`, `DELETE`).
+- [x] Security Headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security`, `Content-Security-Policy: default-src 'self'`.
+- [x] Defense-in-depth: SQL injection resilience across search/catalog endpoints, Formula Injection sanitizer for spreadsheet exports, and CAT-6 AI proposal staging with HMAC SHA-256 integrity logs.
+- [x] Automated test: `tests/test_w11_production_security.py` (14 PASSED in 31.05s).
+- [x] Playwright Web Security: `apps/web/tests/security.spec.ts` (Proxy CSRF & Header verification).
+- [x] TypeScript & Build: `npx tsc --noEmit` (0 errors), `npm run lint` (0 errors), `npm run build` (25/25 routes compiled).
+
+**W11 status: COMPLETE.** All 17 security and disaster recovery quality gates are verified against live PostgreSQL and Next.js frontend with 100% green test passes and zero mock shortcuts.
+
+### W12 — Web Product Completeness & Real-World Launch Readiness `[x]` COMPLETE (2026-08-30)
+
+**Goal:** Make the existing CineVault Web application complete, coherent, polished, genuinely usable, and ready for a real user to use from beginning to end. Zero mock data, real PostgreSQL catalog and real user data, honest empty states.
+
+#### Catalog & Search Resolution
+- [x] Verified real PostgreSQL catalog (~89,000 titles) serves all catalog routes (`/`, `/movies`, `/series`).
+- [x] Expanded Display ID resolution to support all canonical ID formats (`imdb-`, `tmdb-`, `tt`, `mov-`, `ani-`, `tv-`, `kobis-`, `tvdb-`).
+- [x] Movie and Series detail pages (`/movies/[id]`, `/series/[id]`) load real provenance data with no fabricated content.
+
+#### Personal Vault Complete Lifecycle
+- [x] Full lifecycle verified: Library add/remove, Watchlist toggle, Watch Events with `watched_at`, Ratings, Private Notes, Reviews.
+- [x] All personal vault pages load correctly: `/dashboard`, `/library`, `/watchlist`, `/history`, `/collections`, `/collections/[id]`.
+- [x] Collections CRUD with item curation verified end-to-end.
+- [x] Empty states show honest messages when no user data exists.
+
+#### Social & Multiplayer
+- [x] Social Hub (`/social`), Friends (`/friends`), Watch Clubs (`/clubs`, `/clubs/[slug]`) all verified.
+- [x] Pick Room live voting and host-only close with deterministic winner resolution.
+- [x] Peer recommendations with friendship prerequisite enforcement.
+
+#### Import / Export & Data Portability
+- [x] Import Wizard (`/import`) and Settings Export Hub (`/settings`) verified.
+- [x] Round-trip data portability across 4 formats (JSON, CSV ZIP, Excel, Markdown).
+
+#### Multi-Account Data Isolation
+- [x] Strict data isolation verified: separate accounts cannot see each other's personal data.
+
+#### Responsive & Accessibility
+- [x] Mobile bottom navigation bar renders at 375px viewport.
+- [x] Mobile slide-out drawer menu opens and dismisses via Escape key.
+- [x] Launch-ready dashboard screenshot captured.
+
+#### Verification Suites
+- [x] Backend: `tests/test_w12_web_product_completeness.py` (7 PASSED in 17.64s).
+- [x] E2E Browser: `apps/web/e2e/test_w12_web_product_completeness.js` (20 PASSED / 0 FAILED across 5 journeys).
+- [x] Full Backend Regression (W3–W12, 85 tests): 85 PASSED / 0 FAILED in 140.24s.
+- [x] TypeScript: `npx tsc --noEmit` (0 errors).
+- [x] ESLint: `npm run lint` (0 errors / 0 warnings).
+- [x] Production Build: `npm run build` (25/25 routes compiled successfully).
+
+**W12 status: COMPLETE.** All web product completeness and launch readiness quality gates are verified against live PostgreSQL with 100% green passes and zero mock data.
+
+### W13
+Not started. See the master task for full phase breakdown.
+
 
 

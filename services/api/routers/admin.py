@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from ..auth.dependencies import get_optional_claims
+from ..auth.dependencies import require_system_admin
 from ..auth.jwt_validator import SecurityTokenClaims
 from ..config import config
 from ..ingestion.tmdb_worker import sync_missing_posters
@@ -75,7 +75,7 @@ async def trigger_metadata_sync(
     batch_size: int = Query(500, ge=1, le=5000, description="Batch size per query"),
     max_batches: Optional[int] = Query(None, ge=1, description="Optional max batch count"),
     api_key: Optional[str] = Query(None, description="Optional TMDB API key override"),
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_system_admin),
 ) -> SyncMetadataResponse:
     """
     Kicks off asynchronous background synchronization of posters, backdrops, and synopses from TMDB.
@@ -186,7 +186,7 @@ async def trigger_bulk_catalog_sync(
     min_votes: int = Query(BULK_DEFAULT_MIN_VOTES, ge=0, description="Minimum IMDb vote threshold for inclusion"),
     batch_size: int = Query(BULK_DEFAULT_BATCH_SIZE, ge=1, le=50000, description="Database copy batch size"),
     skip_download: bool = Query(False, description="Reuse previously downloaded dataset files instead of re-fetching"),
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_system_admin),
 ) -> BulkCatalogSyncResponse:
     """
     Kicks off asynchronous background bulk ingestion of the IMDb title.basics/title.ratings

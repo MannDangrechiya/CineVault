@@ -4,6 +4,57 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc12] - 2026-08-30 (W12 — Web Product Completeness & Real-World Launch Readiness)
+
+### Added
+- **Web Product Completeness Backend Integration Suite (`tests/test_w12_web_product_completeness.py`)**:
+  - Catalog search & Display ID resolution across all canonical ID formats (`imdb-`, `tmdb-`, `tt`, `mov-`, `ani-`, `tv-`, `kobis-`, `tvdb-`).
+  - Movie and Series detail provenance verification against real PostgreSQL catalog (~89,000 titles).
+  - Complete personal vault lifecycle: Library, Watchlist, Watch Events, Ratings, Private Notes, Reviews.
+  - Collections CRUD with item curation and lifecycle management.
+  - Social multiplayer: Friendships, Peer Recommendations, Pick Room live voting and host-only close.
+  - Import/Export data portability across 4 formats (JSON, CSV ZIP, Excel, Markdown).
+  - Multi-account strict data isolation verification.
+- **E2E Browser Journey Suite (`apps/web/e2e/test_w12_web_product_completeness.js`)**:
+  - Journey 1: Discovery to Personal Vault (authentication, catalog browse, search, movie detail, watchlist/library toggles, all personal vault pages).
+  - Journey 2: Series Episodic Tracking (series catalog, series detail navigation).
+  - Journey 3: Social & Multiplayer (Social Hub, Friends, Watch Clubs).
+  - Journey 4: Import & Export Hub (Import Wizard, Settings Export Hub).
+  - Journey 5: Responsive & Accessibility (mobile bottom nav, slide-out drawer, Escape key dismissal, launch-ready screenshot).
+
+### Changed
+- **Search Repository (`services/api/repositories/search.py`)**: Expanded exact Display ID resolution to support all canonical ID prefix formats for comprehensive catalog lookups.
+- **History Page (`apps/web/src/app/history/page.tsx`)**: Replaced `window.location.href` with `router.push('/movies')` for SPA-consistent empty state navigation.
+
+## [1.0.0-rc11] - 2026-08-30 (W11 — Production Security & Disaster Recovery Hardening)
+
+### Added
+- **Real PostgreSQL Backup & Disaster Recovery Verification (`tests/test_phase30_backup_disaster_recovery.py`)**:
+  - Live PostgreSQL backup execution using `pg_dump -F c` inside container.
+  - Complete drop/loss simulation of source database.
+  - Clean recovery database provisioning and binary `pg_restore` execution.
+  - End-to-end integrity verification across all 6 logical schemas (`canonical`, `personal`, `social`, `quality`, `ingestion`, `audit`).
+  - Restored data verification for multi-table relationships, 384-dimensional `pgvector` embeddings (`taste_vector <=> target_vector` cosine distance), and foreign key constraint enforcement.
+- **Production Security Hardening & Zero-Trust Authentication (`tests/test_w11_production_security.py`)**:
+  - Unauthenticated request rejection (401 Unauthorized) across all personal, administrative, and automation endpoints.
+  - JWT signature verification and strict rejection of `alg=none` and dev mock tokens in staging/production mode.
+  - RBAC authorization boundaries: Curator access on `/internal/v1/control-room/*` (403 for standard users); System Admin access on `/admin/*` (403 for standard and curator users).
+  - IDOR immunity: personal data access exclusively bound to token `sub` claims.
+  - Next.js BFF Proxy CSRF Protection: `Origin`/`Referer` header validation against `Host` on state-changing methods (`POST`, `PUT`, `PATCH`, `DELETE`).
+  - Standard production security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security`, `Content-Security-Policy: default-src 'self'`).
+  - SQL Injection and Formula Injection defense across search and export engines.
+- Canonical Documentation:
+  - `docs/security.md` (Zero-trust architecture, threat modeling, and defensive controls).
+  - `docs/backup-recovery.md` (Disaster recovery runbook, automated backup validation, and RPO/RTO invariants).
+
+## [1.0.0-rc10] - 2026-08-30 (W10 — Web UX, Accessibility & Responsive Reliability)
+
+### Added
+- Integrated Playwright and axe-core to ensure responsive E2E test coverage and accessibility audits (`tests/a11y.spec.ts`).
+- Semantic HTML and Accessible Labels: Migrated non-semantic `<div onClick={...}>` patterns (like the upload dropzone in `/import`) to native `<button>` tags for improved screen reader experiences.
+- Universal Modals Accessibility: Attached custom `useFocusTrap` hook to all modals (dashboard, collections, movies, series, clubs, social, and import pages) preventing outside clicks or keyboard tabs while open. Added required `role="dialog"`, `aria-modal="true"`, and `aria-labelledby` semantics.
+- Accessible Mobile Drawer: Enforced `role="dialog"` and `aria-hidden` attributes inside the mobile sidebar for robust native-like drawer behavior on touch and screen readers.
+
 ## [1.0.0-rc7] - 2026-08-30 (W8 — Import / Export & Personal Data Portability)
 
 ### Added

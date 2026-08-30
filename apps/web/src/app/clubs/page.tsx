@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { LoadingState } from "@/components/ui/States";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
   Users,
   Trophy,
@@ -45,6 +46,11 @@ export default function WatchClubsPage() {
   // Modal States
   const [isCreateClubOpen, setIsCreateClubOpen] = useState(false);
   const [isCreateChallengeOpen, setIsCreateChallengeOpen] = useState(false);
+  const createClubModalRef = React.useRef<HTMLDivElement>(null);
+  const createChallengeModalRef = React.useRef<HTMLDivElement>(null);
+
+  useFocusTrap(isCreateClubOpen, () => setIsCreateClubOpen(false), createClubModalRef);
+  useFocusTrap(isCreateChallengeOpen, () => setIsCreateChallengeOpen(false), createChallengeModalRef);
 
   // Form States for Create Club
   const [clubName, setClubName] = useState("");
@@ -658,18 +664,19 @@ export default function WatchClubsPage() {
 
         {/* ── MODAL: CREATE WATCH CLUB ────────────────────────────────────── */}
         {isCreateClubOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-950 border border-violet-500/30 shadow-2xl space-y-5">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" role="dialog" aria-modal="true" aria-labelledby="create-club-modal-title">
+            <div ref={createClubModalRef} className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-950 border border-violet-500/30 shadow-2xl space-y-5">
               <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
                 <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-violet-400" />
-                  <h3 className="text-sm font-bold text-zinc-100">Create Watch Club</h3>
+                  <Users className="w-4 h-4 text-violet-400" aria-hidden="true" />
+                  <h3 id="create-club-modal-title" className="text-sm font-bold text-zinc-100">Create Watch Club</h3>
                 </div>
                 <button
                   onClick={() => setIsCreateClubOpen(false)}
+                  aria-label="Close modal"
                   className="p-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-4 h-4" aria-hidden="true" />
                 </button>
               </div>
 
@@ -731,18 +738,19 @@ export default function WatchClubsPage() {
 
         {/* ── MODAL: CREATE CHALLENGE ─────────────────────────────────────── */}
         {isCreateChallengeOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-950 border border-amber-500/30 shadow-2xl space-y-5">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" role="dialog" aria-modal="true" aria-labelledby="create-challenge-modal-title">
+            <div ref={createChallengeModalRef} className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-950 border border-amber-500/30 shadow-2xl space-y-5">
               <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
                 <div className="flex items-center gap-2">
-                  <Trophy className="w-4 h-4 text-amber-400" />
-                  <h3 className="text-sm font-bold text-zinc-100">Launch Viewing Challenge</h3>
+                  <Trophy className="w-4 h-4 text-amber-400" aria-hidden="true" />
+                  <h3 id="create-challenge-modal-title" className="text-sm font-bold text-zinc-100">Launch Viewing Challenge</h3>
                 </div>
                 <button
                   onClick={() => setIsCreateChallengeOpen(false)}
+                  aria-label="Close modal"
                   className="p-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-4 h-4" aria-hidden="true" />
                 </button>
               </div>
 

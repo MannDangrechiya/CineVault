@@ -22,6 +22,7 @@ async def search_catalog(
     country: Optional[str] = Query(None, description="Country code filter (e.g. KR, US, JP)"),
     year: Optional[int] = Query(None, description="Release year filter"),
     limit: int = Query(25, ge=1, le=100),
+    page: int = Query(1, ge=1, description="Page number for pagination"),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Executes unified search query across titles, aliases, people, and franchises."""
@@ -34,5 +35,6 @@ async def search_catalog(
         theme=theme,
         country=country,
         year=year,
-        limit=limit
+        limit=limit,
+        page=page
     )

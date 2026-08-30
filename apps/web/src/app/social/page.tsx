@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef } from "react";
 import Link from "next/link";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -67,28 +68,32 @@ function CompatibilityModal({
   friend: FriendshipItem;
   onClose: () => void;
 }) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(true, onClose, modalRef);
+
   const { data: compat, isLoading } = useQuery<CompatibilityResponse>({
     queryKey: ["compatibility", friend.friend_id],
     queryFn: () => getFriendCompatibility(friend.friend_id),
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg rounded-2xl bg-zinc-950 border border-zinc-800 p-6 shadow-2xl space-y-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" role="dialog" aria-modal="true" aria-labelledby="compat-modal-title">
+      <div ref={modalRef} className="relative w-full max-w-lg rounded-2xl bg-zinc-950 border border-zinc-800 p-6 shadow-2xl space-y-6">
         <button
           onClick={onClose}
+          aria-label="Close modal"
           className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-100 p-1.5 rounded-lg hover:bg-zinc-900 transition-colors"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5" aria-hidden="true" />
         </button>
 
         {/* Modal Header */}
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white shadow-lg text-base font-bold">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white shadow-lg text-base font-bold" aria-hidden="true">
             {(friend.friend_name || "?").charAt(0).toUpperCase()}
           </div>
           <div>
-            <h3 className="text-base font-bold text-zinc-100">
+            <h3 id="compat-modal-title" className="text-base font-bold text-zinc-100">
               {friend.friend_name || "Community Member"}
             </h3>
             <p className="text-xs text-zinc-400">
@@ -195,6 +200,9 @@ function CompatibilityModal({
 
 function InviteFriendsModal({ onClose }: { onClose: () => void }) {
   const [copied, setCopied] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(true, onClose, modalRef);
+
   const { data: invite, isLoading } = useQuery({
     queryKey: ["myInviteToken"],
     queryFn: () => createInviteToken(),
@@ -216,21 +224,22 @@ function InviteFriendsModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg rounded-3xl bg-zinc-950 border border-violet-500/30 p-6 shadow-2xl space-y-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" role="dialog" aria-modal="true" aria-labelledby="invite-modal-title">
+      <div ref={modalRef} className="relative w-full max-w-lg rounded-3xl bg-zinc-950 border border-violet-500/30 p-6 shadow-2xl space-y-6">
         <button
           onClick={onClose}
+          aria-label="Close modal"
           className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-100 p-1.5 rounded-lg hover:bg-zinc-900 transition-colors"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5" aria-hidden="true" />
         </button>
 
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-violet-600/30">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-violet-600/30" aria-hidden="true">
             ✉️
           </div>
           <div>
-            <h3 className="text-base font-bold text-zinc-100">
+            <h3 id="invite-modal-title" className="text-base font-bold text-zinc-100">
               Invite Cinephile Friends
             </h3>
             <p className="text-xs text-zinc-400">
@@ -323,6 +332,9 @@ function CreatePickRoomModal({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<TitleSummary[]>([]);
   const debouncedQuery = useDebounce(query, 400);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(true, onClose, modalRef);
 
   const { data: searchResults, isFetching: isSearching } = useQuery({
     queryKey: ["pickRoomTitleSearch", debouncedQuery],
@@ -356,21 +368,22 @@ function CreatePickRoomModal({ onClose }: { onClose: () => void }) {
   const canSubmit = title.trim().length > 0 && selected.length >= 2 && selected.length <= 12;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg rounded-3xl bg-zinc-950 border border-violet-500/30 p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200" role="dialog" aria-modal="true" aria-labelledby="pick-room-modal-title">
+      <div ref={modalRef} className="relative w-full max-w-lg rounded-3xl bg-zinc-950 border border-violet-500/30 p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
+          aria-label="Close modal"
           className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-100 p-1.5 rounded-lg hover:bg-zinc-900 transition-colors"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5" aria-hidden="true" />
         </button>
 
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center text-white text-xl shadow-lg shadow-violet-600/30">
-            🗳️
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-violet-400">
+            <Vote className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-zinc-100">Create Pick Room</h3>
+            <h3 id="pick-room-modal-title" className="text-base font-bold text-zinc-100">Create Pick Room</h3>
             <p className="text-xs text-zinc-400">
               Nominate 2–12 titles and let your party vote on movie night
             </p>

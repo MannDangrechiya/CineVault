@@ -18,22 +18,22 @@ export const Sidebar: React.FC = () => {
       {/* Brand Header */}
       <div className="flex items-center gap-3 px-6 h-16 border-b border-zinc-900">
         <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-violet-600/20">
-          <Clapperboard className="w-4 h-4 text-white" />
+          <Clapperboard className="w-4 h-4 text-white" aria-hidden="true" />
         </div>
         <div className="flex items-center gap-2">
           <span className="font-bold text-sm tracking-wider text-zinc-50 uppercase">
             Cine<span className="text-violet-400">Vault</span>
           </span>
-          <span className="px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-violet-400 bg-violet-500/10 border border-violet-500/20 rounded-md">
+          <span className="px-1.5 py-0.5 text-[9px] font-semibold tracking-wider text-violet-400 bg-violet-500/10 border border-violet-500/20 rounded-md" aria-label="Version 2.0">
             v2.0
           </span>
         </div>
       </div>
 
       {/* Main Navigation List */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+      <nav aria-label="Sidebar Navigation" className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         <div className="px-3 mb-2">
-          <span className="text-[10px] font-medium tracking-wider text-zinc-500 uppercase">
+          <span className="text-[10px] font-medium tracking-wider text-zinc-500 uppercase" aria-hidden="true">
             Navigation
           </span>
         </div>
@@ -46,6 +46,7 @@ export const Sidebar: React.FC = () => {
             <Link
               key={item.name}
               href={item.href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
                 "flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all group relative",
                 isActive
@@ -55,6 +56,7 @@ export const Sidebar: React.FC = () => {
             >
               <div className="flex items-center gap-3">
                 <Icon
+                  aria-hidden="true"
                   className={cn(
                     "w-4 h-4 transition-colors",
                     isActive ? "text-violet-400" : "text-zinc-500 group-hover:text-zinc-300"
@@ -69,7 +71,7 @@ export const Sidebar: React.FC = () => {
                   </span>
                 )}
                 {isActive && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-sm shadow-violet-400" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-sm shadow-violet-400" aria-hidden="true" />
                 )}
               </div>
             </Link>
@@ -80,7 +82,7 @@ export const Sidebar: React.FC = () => {
       {/* Footer Status Badge */}
       <div className="p-3 m-3 rounded-xl bg-zinc-900/40 border border-zinc-900 text-xs">
         <div className="flex items-center gap-2 text-zinc-300 font-medium">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true" />
           <span className="text-[11px] text-zinc-300">CineVault Engine Active</span>
         </div>
         <p className="text-[10px] text-zinc-500 mt-1">OLED Cinematic Edition</p>

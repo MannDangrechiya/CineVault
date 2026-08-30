@@ -85,6 +85,38 @@ async function resolveAccessToken(): Promise<{
 }
 
 async function forward(request: Request, pathSegments: string[]): Promise<NextResponse> {
+  // --- CSRF Protection ---
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+    const origin = request.headers.get("origin");
+    const referer = request.headers.get("referer");
+    const host = request.headers.get("host");
+
+    let isSafe = false;
+    if (origin) {
+      try {
+        const originUrl = new URL(origin);
+        if (originUrl.host === host) isSafe = true;
+      } catch {
+        // invalid URL format -> not safe
+      }
+    } else if (referer) {
+      try {
+        const refererUrl = new URL(referer);
+        if (refererUrl.host === host) isSafe = true;
+      } catch {
+        // invalid URL format -> not safe
+      }
+    }
+
+    if (!isSafe) {
+      return NextResponse.json(
+        { error: { code: "FORBIDDEN", message: "CSRF verification failed: Invalid or missing Origin/Referer." } },
+        { status: 403 }
+      );
+    }
+  }
+  // -----------------------
+
   const backendBaseUrl = getBackendBaseUrl();
   const targetPath = pathSegments.map(encodeURIComponent).join("/");
   const search = new URL(request.url).search;

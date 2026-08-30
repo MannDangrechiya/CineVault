@@ -55,6 +55,7 @@ import {
 import { getFriendships, type FriendshipItem } from "@/lib/api/ai";
 import { getCollections, addCollectionItem } from "@/lib/api/collections";
 import { LoadingState } from "@/components/ui/States";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 export default function SeriesDetailPage() {
   const params = useParams();
@@ -69,6 +70,11 @@ export default function SeriesDetailPage() {
   const [recommendSent, setRecommendSent] = useState(false);
   const [isCollectionModalOpen, setIsCollectionModalOpen] = useState(false);
   const [addedCollectionIds, setAddedCollectionIds] = useState<string[]>([]);
+  const recommendModalRef = React.useRef<HTMLDivElement>(null);
+  const collectionModalRef = React.useRef<HTMLDivElement>(null);
+
+  useFocusTrap(isRecommendModalOpen, () => setIsRecommendModalOpen(false), recommendModalRef);
+  useFocusTrap(isCollectionModalOpen, () => setIsCollectionModalOpen(false), collectionModalRef);
 
   // Selected Season tab
   const [selectedSeasonNumber, setSelectedSeasonNumber] = useState<number>(1);
@@ -252,8 +258,6 @@ export default function SeriesDetailPage() {
     enabled: isRecommendModalOpen,
   });
   const acceptedFriends = friendships.filter((f: FriendshipItem) => f.status === "ACCEPTED");
-  const selectedFriend = acceptedFriends.find((f: FriendshipItem) => f.friend_id === friendId);
-
   const recommendMutation = useMutation({
     mutationFn: (msg: string) => sendRecommendation(titleId, friendId, msg),
     onSuccess: () => {
@@ -1308,87 +1312,89 @@ export default function SeriesDetailPage() {
 
       {/* RECOMMEND TO A FRIEND MODAL */}
       {isRecommendModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="recommend-modal-title">
           <div
             className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
             onClick={() => setIsRecommendModalOpen(false)}
+            aria-hidden="true"
           />
 
-          <div className="relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl z-10 animate-in fade-in zoom-in-95 duration-200">
+          <div ref={recommendModalRef} className="relative w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-2xl p-6 shadow-2xl z-10 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between pb-4 border-b border-zinc-900">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-cyan-600/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-                  <Share2 className="w-4 h-4" />
+                  <Share2 className="w-4 h-4" aria-hidden="true" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-zinc-100">Recommend Series</h3>
+                  <h3 id="recommend-modal-title" className="text-sm font-bold text-zinc-100">Recommend Series</h3>
                   <p className="text-[11px] text-zinc-400">Send to a friend</p>
                 </div>
               </div>
               <button
                 onClick={() => setIsRecommendModalOpen(false)}
+                aria-label="Close modal"
                 className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
             {recommendSent ? (
               <div className="py-8 text-center space-y-2">
                 <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto mb-3 animate-bounce">
-                  <Check className="w-6 h-6" />
+                  <Check className="w-6 h-6" aria-hidden="true" />
                 </div>
                 <h4 className="text-sm font-bold text-zinc-100">Recommendation Dispatched!</h4>
                 <p className="text-xs text-zinc-400">
-                  Sent <span className="text-cyan-300 font-semibold">{displayTitle}</span> to{" "}
-                  <span className="text-zinc-200 font-semibold">
-                    {selectedFriend?.friend_name || "your friend"}
-                  </span>
-                  .
+                  They&apos;ll see it in their Social inbox.
                 </p>
               </div>
             ) : (
-              <form onSubmit={handleSendRecommendation} className="space-y-4 pt-4">
-                <div>
-                  <label className="block text-xs font-medium text-zinc-300 mb-1.5">Friend</label>
+              <form onSubmit={handleSendRecommendation} className="pt-4 space-y-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="friend-select" className="text-xs font-medium text-zinc-300">
+                    Select a Friend <span className="text-rose-400">*</span>
+                  </label>
                   {acceptedFriends.length > 0 ? (
                     <select
+                      id="friend-select"
                       required
                       value={friendId}
                       onChange={(e) => setFriendId(e.target.value)}
-                      className="w-full px-3.5 py-2.5 text-xs bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100 focus:outline-none focus:border-cyan-500 transition-colors"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 focus:outline-none focus:border-cyan-500 transition-colors"
                     >
-                      <option value="" disabled>
-                        Select a friend...
-                      </option>
-                      {acceptedFriends.map((f: FriendshipItem) => (
-                        <option key={f.friend_id} value={f.friend_id}>
-                          {f.friend_name || "Unknown Member"}
-                          {f.friend_username ? ` (@${f.friend_username})` : ""}
-                        </option>
-                      ))}
+                      <option value="" disabled>Select from your circle...</option>
+                      {acceptedFriends.map(friend => {
+                        const display = friend.friend_name
+                          ? `${friend.friend_name} (@${friend.friend_username})`
+                          : friend.friend_id.slice(0, 8);
+                        return (
+                          <option key={friend.friend_id} value={friend.friend_id}>
+                            {display}
+                          </option>
+                        );
+                      })}
                     </select>
                   ) : (
-                    <p className="text-xs text-zinc-500 px-3.5 py-2.5 bg-zinc-900 border border-zinc-800 rounded-xl">
-                      Add a friend first to send them a recommendation.
-                    </p>
+                    <div className="px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-500">
+                      No accepted friends yet. Head to the Social tab to grow your circle!
+                    </div>
                   )}
                 </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-zinc-300 mb-1.5">
-                    Personal Note (Optional)
+                <div className="space-y-1.5">
+                  <label htmlFor="recommend-note" className="text-xs font-medium text-zinc-300">
+                    Why they&apos;ll love it (Optional)
                   </label>
                   <textarea
-                    rows={3}
-                    placeholder="Why they need to watch this TV series..."
+                    id="recommend-note"
+                    rows={2}
                     value={recommendNote}
                     onChange={(e) => setRecommendNote(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-xs bg-zinc-900 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500 transition-colors resize-none"
+                    placeholder="e.g. The story gets crazy in season 2..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-cyan-500 transition-colors resize-none"
                   />
                 </div>
-
-                <div className="pt-2 flex items-center justify-end gap-2">
+                <div className="pt-2 flex items-center justify-end gap-3">
                   <button
                     type="button"
                     onClick={() => setIsRecommendModalOpen(false)}
@@ -1405,7 +1411,7 @@ export default function SeriesDetailPage() {
                         : ""
                     }`}
                   >
-                    <Send className="w-3.5 h-3.5" />
+                    <Send className="w-3.5 h-3.5" aria-hidden="true" />
                     <span>{recommendMutation.isPending ? "Sending..." : "Send Recommendation"}</span>
                   </button>
                 </div>
@@ -1417,22 +1423,24 @@ export default function SeriesDetailPage() {
 
       {/* ADD TO COLLECTION MODAL */}
       {isCollectionModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="collection-modal-title">
           <div
             className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
             onClick={() => setIsCollectionModalOpen(false)}
+            aria-hidden="true"
           />
-          <div className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl space-y-5">
+          <div ref={collectionModalRef} className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-950 border border-zinc-800 shadow-2xl space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
               <div className="flex items-center gap-2">
-                <FolderPlus className="w-4 h-4 text-cyan-400" />
-                <h3 className="text-sm font-bold text-zinc-100">Add to Collection</h3>
+                <FolderPlus className="w-4 h-4 text-cyan-400" aria-hidden="true" />
+                <h3 id="collection-modal-title" className="text-sm font-bold text-zinc-100">Add to Collection</h3>
               </div>
               <button
                 onClick={() => setIsCollectionModalOpen(false)}
+                aria-label="Close modal"
                 className="p-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 

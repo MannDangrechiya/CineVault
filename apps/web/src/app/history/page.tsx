@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
 import {
@@ -39,6 +40,7 @@ function HistorySkeleton() {
 }
 
 export default function HistoryPage() {
+  const router = useRouter();
   const [filter, setFilter] = useState<"ALL" | "MOVIE" | "TV_SERIES">("ALL");
   const [limit, setLimit] = useState<number>(20);
   const queryClient = useQueryClient();
@@ -166,7 +168,7 @@ export default function HistoryPage() {
             description="You haven't logged any watch events yet. Mark titles as watched or scrobble via media servers."
             actionLabel="Browse Movies Catalog"
             onAction={() => {
-              window.location.href = "/movies";
+              router.push("/movies");
             }}
           />
         ) : (

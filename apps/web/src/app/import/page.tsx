@@ -4,6 +4,7 @@ import React, { useState, useRef } from "react";
 import Link from "next/link";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
   UploadCloud,
   FileText,
@@ -77,6 +78,9 @@ export default function ImportPage() {
   // Disambiguation Modal State
   const [disambiguationIndex, setDisambiguationIndex] = useState<number | null>(null);
   const [customTitleInput, setCustomTitleInput] = useState("");
+  const disambiguationModalRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(disambiguationIndex !== null, () => setDisambiguationIndex(null), disambiguationModalRef);
 
   // Ingest & Apply State
   const [applyResult, setApplyResult] = useState<ImportApplyResponse | null>(null);
@@ -321,9 +325,11 @@ export default function ImportPage() {
 
               {/* Upload Dropzone Tab */}
               {inputMode === "upload" && (
-                <div
+                <button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-8 rounded-2xl border-2 border-dashed border-zinc-800 hover:border-violet-500/50 bg-zinc-950/60 hover:bg-zinc-950 flex flex-col items-center justify-center text-center gap-3 cursor-pointer transition-all group"
+                  className="w-full p-8 rounded-2xl border-2 border-dashed border-zinc-800 hover:border-violet-500/50 bg-zinc-950/60 hover:bg-zinc-950 flex flex-col items-center justify-center text-center gap-3 cursor-pointer transition-all group"
+                  aria-label="Upload file"
                 >
                   <input
                     ref={fileInputRef}
@@ -347,7 +353,7 @@ export default function ImportPage() {
                       Supports Letterboxd/Trakt CSV, Excel (.xlsx), CineVault JSON, plain text/notes, and PDFs
                     </p>
                   </div>
-                </div>
+                </button>
               )}
               {inputMode === "upload" && pdfNotice && (
                 <div className="flex items-start gap-2 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
@@ -703,18 +709,19 @@ export default function ImportPage() {
 
       {/* Disambiguation Title Picker Modal */}
       {disambiguationIndex !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-900 border border-zinc-800 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="disambiguation-title">
+          <div ref={disambiguationModalRef} className="relative w-full max-w-md p-6 rounded-3xl bg-zinc-900 border border-zinc-800 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
               <div className="flex items-center gap-2">
-                <Search className="w-4 h-4 text-violet-400" />
-                <h3 className="text-sm font-bold text-zinc-100">Disambiguate Canonical Title</h3>
+                <Search className="w-4 h-4 text-violet-400" aria-hidden="true" />
+                <h3 id="disambiguation-title" className="text-sm font-bold text-zinc-100">Disambiguate Canonical Title</h3>
               </div>
               <button
                 onClick={() => setDisambiguationIndex(null)}
+                aria-label="Close modal"
                 className="p-1 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 

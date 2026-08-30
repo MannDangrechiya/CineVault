@@ -52,9 +52,14 @@ function MetricSkeleton() {
   );
 }
 
+import { useFocusTrap } from "@/hooks/useFocusTrap";
+
 function CinemaRecapModal({ onClose }: { onClose: () => void }) {
   const [period, setPeriod] = useState<"yearly" | "monthly" | "all_time">("yearly");
   const [copied, setCopied] = useState(false);
+  const modalRef = React.useRef<HTMLDivElement>(null);
+
+  useFocusTrap(true, onClose, modalRef);
 
   const { data: recap, isLoading } = useQuery({
     queryKey: ["cinemaRecap", period],
@@ -76,19 +81,21 @@ function CinemaRecapModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-xl rounded-3xl bg-gradient-to-br from-violet-950/60 via-zinc-950 to-zinc-950 border border-violet-500/30 p-6 sm:p-8 shadow-2xl space-y-6 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200" role="dialog" aria-modal="true" aria-labelledby="recap-title">
+      <div ref={modalRef} className="relative w-full max-w-xl rounded-3xl bg-gradient-to-br from-violet-950/60 via-zinc-950 to-zinc-950 border border-violet-500/30 p-6 sm:p-8 shadow-2xl space-y-6 overflow-hidden">
         <button
           onClick={onClose}
+          aria-label="Close modal"
           className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-100 p-1.5 rounded-lg hover:bg-zinc-900 transition-colors"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5" aria-hidden="true" />
         </button>
 
         {/* Period Selector */}
         <div className="flex items-center gap-2 p-1 rounded-xl bg-zinc-900/80 border border-zinc-800 w-fit">
           <button
             onClick={() => setPeriod("yearly")}
+            aria-pressed={period === "yearly"}
             className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
               period === "yearly" ? "bg-violet-600 text-white" : "text-zinc-400 hover:text-zinc-200"
             }`}
@@ -97,6 +104,7 @@ function CinemaRecapModal({ onClose }: { onClose: () => void }) {
           </button>
           <button
             onClick={() => setPeriod("monthly")}
+            aria-pressed={period === "monthly"}
             className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
               period === "monthly" ? "bg-violet-600 text-white" : "text-zinc-400 hover:text-zinc-200"
             }`}
@@ -105,6 +113,7 @@ function CinemaRecapModal({ onClose }: { onClose: () => void }) {
           </button>
           <button
             onClick={() => setPeriod("all_time")}
+            aria-pressed={period === "all_time"}
             className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
               period === "all_time" ? "bg-violet-600 text-white" : "text-zinc-400 hover:text-zinc-200"
             }`}

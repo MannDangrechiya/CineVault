@@ -66,11 +66,11 @@ async def get_personal_history(
     limit: int = 20,
     offset: int = 0,
     type: Optional[str] = None,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Retrieves paginated personal watch history with enriched title metadata."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     return await personal_repository.list_history(
         db=db, user_id=user_id, limit=limit, offset=offset, content_type=type
     )
@@ -78,11 +78,11 @@ async def get_personal_history(
 @personal_router.delete("/history/{id}", status_code=status.HTTP_200_OK)
 async def delete_personal_history_item(
     id: str,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Tombstones a watch history event by ID, scoped to the requesting user."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     deleted = await personal_repository.delete_watch_event(db=db, user_id=user_id, watch_event_id=id)
     if not deleted:
         return {"status": "not_found", "deleted_id": id}
@@ -95,11 +95,11 @@ async def get_personal_watchlist(
     limit: int = 20,
     offset: int = 0,
     sort: str = "added_at_desc",
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Lists titles the user has marked plan-to-watch, enriched with canonical title metadata."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     return await personal_repository.list_watchlist(
         db=db, user_id=user_id, limit=limit, offset=offset, sort=sort
     )
@@ -111,11 +111,11 @@ async def get_personal_library(
     limit: int = 20,
     offset: int = 0,
     type: Optional[str] = None,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Lists titles the user has added to their personal media library, enriched with canonical title metadata."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     return await personal_repository.list_library(
         db=db, user_id=user_id, limit=limit, offset=offset, content_type=type
     )
@@ -123,21 +123,21 @@ async def get_personal_library(
 @personal_router.post("/library", response_model=LibraryItemResponse, status_code=status.HTTP_201_CREATED)
 async def add_personal_library_item(
     body: LibraryAddRequest,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Adds a title to the user's personal media library."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     return await personal_repository.add_to_library(db=db, user_id=user_id, title_id=body.title_id)
 
 @personal_router.delete("/library/{title_id}", status_code=status.HTTP_200_OK)
 async def remove_personal_library_item(
     title_id: str,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Removes a title from the user's personal media library, scoped to the requesting user."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     removed = await personal_repository.remove_from_library(db=db, user_id=user_id, title_id=title_id)
     if not removed:
         return {"status": "not_found", "title_id": title_id}
@@ -147,31 +147,31 @@ async def remove_personal_library_item(
 
 @personal_router.get("/collections", response_model=List[CollectionItemResponse])
 async def get_personal_collections(
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Retrieves user-owned collections."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     return await personal_repository.list_collections(db=db, user_id=user_id)
 
 @personal_router.post("/collections", response_model=CollectionItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_personal_collection(
     body: CollectionCreateRequest,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Creates a new user-owned collection."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     return await personal_repository.create_collection(db=db, user_id=user_id, body=body)
 
 @personal_router.delete("/collections/{id}", status_code=status.HTTP_200_OK)
 async def delete_personal_collection(
     id: str,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Deletes a user-owned collection, scoped to the requesting user."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     deleted = await personal_repository.delete_collection(db=db, user_id=user_id, list_id=id)
     if not deleted:
         return {"status": "not_found", "deleted_id": id}
@@ -180,13 +180,13 @@ async def delete_personal_collection(
 @personal_router.get("/collections/{id}", response_model=CollectionDetailResponse)
 async def get_personal_collection_detail(
     id: str,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Retrieves a single collection with its real title items. A collection
     could previously be created and deleted but never populated or viewed --
     personal.user_list_item existed but nothing exposed it."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     detail = await personal_repository.get_collection_detail(db=db, user_id=user_id, list_id=id)
     if not detail:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Collection {id} not found.")
@@ -196,11 +196,11 @@ async def get_personal_collection_detail(
 async def add_personal_collection_item(
     id: str,
     body: CollectionItemAddRequest,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Adds a real canonical title to a collection the requesting user owns."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     detail = await personal_repository.add_collection_item(
         db=db, user_id=user_id, list_id=id, title_id=body.title_id, notes=body.notes
     )
@@ -212,11 +212,11 @@ async def add_personal_collection_item(
 async def remove_personal_collection_item(
     id: str,
     title_id: str,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Removes a title from a collection the requesting user owns."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     removed = await personal_repository.remove_collection_item(db=db, user_id=user_id, list_id=id, title_id=title_id)
     if not removed:
         return {"status": "not_found", "collection_id": id, "title_id": title_id}
@@ -226,11 +226,11 @@ async def remove_personal_collection_item(
 
 @personal_router.get("/analytics", response_model=PersonalAnalyticsResponse)
 async def get_personal_analytics(
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Retrieves live aggregate viewing analytics and taste affinity breakdown."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
     metrics = await personal_repository.get_user_dashboard_metrics(db=db, user_id=user_id)
 
     # Aggregate taste_match_score = mean per-friend compatibility (cosine similarity
@@ -311,7 +311,7 @@ async def get_user_streak(
 @personal_router.post("/import/extract-pdf", response_model=PdfExtractResponse)
 async def extract_pdf_text_for_import(
     file: UploadFile = File(...),
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
 ):
     """
     Extracts raw text from an uploaded PDF for the Import Wizard's parse pipeline.
@@ -378,11 +378,11 @@ async def extract_pdf_text_for_import(
 @personal_router.post("/import/preview", response_model=ImportPreviewResponse)
 async def preview_personal_import(
     body: ImportPreviewRequest,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Previews personal library import, validating matches and detecting conflicts."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
 
     # No `db is None` branch here: get_db() only ever yields None when
     # config.allow_seed_fallback is explicitly enabled (local dev without
@@ -398,11 +398,11 @@ async def preview_personal_import(
 @personal_router.post("/import/apply", response_model=ImportApplyResponse, status_code=status.HTTP_200_OK)
 async def apply_personal_import(
     body: ImportApplyRequest,
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Applies imported personal library records using chosen conflict resolution strategy."""
-    user_id = claims.sub if claims else "00000000-0000-0000-0000-000000000001"
+    user_id = claims.sub
 
     # No `db is None` branch here: get_db() only ever yields None when
     # config.allow_seed_fallback is explicitly enabled (local dev without

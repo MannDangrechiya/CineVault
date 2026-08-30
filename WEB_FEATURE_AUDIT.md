@@ -1,5 +1,45 @@
 # Web App Feature Audit — 2026-08-25 / 2026-08-26 / 2026-08-30
 
+**2026-08-30 W12 close-out session:** Web Product Completeness & Real-World Launch Readiness.
+Made CineVault OS web application complete, coherent, polished, and genuinely usable end-to-end with zero mock data:
+- **Catalog & Search Resolution**: Expanded Display ID resolution across all canonical ID formats (`imdb-`, `tmdb-`, `tt`, `mov-`, `ani-`, `tv-`, `kobis-`, `tvdb-`). Verified real PostgreSQL catalog (~89,000 titles) serves all catalog routes.
+- **Personal Vault Complete Lifecycle**: Full lifecycle verified end-to-end: Library add/remove, Watchlist toggle, Watch Events with `watched_at`, Ratings, Private Notes, Reviews, Collections CRUD with item curation.
+- **Social & Multiplayer**: Social Hub, Friends, Watch Clubs, Pick Room live voting with host-only close, Peer Recommendations with friendship prerequisite enforcement.
+- **Import / Export & Data Portability**: Import Wizard and Settings Export Hub verified. Round-trip data portability across 4 formats (JSON, CSV ZIP, Excel, Markdown).
+- **Multi-Account Data Isolation**: Strict data isolation verified across separate accounts.
+- **Responsive & Accessibility**: Mobile bottom navigation bar at 375px viewport, slide-out drawer menu with Escape key dismissal.
+- **Frontend Polish**: Replaced `window.location.href` with `router.push` for SPA-consistent empty state navigation in History page.
+- **Verification Suites**:
+  - `tests/test_w12_web_product_completeness.py`: 7 passed / 0 failed in 17.64s.
+  - `apps/web/e2e/test_w12_web_product_completeness.js`: 20 passed / 0 failed across 5 browser journeys.
+  - Full Backend Regression (W3–W12, 85 tests): 85 passed / 0 failed in 140.24s.
+  - TypeScript: 0 errors (`npx tsc --noEmit`).
+  - ESLint: 0 errors / 0 warnings (`npm run lint`).
+  - Production build: PASS (`npm run build`, 25/25 routes compiled).
+
+**2026-08-30 W11 close-out session:** Production Security & Disaster Recovery Hardening.
+Hardened CineVault OS security boundaries and executed verified real backup and disaster recovery:
+- **Disaster Recovery (Phase 30)**: Executed real PostgreSQL binary dump (`pg_dump -F c`), dropped source database, restored to clean recovery database (`pg_restore`), and verified multi-schema data integrity, pgvector embeddings, and foreign key enforcement via `tests/test_phase30_backup_disaster_recovery.py` (1 PASSED).
+- **Authentication & JWT**: Enforced 401 Unauthorized across all protected endpoints, rejected `alg=none` and mock dev tokens in production, and validated real JWKS signing.
+- **RBAC Boundaries**: Secured Curator Control Room (`/internal/v1/control-room/*`) and System Admin (`/admin/*`) endpoints with strict 403 Forbidden enforcement for unauthorized roles.
+- **IDOR Protection**: Scoped all personal and automation resources exclusively to authenticated JWT subject claims (`sub`).
+- **Next.js BFF Proxy CSRF**: Enforced Origin/Referer validation on state-changing methods (`POST`, `PUT`, `PATCH`, `DELETE`) in `apps/web/src/app/api/proxy/[...path]/route.ts`.
+- **Security Headers & Defense-in-Depth**: Verified `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security`, `Content-Security-Policy`, SQLi injection resilience, spreadsheet formula sanitization, and CAT-6 AI proposal staging.
+- **Verification Suites**:
+  - `tests/test_w11_production_security.py`: 14 passed / 0 failed in 31.05s.
+  - `tests/test_phase30_backup_disaster_recovery.py`: 1 passed / 0 failed in 11.43s.
+  - Backend Regression: 60 passed / 0 failed.
+  - TypeScript: 0 errors (`npx tsc --noEmit`).
+  - ESLint: 0 errors / 0 warnings (`npm run lint`).
+  - Production build: PASS (`npm run build`, 25 routes compiled).
+
+**2026-08-30 W10 close-out session:** Web UX, Accessibility & Responsive Reliability phase.
+Hardened CineVault's web application for responsive layouts, screen readers, keyboard navigation, and semantic HTML:
+- **Responsive Navigation**: Ensured `MobileNav`, `Sidebar`, and `Header` have semantic `aria-label`, `aria-current`, `aria-hidden`, and `role="dialog"` attributes, ensuring proper screen reader and keyboard accessibility.
+- **Modals & Focus Traps**: Created `useFocusTrap` custom hook and implemented it across the app (`dashboard`, `movies`, `series`, `collections`, `clubs`, `import`, `social`) to trap focus within active dialogs, handle Escape key closures, and prevent body scrolling. Attached `aria-modal="true"`, `role="dialog"`, and `aria-labelledby` to all modals.
+- **Semantic HTML**: Converted visual div/span buttons to semantic `<button>` elements (e.g. upload dropzone in `import`) with appropriate focus states and ARIA labels.
+- **E2E Testing**: Integrated `@playwright/test` and `@axe-core/playwright` to run automated accessibility audits on all pages. Added mobile specific tests for the responsive drawer.
+
 **2026-08-30 W8 close-out session:** Import / Export & Personal Data Portability phase.
 Hardened CineVault's complete personal data import and export system across backend and web UI:
 - **Multi-Format Export**: Production-ready exporters for JSON v2.0 (lossless schema backup), CSV Relational ZIP (multi-table archive with manifest), Excel `.xlsx` (multi-sheet workbook with custom styles), and Markdown `.md` (human-readable personal archive).

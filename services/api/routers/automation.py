@@ -22,7 +22,7 @@ from ..schemas.social import RecommendationStatusEnum, RecommendationResponse
 from ..models.personal import WatchEventModel, LibraryEntryModel
 from ..models.canonical import TitleModel, TitleExternalIdModel, EditionModel
 from ..models.social import RecommendationModel
-from ..auth.dependencies import get_optional_claims
+from ..auth.dependencies import get_optional_claims, require_authenticated_user, require_system_admin
 from ..auth.jwt_validator import SecurityTokenClaims
 from ..rate_limiter import enforce_rate_limit
 from ..database import get_db
@@ -409,8 +409,7 @@ async def ingest_media_server_webhook(
     dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))],
 )
 async def get_smart_watchlist(
-    user_id: Optional[str] = Query(None, description="Optional target user UUID override"),
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db),
 ):
     """
@@ -420,12 +419,7 @@ async def get_smart_watchlist(
     3. 'friend_recommended': Peer-curated titles currently in 'ACCEPTED' recommendation status.
     """
     # 1. Resolve active user
-    if claims and hasattr(claims, "sub") and claims.sub:
-        active_user_uuid = resolve_personal_uuid(claims.sub, "user_id")
-    elif user_id:
-        active_user_uuid = resolve_personal_uuid(user_id, "user_id")
-    else:
-        active_user_uuid = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    active_user_uuid = resolve_personal_uuid(claims.sub, "user_id")
 
     # 2. Identify watched title UUIDs to filter out completed items
     watched_title_ids = set()
@@ -598,7 +592,7 @@ async def trigger_automations_metadata_sync(
     batch_size: int = Query(500, ge=1, le=5000, description="Batch size per query"),
     max_batches: Optional[int] = Query(None, ge=1, description="Optional max batch count"),
     api_key: Optional[str] = Query(None, description="Optional TMDB API key override"),
-    claims: Optional[SecurityTokenClaims] = Depends(get_optional_claims),
+    claims: SecurityTokenClaims = Depends(require_system_admin),
 ) -> Dict[str, Any]:
     """Triggers background TMDB metadata and poster synchronization from automations router."""
     from ..ingestion.tmdb_worker import sync_missing_posters
