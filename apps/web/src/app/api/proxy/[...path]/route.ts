@@ -24,7 +24,7 @@ import {
 import { exchangeRefreshToken } from "@/lib/auth/keycloak";
 
 function getBackendBaseUrl(): string {
-  const url = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  const url = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
   return url.replace(/\/+$/, "");
 }
 

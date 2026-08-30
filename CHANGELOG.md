@@ -4,6 +4,37 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc13] - 2026-08-30 (W13 — Web Production Release & Deployment Readiness)
+
+### Added
+- **Operational Health Probes (`services/api/routers/health.py`)**:
+  - `/health/liveness`: Lightweight probe returning ISO timestamp and service status.
+  - `/health/readiness`: Multi-dependency check verifying PostgreSQL via real SQL `SELECT 1`, Valkey cache, and RabbitMQ broker; returns sanitized responses with zero internal topology leakage.
+  - `/health/startup`: Startup probe for container orchestrators.
+- **Automated Backup & Restore Automation**:
+  - Shell and PowerShell scripts for automated custom binary dumps with retention pruning (`scripts/backup_postgres.sh`, `scripts/backup_postgres.ps1`).
+  - Shell and PowerShell restore scripts (`scripts/restore_postgres.sh`, `scripts/restore_postgres.ps1`).
+- **Comprehensive Operator Documentation**:
+  - `docs/deployment.md`: Architecture blueprint, system requirements, Docker Compose guide, non-Docker / bare-metal steps.
+  - `docs/operations.md`: Daily monitoring, log inspection, log rotation, container lifecycle, and troubleshooting guide.
+  - `docs/backup-recovery.md`: Operator runbook for automated backups, disaster recovery, pgvector integrity verification, and forward-only migration policy.
+  - `docs/release-checklist.md`: Step-by-step pre-deployment, execution, verification, and rollback checklist.
+- **Deployment Readiness & Smoke Test Suites**:
+  - `tests/test_w13_deployment_readiness.py`: 10/10 tests verifying health probes, production config refusal on default secrets, CORS handling, security headers, pgvector cosine distance, and DB outage 503 safety.
+  - `apps/web/e2e/test_w13_production_smoke.js`: 15/15 tests verifying homepage, catalog, search, auth session, personal vault, settings, import/export, Oracle, social, and mobile responsive layouts against Next.js standalone runner.
+
+### Changed
+- **API Service Configuration (`services/api/config.py`)**:
+  - Added configurable `CORS_ALLOWED_ORIGINS` and `DOCS_ENABLED` toggles.
+  - Hardened `_refuse_unsafe_defaults_outside_local_dev` validator to automatically ensure `allow_seed_fallback=False` outside `local_development`.
+- **Next.js BFF API Proxy (`apps/web/src/app/api/proxy/[...path]/route.ts`)**:
+  - Added support for `API_BASE_URL` alongside `NEXT_PUBLIC_API_BASE_URL` to enable server-to-server container communication.
+- **Production Container Stack (`infra/docker/docker-compose.prod.yml`)**:
+  - Injected `API_BASE_URL` for `nextjs-web` service.
+  - Verified Caddy edge gateway routing, compression, and security headers.
+- **CI Pipeline (`.github/workflows/ci.yml`)**:
+  - Added `master` branch triggers for continuous integration and automated release testing.
+
 ## [1.0.0-rc12] - 2026-08-30 (W12 — Web Product Completeness & Real-World Launch Readiness)
 
 ### Added

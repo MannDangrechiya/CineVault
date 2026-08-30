@@ -90,7 +90,7 @@ export async function GET(request: Request) {
   // that verifies signature/issuer/audience/expiry — if it doesn't return
   // a verified identity, authentication has failed and no session may be
   // created. The user must retry login instead.
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  const apiBaseUrl = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
   let user: SessionUser;
 
   const failAuthentication = (reason: string) => {

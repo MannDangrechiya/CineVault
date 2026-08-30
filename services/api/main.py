@@ -44,9 +44,9 @@ app = FastAPI(
     title="CineVault OS — API Specification V1",
     description="Authoritative API boundary for canonical entertainment platform data (CAT-1), user personal data (CAT-2), offline sync, and control room curation.",
     version="1.0.0",
-    openapi_url="/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    openapi_url="/openapi.json" if config.docs_enabled else None,
+    docs_url="/docs" if config.docs_enabled else None,
+    redoc_url="/redoc" if config.docs_enabled else None,
     lifespan=lifespan
 )
 
@@ -56,9 +56,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Content-Security-Policy"] = "default-src 'self'"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response
 
 # 2. Add Middlewares in order
@@ -66,13 +67,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CorrelationAndMetricsMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://localhost:8080",
-        "http://192.168.29.87:3000",
-        "http://192.168.29.87:8000",
-    ],
+    allow_origins=[o.strip() for o in config.cors_allowed_origins.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Correlation-ID", "X-Idempotency-Key", "X-Service-Identity", "X-Service-Action"],

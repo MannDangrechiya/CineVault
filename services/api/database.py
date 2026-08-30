@@ -108,3 +108,19 @@ class DatabaseManager:
             }
 
 db_manager = DatabaseManager()
+
+
+async def async_check_db_health() -> bool:
+    """Executes a real SQL query (SELECT 1) to verify end-to-end database
+    connectivity through the async engine. Returns True if the query succeeds,
+    False otherwise. This complements the socket-level check in DatabaseManager
+    by verifying that the full connection pipeline (auth, pool, query) works."""
+    try:
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(text("SELECT 1"))
+            row = result.scalar()
+            return row == 1
+    except Exception as e:
+        logger.warning(f"Database async health check failed: {e}")
+        return False

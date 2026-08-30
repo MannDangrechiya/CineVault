@@ -136,6 +136,7 @@ services:
       dockerfile: apps/web/Dockerfile
     environment:
       NODE_ENV: production
+      API_BASE_URL: http://fastapi-backend:8000
       NEXT_PUBLIC_API_BASE_URL: ""
       PORT: 3000
     depends_on:

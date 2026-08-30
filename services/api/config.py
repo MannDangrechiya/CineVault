@@ -42,6 +42,21 @@ class APIConfig(BaseModel):
     app_name: str = "CineVault OS API Gateway & Service Foundation"
     environment: str = os.getenv("ENVIRONMENT", "local_development")
     debug: bool = os.getenv("DEBUG", "true").lower() == "true"
+    log_level: str = os.getenv("LOG_LEVEL", "debug" if os.getenv("ENVIRONMENT", "local_development") == "local_development" else "info")
+
+    # CORS: comma-separated list of allowed origins. Defaults to common
+    # local development origins. Production MUST override via env var.
+    cors_allowed_origins: str = os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://localhost:8000,http://localhost:8080",
+    )
+
+    # API documentation (Swagger/ReDoc) visibility. Enabled by default in
+    # local_development, disabled in production to reduce attack surface.
+    docs_enabled: bool = os.getenv(
+        "DOCS_ENABLED",
+        "true" if os.getenv("ENVIRONMENT", "local_development") == "local_development" else "false",
+    ).lower() == "true"
 
     # P1 Fix: Default to True ONLY in local_development; False everywhere else.
     # This prevents silent seed fallbacks from masking real infrastructure failures
@@ -139,6 +154,9 @@ class APIConfig(BaseModel):
         is exempt — those defaults exist specifically to make first-run dev
         setup work without a .env file.
         """
+        if self.environment != "local_development" and "ALLOW_SEED_FALLBACK" not in os.environ:
+            self.allow_seed_fallback = False
+
         if self.environment == "local_development":
             return self
 

@@ -1152,8 +1152,34 @@ verified and production-ready.
 
 **W12 status: COMPLETE.** All web product completeness and launch readiness quality gates are verified against live PostgreSQL with 100% green passes and zero mock data.
 
-### W13
-Not started. See the master task for full phase breakdown.
+### W13 — Web Production Release & Deployment Readiness `[x]` COMPLETE (2026-08-30)
 
+**Goal:** Ensure the verified CineVault Web application can be reliably deployed, configured, booted, operated, backed up, and recovered as a real production, self-hostable application backed by real PostgreSQL (pgvector) with zero mandatory paid cloud services.
 
+#### Deployment Architecture & Hardening
+- [x] Verified complete self-hosted production topology: Client -> Caddy Edge Proxy (Ports 80/443, Automatic TLS) -> Next.js Standalone Runner -> FastAPI Backend (4 Uvicorn workers) -> PgBouncer -> PostgreSQL 16 (pgvector) / Valkey / RabbitMQ.
+- [x] Environment Configuration: Created `.env.example` and `.env.production.example` documenting all configuration keys with explicit classification (`[REQUIRED]`/`[OPTIONAL]`, `[SECRET]`/`[PUBLIC]`).
+- [x] Production Boot Protection: Refuses to boot in production if default development passwords or JWT signing keys are detected.
+- [x] Zero Mock / Fallback Safety: `ALLOW_SEED_FALLBACK` defaults to `False` in production; database outages return real `503 Service Unavailable` rather than fabricating fake catalog data.
 
+#### Operational Health Probes
+- [x] `/health/liveness`: Process liveness probe returning ISO timestamp and service status.
+- [x] `/health/readiness`: Verifies PostgreSQL connectivity (executes live SQL `SELECT 1`), Valkey cache, and RabbitMQ broker; returns sanitized responses with zero secret or internal topology leakage.
+- [x] `/health/startup`: Startup probe for container orchestrators.
+
+#### Backup Automation & Disaster Recovery Runbook
+- [x] Provided automated backup & restore scripts: `scripts/backup_postgres.sh`, `scripts/backup_postgres.ps1`, `scripts/restore_postgres.sh`, `scripts/restore_postgres.ps1`.
+- [x] Created operator runbook `docs/backup-recovery.md` with step-by-step point-in-time recovery, retention scheduling, and vector index verification.
+- [x] Created `docs/deployment.md`, `docs/operations.md`, and `docs/release-checklist.md`.
+- [x] Cleaned up accidental directories (`db/migrations;C`).
+
+#### Verification Suites
+- [x] W13 Backend Suite: `tests/test_w13_deployment_readiness.py` (10 PASSED / 0 FAILED in 2.31s).
+- [x] Full Weekly Backend Regression (W3–W13, 95 tests): 95 PASSED / 0 FAILED in 147.16s.
+- [x] Disaster Recovery Regression: `tests/test_phase30_backup_disaster_recovery.py` (1 PASSED in 12.99s).
+- [x] TypeScript: `npx tsc --noEmit` — PASS (0 errors).
+- [x] ESLint: `npm run lint` — PASS (0 warnings, 0 errors).
+- [x] Production Build: `npm run build` — PASS (25/25 routes compiled into standalone output).
+- [x] Production Smoke: `node apps/web/e2e/test_w13_production_smoke.js` (15/15 PASSED against standalone server).
+
+**W13 status: COMPLETE.** CineVault Web is fully verified for production release, self-hosted deployment, and disaster recovery.

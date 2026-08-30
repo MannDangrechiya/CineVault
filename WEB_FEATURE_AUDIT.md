@@ -1102,3 +1102,33 @@ taskkill //IM node.exe //F   # clear every stray node process — Next can
                               # content from the wrong process
 cd apps/web && rm -rf .next && npm run dev
 ```
+
+## Phase W13: Web Production Release & Deployment Readiness Audit
+
+**Status:** COMPLETE (2026-08-30)
+
+### 1. Production Architecture & Infrastructure
+- **Edge Reverse Proxy**: Caddy v2 (`infra/docker/Caddyfile`) with automatic TLS, Gzip/Zstandard compression, and hardened security headers (`CSP`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Strict-Transport-Security`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`).
+- **Frontend**: Next.js 15 Standalone Runner (`apps/web/Dockerfile`), non-root `nextjs:nodejs` user, BFF proxy attaching encrypted HttpOnly credentials for all server-side API requests.
+- **Backend**: FastAPI (`services/api/Dockerfile`) with 4 Uvicorn workers on Python 3.12 Slim, non-root user `cinevault:cinevault`.
+- **Database & Cache**: PostgreSQL 16 (`pgvector/pgvector:pg16`), PgBouncer transaction pooler, Valkey 8.0, RabbitMQ 4.0.
+
+### 2. Operational Health Probes
+- `GET /health/liveness`: Process check returning 200 OK with ISO timestamp.
+- `GET /health/readiness`: Multi-dependency check verifying PostgreSQL via real SQL `SELECT 1`, Valkey, and RabbitMQ; returns sanitized status (`ok`/`degraded`) without leaking connection credentials or internal topology.
+- `GET /health/startup`: Startup probe for orchestrators.
+
+### 3. Automated Backup & Disaster Recovery
+- Automated backup scripts (`scripts/backup_postgres.sh`, `scripts/backup_postgres.ps1`) with timestamping and 14-day retention pruning.
+- Automated restore scripts (`scripts/restore_postgres.sh`, `scripts/restore_postgres.ps1`).
+- Verified disaster recovery runbook (`docs/backup-recovery.md`) with 100% data and pgvector preservation across simulated full database drops (`tests/test_phase30_backup_disaster_recovery.py`).
+
+### 4. Quality & Regression Verification
+- **W13 Deployment Readiness Suite**: 10/10 PASS (`tests/test_w13_deployment_readiness.py`).
+- **Full Backend Regression (W3–W13)**: 95/95 PASS.
+- **Disaster Recovery Regression**: 1/1 PASS (`tests/test_phase30_backup_disaster_recovery.py`).
+- **TypeScript**: 0 errors (`npx tsc --noEmit`).
+- **ESLint**: 0 errors/warnings (`npm run lint`).
+- **Production Build**: 25/25 routes compiled into standalone output (`npm run build`).
+- **E2E Production Smoke**: 15/15 PASS against standalone server (`apps/web/e2e/test_w13_production_smoke.js`).
+
