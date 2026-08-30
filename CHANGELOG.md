@@ -4,6 +4,20 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc2] - 2026-08-30 (W3 — Core Web Reliability)
+
+### Added
+- Personal CRUD endpoints: ratings, notes, and reviews now support `DELETE` operations and `title_id` filtering on list endpoints.
+- Full canonical detail surface on movie and series detail pages: credits, certifications, awards, provenance, editions, streaming links, seasons/episodes browser.
+- 12 new TypeScript interfaces for canonical entity types (aliases, themes, keywords, certifications, credits, companies, awards, festivals, editions, seasons, episodes, streaming links).
+- `not-found.tsx` global 404 page (required by Next.js 15 App Router for production builds).
+- `test_w3_core_web_reliability.py` — 302-line test suite covering 8 areas: canonical lookups, personal title state, ratings/notes/reviews CRUD, watch-event logging, user isolation, and library operations.
+
+### Fixed
+- Movie and series detail pages completely rewritten to render real data from Postgres instead of incomplete stub layouts.
+- Library, watchlist, history, and collections pages hardened against empty states and real personal data.
+- `test_router_title_provenance_endpoint` assertion fixed (seed data uses `original_title`, not `canonical_title`).
+
 ## [1.0.0-rc1] - 2026-08-16
 
 ### Added

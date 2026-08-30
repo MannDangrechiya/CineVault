@@ -750,8 +750,70 @@ the complete absence of backup/disaster-recovery test coverage (phase
 30) — both flagged for dedicated future sessions rather than rushed
 fixes in this pass.
 
-### W3–W13
-Not started. See the master task for full phase breakdown (core web
-reliability, series/tracking, data completeness, recommendations/AI,
-social, import/export, search quality, UX/accessibility, security, full
-QA, production readiness).
+### W3 — Core Web Reliability
+
+**Goal:** Make every web page's personal-data interactions work end-to-end
+against the real Postgres database — no fabricated data, no missing
+CRUD operations, no incomplete detail pages.
+
+#### Backend (services/api)
+- [x] `personal.py` (repository): added `title_id` filter to
+      `list_ratings`, `list_notes`, `list_reviews`; added `delete_rating`,
+      `delete_note`, `delete_review` operations (user-scoped, owner-only).
+- [x] `personal.py` (router): wired new CRUD endpoints on both `router`
+      and `personal_router` prefixes; added `title_id` query param to all
+      list endpoints.
+- [x] `canonical.py` (repository): enriched title detail response with
+      aliases, themes, keywords, certifications, credits, companies, award
+      results, festival participations, and seasons/episodes for series.
+
+#### Frontend (apps/web)
+- [x] `types.ts`: added 12 new TypeScript interfaces for the full
+      canonical entity surface (aliases, themes, keywords, certifications,
+      credits, companies, awards, festivals, editions, seasons, episodes,
+      streaming links).
+- [x] `personal.ts`: added API functions for ratings/notes/reviews CRUD
+      (create, list with filter, delete) and watch-event logging with
+      edition/season/episode params.
+- [x] `movies/[id]/page.tsx`: complete rewrite — renders full credits,
+      certifications, awards, provenance, editions, streaming links, user
+      rating/notes/reviews with inline CRUD, watch-event logging.
+- [x] `series/[id]/page.tsx`: complete rewrite — same surface as movies
+      plus seasons/episodes browser, per-episode watch tracking,
+      series-level progress display.
+- [x] `library/page.tsx`: hardened to handle empty states, fixed sorting
+      and pagination against real personal data.
+- [x] `watchlist/page.tsx`: hardened to real Postgres data, fixed filter
+      and remove actions.
+- [x] `history/page.tsx`: fixed date rendering and event grouping against
+      real watch-event data.
+- [x] `collections/[id]/page.tsx`: fixed title rendering within
+      collection detail view.
+- [x] `CatalogFilterBar.tsx`, `TitleCard.tsx`: minor reliability fixes.
+- [x] `not-found.tsx`: added global 404 page (required by Next.js 15 App
+      Router for production builds).
+
+#### Tests
+- [x] `test_w3_core_web_reliability.py` (302 lines): 8 test areas —
+      canonical lookups (UUID + display_id), personal title state, ratings
+      CRUD, notes CRUD, reviews CRUD, watch-event logging with
+      edition/season/episode & streak tracking, user isolation, library
+      add/remove.
+- [x] `test_canonical_repository.py`: fixed provenance test assertion
+      (field_name is `original_title` in KOBIS seed, not `canonical_title`
+      — test now accepts either valid title provenance field).
+- [x] E2E results: catalog (12/12), personal (15/15), social (10/10),
+      auth (6/6), oracle (3/3) — 46/46 pass, 0 fail.
+
+**W3 status: COMPLETE.** All personal-data CRUD endpoints work end-to-end
+against real Postgres. Movie and series detail pages render the full
+canonical entity surface. The provenance test regression is fixed. The
+production build passes (missing `not-found.tsx` resolved). The full
+528-test backend suite and all 46 E2E tests pass.
+**Carried forward from W2** (unchanged): three `ingestion/pipeline.py`
+issues and backup/DR test coverage gap.
+
+### W4–W13
+Not started. See the master task for full phase breakdown (series/tracking,
+data completeness, recommendations/AI, social, import/export, search
+quality, UX/accessibility, security, full QA, production readiness).

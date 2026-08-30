@@ -521,7 +521,12 @@ class CanonicalRepository:
         """Retrieves single canonical Title by UUIDv7 primary key (ADR-001)."""
         if db is not None:
             try:
-                parsed_uuid = uuid.UUID(title_id)
+                try:
+                    parsed_uuid = uuid.UUID(title_id)
+                    filter_cond = (TitleModel.title_id == parsed_uuid)
+                except (ValueError, AttributeError):
+                    filter_cond = (TitleModel.display_id == title_id)
+
                 stmt = (
                     select(TitleModel)
                     .options(
@@ -542,7 +547,7 @@ class CanonicalRepository:
                         selectinload(TitleModel.seasons).selectinload(SeasonModel.episodes),
                         selectinload(TitleModel.external_ids),
                     )
-                    .where(TitleModel.title_id == parsed_uuid)
+                    .where(filter_cond)
                 )
                 result = await db.execute(stmt)
                 title_orm = result.scalar_one_or_none()

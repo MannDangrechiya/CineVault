@@ -1,28 +1,149 @@
 import { apiFetch } from "./client";
+import {
+  RatingResponse,
+  NoteResponse,
+  ReviewResponse,
+  UserTitleStateResponse,
+} from "./types";
 
 // ── Watch Events ──────────────────────────────────────────────────────────
-// POST /v1/me/watch-events exists and works on the backend, but the movie/
-// series detail pages' "Mark as Watched" heart button had no onClick at all
-// -- a completely dead button, clicking it did nothing.
+
+export interface WatchEventCreatePayload {
+  title_id: string;
+  edition_id?: string | null;
+  season_id?: string | null;
+  episode_id?: string | null;
+  watched_at?: string;
+  progress_percentage?: number;
+  device_type?: string | null;
+  notes?: string | null;
+}
 
 export interface WatchEventResponse {
   id: string;
   user_id: string;
   title_id: string;
   edition_id?: string | null;
+  season_id?: string | null;
+  episode_id?: string | null;
   watched_at: string;
   progress_percentage: number;
   notes?: string | null;
 }
 
-export async function logWatchEvent(titleId: string): Promise<WatchEventResponse> {
+export async function logWatchEvent(
+  titleId: string,
+  extra: Partial<WatchEventCreatePayload> = {}
+): Promise<WatchEventResponse> {
   return await apiFetch<WatchEventResponse>("/v1/me/watch-events", {
     method: "POST",
     body: JSON.stringify({
       title_id: titleId,
-      watched_at: new Date().toISOString(),
-      progress_percentage: 100.0,
+      watched_at: extra.watched_at || new Date().toISOString(),
+      progress_percentage: extra.progress_percentage ?? 100.0,
+      edition_id: extra.edition_id,
+      season_id: extra.season_id,
+      episode_id: extra.episode_id,
+      device_type: extra.device_type,
+      notes: extra.notes,
     }),
+  });
+}
+
+// ── User Title State (Watchlist, Favorites, Preferred Edition) ─────────────
+
+export async function getUserTitleState(titleId: string): Promise<UserTitleStateResponse> {
+  return await apiFetch<UserTitleStateResponse>(`/v1/me/title-states/${encodeURIComponent(titleId)}`);
+}
+
+export async function updateUserTitleState(
+  titleId: string,
+  body: {
+    manual_status_override?: string | null;
+    is_favorite?: boolean;
+    preferred_edition_id?: string | null;
+  }
+): Promise<UserTitleStateResponse> {
+  return await apiFetch<UserTitleStateResponse>(`/v1/me/title-states/${encodeURIComponent(titleId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function toggleFavoriteState(
+  titleId: string,
+  isFavorite: boolean
+): Promise<UserTitleStateResponse> {
+  return await updateUserTitleState(titleId, { is_favorite: isFavorite });
+}
+
+// ── Personal Ratings ──────────────────────────────────────────────────────
+
+export async function getUserRatings(titleId?: string): Promise<RatingResponse[]> {
+  const qs = titleId ? `?title_id=${encodeURIComponent(titleId)}` : "";
+  return await apiFetch<RatingResponse[]>(`/v1/me/ratings${qs}`);
+}
+
+export async function setUserRating(titleId: string, ratingValue: number): Promise<RatingResponse> {
+  return await apiFetch<RatingResponse>("/v1/me/ratings", {
+    method: "POST",
+    body: JSON.stringify({ title_id: titleId, rating_value: ratingValue }),
+  });
+}
+
+export async function deleteUserRating(titleId: string): Promise<void> {
+  await apiFetch(`/v1/me/ratings/${encodeURIComponent(titleId)}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Private Personal Notes ────────────────────────────────────────────────
+
+export async function getUserNotes(titleId?: string): Promise<NoteResponse[]> {
+  const qs = titleId ? `?title_id=${encodeURIComponent(titleId)}` : "";
+  return await apiFetch<NoteResponse[]>(`/v1/me/notes${qs}`);
+}
+
+export async function createUserNote(titleId: string, noteText: string): Promise<NoteResponse> {
+  return await apiFetch<NoteResponse>("/v1/me/notes", {
+    method: "POST",
+    body: JSON.stringify({ title_id: titleId, note_text: noteText }),
+  });
+}
+
+export async function deleteUserNote(noteId: string): Promise<void> {
+  await apiFetch(`/v1/me/notes/${encodeURIComponent(noteId)}`, {
+    method: "DELETE",
+  });
+}
+
+// ── Personal Reviews ──────────────────────────────────────────────────────
+
+export async function getUserReviews(titleId?: string): Promise<ReviewResponse[]> {
+  const qs = titleId ? `?title_id=${encodeURIComponent(titleId)}` : "";
+  return await apiFetch<ReviewResponse[]>(`/v1/me/reviews${qs}`);
+}
+
+export async function createUserReview(
+  titleId: string,
+  reviewTitle: string,
+  reviewText: string,
+  isPublic: boolean = true
+): Promise<ReviewResponse> {
+  return await apiFetch<ReviewResponse>("/v1/me/reviews", {
+    method: "POST",
+    body: JSON.stringify({
+      title_id: titleId,
+      review_title: reviewTitle,
+      review_text: reviewText,
+      is_public: isPublic,
+    }),
+  });
+}
+
+export async function deleteUserReview(reviewId: string): Promise<void> {
+  await apiFetch(`/v1/me/reviews/${encodeURIComponent(reviewId)}`, {
+    method: "DELETE",
   });
 }
 

@@ -1185,13 +1185,16 @@ class PersonalRepository:
         return False
 
     async def list_ratings(
-        self, db: Optional[AsyncSession], user_id: str
+        self, db: Optional[AsyncSession], user_id: str, title_id: Optional[str] = None
     ) -> List[RatingResponse]:
-        """Lists ratings created by user."""
+        """Lists ratings created by user, optionally filtered by title_id."""
         if db is not None:
             try:
                 user_uuid = _resolve_user_uuid(user_id)
-                stmt = select(RatingModel).where(RatingModel.user_id == user_uuid)
+                conditions = [RatingModel.user_id == user_uuid]
+                if title_id:
+                    conditions.append(RatingModel.title_id == _resolve_title_uuid(title_id))
+                stmt = select(RatingModel).where(and_(*conditions))
                 res = await db.execute(stmt)
                 ratings = res.scalars().all()
                 return [
@@ -1215,7 +1218,40 @@ class PersonalRepository:
                 if not config.allow_seed_fallback:
                     raise
 
-        return SEED_RATINGS.get(user_id, [])
+        res = SEED_RATINGS.get(user_id, [])
+        if title_id:
+            return [r for r in res if r.title_id == title_id]
+        return res
+
+    async def delete_rating(
+        self, db: Optional[AsyncSession], user_id: str, title_id: str
+    ) -> bool:
+        """Deletes user's rating for a title."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                title_uuid = _resolve_title_uuid(title_id)
+                stmt = select(RatingModel).where(
+                    and_(
+                        RatingModel.user_id == user_uuid,
+                        RatingModel.title_id == title_uuid,
+                    )
+                )
+                r_orm = (await db.execute(stmt)).scalar_one_or_none()
+                if not r_orm:
+                    return False
+                await db.delete(r_orm)
+                await db.flush()
+                return True
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("delete_rating failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+                return False
+        return False
 
     async def set_rating(
         self, db: Optional[AsyncSession], user_id: str, body: RatingCreate
@@ -1274,13 +1310,16 @@ class PersonalRepository:
         return resp
 
     async def list_notes(
-        self, db: Optional[AsyncSession], user_id: str
+        self, db: Optional[AsyncSession], user_id: str, title_id: Optional[str] = None
     ) -> List[NoteResponse]:
-        """Lists private personal notes created by user."""
+        """Lists private personal notes created by user, optionally filtered by title_id."""
         if db is not None:
             try:
                 user_uuid = _resolve_user_uuid(user_id)
-                stmt = select(NoteModel).where(NoteModel.user_id == user_uuid)
+                conditions = [NoteModel.user_id == user_uuid]
+                if title_id:
+                    conditions.append(NoteModel.title_id == _resolve_title_uuid(title_id))
+                stmt = select(NoteModel).where(and_(*conditions)).order_by(NoteModel.created_at.desc())
                 res = await db.execute(stmt)
                 notes = res.scalars().all()
                 return [
@@ -1305,6 +1344,36 @@ class PersonalRepository:
                     raise
 
         return []
+
+    async def delete_note(
+        self, db: Optional[AsyncSession], user_id: str, note_id: str
+    ) -> bool:
+        """Deletes a private personal note owned by the requesting user."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                note_uuid = _resolve_uuid(note_id, "note_id")
+                stmt = select(NoteModel).where(
+                    and_(
+                        NoteModel.note_id == note_uuid,
+                        NoteModel.user_id == user_uuid,
+                    )
+                )
+                n_orm = (await db.execute(stmt)).scalar_one_or_none()
+                if not n_orm:
+                    return False
+                await db.delete(n_orm)
+                await db.flush()
+                return True
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("delete_note failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+                return False
+        return False
 
     async def create_note(
         self, db: Optional[AsyncSession], user_id: str, body: NoteCreate
@@ -1346,13 +1415,16 @@ class PersonalRepository:
         )
 
     async def list_reviews(
-        self, db: Optional[AsyncSession], user_id: str
+        self, db: Optional[AsyncSession], user_id: str, title_id: Optional[str] = None
     ) -> List[ReviewResponse]:
-        """Lists reviews created by user."""
+        """Lists reviews created by user, optionally filtered by title_id."""
         if db is not None:
             try:
                 user_uuid = _resolve_user_uuid(user_id)
-                stmt = select(ReviewModel).where(ReviewModel.user_id == user_uuid)
+                conditions = [ReviewModel.user_id == user_uuid]
+                if title_id:
+                    conditions.append(ReviewModel.title_id == _resolve_title_uuid(title_id))
+                stmt = select(ReviewModel).where(and_(*conditions)).order_by(ReviewModel.created_at.desc())
                 res = await db.execute(stmt)
                 reviews = res.scalars().all()
                 return [
@@ -1379,6 +1451,36 @@ class PersonalRepository:
                     raise
 
         return []
+
+    async def delete_review(
+        self, db: Optional[AsyncSession], user_id: str, review_id: str
+    ) -> bool:
+        """Deletes a review owned by the requesting user."""
+        if db is not None:
+            try:
+                user_uuid = _resolve_user_uuid(user_id)
+                review_uuid = _resolve_uuid(review_id, "review_id")
+                stmt = select(ReviewModel).where(
+                    and_(
+                        ReviewModel.review_id == review_uuid,
+                        ReviewModel.user_id == user_uuid,
+                    )
+                )
+                r_orm = (await db.execute(stmt)).scalar_one_or_none()
+                if not r_orm:
+                    return False
+                await db.delete(r_orm)
+                await db.flush()
+                return True
+            except ValueError:
+                raise
+            except Exception as exc:
+                await db.rollback()
+                logger.error("delete_review failed: %s", exc, exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
+                return False
+        return False
 
     async def create_review(
         self, db: Optional[AsyncSession], user_id: str, body: ReviewCreate

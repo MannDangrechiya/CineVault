@@ -34,7 +34,7 @@ async function runPersonalTests() {
     console.log('--- Setup: Log in as dev ---');
     await page.goto('http://localhost:3000/login', { waitUntil: 'networkidle' });
     await page.locator('button:has-text("Sign In as Dev User")').click();
-    await page.waitForURL('**/dashboard', { timeout: 10000 });
+    await page.waitForURL('**/dashboard', { timeout: 10000, waitUntil: 'domcontentloaded' });
     await page.waitForSelector('header:has-text("dev")', { timeout: 10000 });
 
     // 1. Dashboard Tests for Dev
@@ -272,7 +272,7 @@ async function runPersonalTests() {
     await page.waitForTimeout(600);
     await page.locator('a[href^="/movies/"]').first().click();
     await page.waitForURL('**/movies/**', { timeout: 10000 });
-    await page.locator('button[title="Mark as Watched"]').click();
+    await page.locator('button[title*="Watched"], button:has(svg.lucide-heart)').first().click();
     await page.waitForTimeout(1000);
 
     // Re-fetch Dev dashboard text with logged activity
@@ -284,6 +284,7 @@ async function runPersonalTests() {
     // Sign out dev
     await page.locator('button[title="Sign Out"]').click();
     await page.waitForURL('**/login**', { timeout: 10000 });
+    await page.waitForSelector('button:has-text("Curator Profile")', { timeout: 10000 });
 
     // Sign in as curator
     await page.locator('button:has-text("Curator Profile")').click();

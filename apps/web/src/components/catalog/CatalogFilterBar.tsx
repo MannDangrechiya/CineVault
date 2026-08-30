@@ -58,6 +58,7 @@ export const CatalogFilterBar: React.FC<CatalogFilterBarProps> = ({
             <Search className="w-4 h-4" />
           </div>
           <input
+            id="catalog-search"
             type="text"
             value={searchValue}
             onChange={(e) => onSearchChange(e.target.value)}
@@ -76,6 +77,7 @@ export const CatalogFilterBar: React.FC<CatalogFilterBarProps> = ({
         </div>
 
         <select
+          id="catalog-sort"
           aria-label="Sort catalog"
           value={selectedSort}
           onChange={(e) => onSortChange(e.target.value)}

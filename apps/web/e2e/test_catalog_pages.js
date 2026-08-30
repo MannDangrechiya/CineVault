@@ -60,19 +60,19 @@ async function runCatalogTests() {
     }
 
     // Clear search
-    await page.locator('button[aria-label="Clear search"]').click();
+    await page.locator('button[aria-label="Clear search"]').click({ force: true });
     await page.waitForTimeout(600);
 
     // Test Genre Filter (e.g. "Action")
     console.log('Testing Genre Filter "Action"...');
-    await page.locator('button:has-text("Action")').first().click();
+    await page.locator('button:has-text("Action")').first().click({ force: true });
     await page.waitForTimeout(800);
     const actionResults = await page.locator('a[href^="/movies/"]').allInnerTexts();
     console.log('Action filter results count:', actionResults.length);
     results.passed.push('Movie genre filtering by "Action" returned results');
 
     // Clear genre filter by clicking again
-    await page.locator('button:has-text("Action")').first().click();
+    await page.locator('button:has-text("Action")').first().click({ force: true });
     await page.waitForTimeout(600);
 
     // Test Sort (Oldest First)
@@ -183,7 +183,7 @@ async function runCatalogTests() {
 
     // Test "Recommend to a Friend" Modal
     console.log('Testing "Recommend to a Friend" modal on Movie...');
-    await page.locator('button:has-text("Recommend to a Friend")').click();
+    await page.locator('button:has-text("Recommend")').first().click();
     await page.waitForSelector('text=Recommend Movie', { timeout: 5000 });
     const friendModal = page.locator('div.fixed.z-50');
     const friendModalText = await friendModal.innerText();

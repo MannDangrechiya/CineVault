@@ -115,6 +115,9 @@ export default function CollectionDetailPage() {
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {items.map((item) => {
               const isRemoving = removeMutation.isPending && removeMutation.variables === item.title_id;
+              const isMovie = !item.content_type || item.content_type.toUpperCase() === "MOVIE";
+              const detailUrl = isMovie ? `/movies/${item.title_id}` : `/series/${item.title_id}`;
+
               return (
                 <div
                   key={item.item_id}
@@ -122,7 +125,7 @@ export default function CollectionDetailPage() {
                     isRemoving ? "opacity-40 pointer-events-none" : ""
                   }`}
                 >
-                  <Link href={`/movies/${item.title_id}`} className="block">
+                  <Link href={detailUrl} className="block">
                     <div className="relative aspect-[2/3] w-full bg-zinc-950 rounded-xl overflow-hidden mb-2.5">
                       {item.poster_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -133,7 +136,7 @@ export default function CollectionDetailPage() {
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-700">
-                          {item.content_type === "MOVIE" ? <Film className="w-8 h-8" /> : <Tv className="w-8 h-8" />}
+                          {isMovie ? <Film className="w-8 h-8" /> : <Tv className="w-8 h-8" />}
                         </div>
                       )}
                     </div>

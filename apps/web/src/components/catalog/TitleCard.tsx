@@ -15,7 +15,7 @@ interface TitleCardProps {
 // appear in a gradient scrim on hover, keeping the grid itself uncluttered.
 export const TitleCard: React.FC<TitleCardProps> = ({ title, matchScore }) => {
   const [imageError, setImageError] = useState(false);
-  const isMovie = title.content_type === "MOVIE";
+  const isMovie = !title.content_type || title.content_type.toUpperCase() === "MOVIE";
   const detailUrl = isMovie ? `/movies/${title.id}` : `/series/${title.id || title.display_id}`;
   const showPoster = title.poster_url && !imageError;
 

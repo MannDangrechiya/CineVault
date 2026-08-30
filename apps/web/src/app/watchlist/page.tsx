@@ -38,7 +38,7 @@ export default function WatchlistPage() {
     title: item.canonical_title || "Unknown Title",
     year: item.production_year || undefined,
     type: item.content_type || "MOVIE",
-    posterUrl: item.poster_url || "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80",
+    posterUrl: item.poster_url || null,
     addedAt: new Date(item.added_at).toLocaleDateString(),
   }));
 
@@ -132,71 +132,84 @@ export default function WatchlistPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {filteredItems.map((item) => (
-              <div
-                key={item.id}
-                className={`group relative p-3 rounded-2xl bg-zinc-900/40 hover:bg-zinc-900/70 border border-zinc-900 hover:border-zinc-800 transition-all duration-300 flex flex-col justify-between ${removeMutation.isPending && removeMutation.variables === item.titleId ? 'opacity-50' : ''}`}
-              >
-                <div>
-                  {/* Poster Link */}
-                  <Link
-                    href={`/movies/${item.titleId}`}
-                    className="relative aspect-[2/3] w-full bg-zinc-950 rounded-xl overflow-hidden block mb-3"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={item.posterUrl}
-                      alt={item.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
+            {filteredItems.map((item) => {
+              const isMovie = !item.type || item.type.toUpperCase() === "MOVIE";
+              const detailUrl = isMovie ? `/movies/${item.titleId}` : `/series/${item.titleId}`;
 
-                    {/* Floating Badge */}
-                    <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-950/80 backdrop-blur-md text-zinc-300 border border-zinc-800">
-                        {item.type === "MOVIE" ? <Film className="w-2.5 h-2.5" /> : <Tv className="w-2.5 h-2.5" />}
-                        {item.type === "MOVIE" ? "Movie" : "Series"}
+              return (
+                <div
+                  key={item.id}
+                  className={`group relative p-3 rounded-2xl bg-zinc-900/40 hover:bg-zinc-900/70 border border-zinc-900 hover:border-zinc-800 transition-all duration-300 flex flex-col justify-between ${
+                    removeMutation.isPending && removeMutation.variables === item.titleId ? "opacity-50" : ""
+                  }`}
+                >
+                  <div>
+                    {/* Poster Link */}
+                    <Link
+                      href={detailUrl}
+                      className="relative aspect-[2/3] w-full bg-zinc-950 rounded-xl overflow-hidden block mb-3"
+                    >
+                      {item.posterUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={item.posterUrl}
+                          alt={item.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-700">
+                          {isMovie ? <Film className="w-8 h-8" /> : <Tv className="w-8 h-8" />}
+                        </div>
+                      )}
+
+                      {/* Floating Badge */}
+                      <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-950/80 backdrop-blur-md text-zinc-300 border border-zinc-800">
+                          {isMovie ? <Film className="w-2.5 h-2.5" /> : <Tv className="w-2.5 h-2.5" />}
+                          {isMovie ? "Movie" : "Series"}
+                        </span>
+                      </div>
+                    </Link>
+
+                    {/* Title & Year */}
+                    <Link
+                      href={detailUrl}
+                      className="text-xs font-bold text-zinc-100 hover:text-violet-400 transition-colors line-clamp-1 block"
+                    >
+                      {item.title}
+                    </Link>
+
+                    <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-1">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3 text-zinc-600" />
+                        {item.year ?? "—"}
                       </span>
+                      <span>{item.addedAt}</span>
                     </div>
-                  </Link>
+                  </div>
 
-                  {/* Title & Year */}
-                  <Link
-                    href={`/movies/${item.titleId}`}
-                    className="text-xs font-bold text-zinc-100 hover:text-violet-400 transition-colors line-clamp-1 block"
-                  >
-                    {item.title}
-                  </Link>
+                  {/* Actions */}
+                  <div className="flex items-center justify-between pt-3 mt-3 border-t border-zinc-900/80">
+                    <Link
+                      href={detailUrl}
+                      className="text-[11px] text-violet-400 hover:text-violet-300 font-medium inline-flex items-center gap-1"
+                    >
+                      <span>View Details</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </Link>
 
-                  <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-1">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3 text-zinc-600" />
-                      {item.year ?? "—"}
-                    </span>
-                    <span>{item.addedAt}</span>
+                    <button
+                      onClick={() => removeItem(item.titleId)}
+                      disabled={removeMutation.isPending}
+                      title="Remove from Watchlist"
+                      className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
-
-                {/* Actions */}
-                <div className="flex items-center justify-between pt-3 mt-3 border-t border-zinc-900/80">
-                  <Link
-                    href={`/movies/${item.titleId}`}
-                    className="text-[11px] text-violet-400 hover:text-violet-300 font-medium inline-flex items-center gap-1"
-                  >
-                    <span>View Details</span>
-                    <ArrowRight className="w-3 h-3" />
-                  </Link>
-
-                  <button
-                    onClick={() => removeItem(item.titleId)}
-                    disabled={removeMutation.isPending}
-                    title="Remove from Watchlist"
-                    className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

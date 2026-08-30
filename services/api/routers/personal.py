@@ -468,14 +468,17 @@ async def update_user_title_state(
     )
 
 @router.get("/ratings", response_model=List[RatingResponse])
+@personal_router.get("/ratings", response_model=List[RatingResponse])
 async def list_ratings(
+    title_id: Optional[str] = None,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
-    """Lists ratings created by user."""
-    return await personal_repository.list_ratings(db=db, user_id=claims.sub)
+    """Lists ratings created by user, optionally filtered by title_id."""
+    return await personal_repository.list_ratings(db=db, user_id=claims.sub, title_id=title_id)
 
 @router.post("/ratings", response_model=RatingResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+@personal_router.post("/ratings", response_model=RatingResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
 async def set_rating(
     body: RatingCreate,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
@@ -484,15 +487,31 @@ async def set_rating(
     """Sets title rating (1-10 scale)."""
     return await personal_repository.set_rating(db=db, user_id=claims.sub, body=body)
 
-@router.get("/notes", response_model=List[NoteResponse])
-async def list_notes(
+@router.delete("/ratings/{title_id}", status_code=status.HTTP_200_OK)
+@personal_router.delete("/ratings/{title_id}", status_code=status.HTTP_200_OK)
+async def delete_rating(
+    title_id: str,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
-    """Lists private personal notes created by user."""
-    return await personal_repository.list_notes(db=db, user_id=claims.sub)
+    """Deletes user's rating for a title."""
+    deleted = await personal_repository.delete_rating(db=db, user_id=claims.sub, title_id=title_id)
+    if not deleted:
+        return {"status": "not_found", "title_id": title_id}
+    return {"status": "success", "title_id": title_id}
+
+@router.get("/notes", response_model=List[NoteResponse])
+@personal_router.get("/notes", response_model=List[NoteResponse])
+async def list_notes(
+    title_id: Optional[str] = None,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Lists private personal notes created by user, optionally filtered by title_id."""
+    return await personal_repository.list_notes(db=db, user_id=claims.sub, title_id=title_id)
 
 @router.post("/notes", response_model=NoteResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+@personal_router.post("/notes", response_model=NoteResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
 async def create_note(
     body: NoteCreate,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
@@ -501,15 +520,31 @@ async def create_note(
     """Creates or updates private personal note."""
     return await personal_repository.create_note(db=db, user_id=claims.sub, body=body)
 
-@router.get("/reviews", response_model=List[ReviewResponse])
-async def list_reviews(
+@router.delete("/notes/{note_id}", status_code=status.HTTP_200_OK)
+@personal_router.delete("/notes/{note_id}", status_code=status.HTTP_200_OK)
+async def delete_note(
+    note_id: str,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
-    """Lists reviews created by user."""
-    return await personal_repository.list_reviews(db=db, user_id=claims.sub)
+    """Deletes a private personal note owned by the user."""
+    deleted = await personal_repository.delete_note(db=db, user_id=claims.sub, note_id=note_id)
+    if not deleted:
+        return {"status": "not_found", "note_id": note_id}
+    return {"status": "success", "note_id": note_id}
+
+@router.get("/reviews", response_model=List[ReviewResponse])
+@personal_router.get("/reviews", response_model=List[ReviewResponse])
+async def list_reviews(
+    title_id: Optional[str] = None,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Lists reviews created by user, optionally filtered by title_id."""
+    return await personal_repository.list_reviews(db=db, user_id=claims.sub, title_id=title_id)
 
 @router.post("/reviews", response_model=ReviewResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+@personal_router.post("/reviews", response_model=ReviewResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
 async def create_review(
     body: ReviewCreate,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
@@ -517,6 +552,19 @@ async def create_review(
 ):
     """Creates review."""
     return await personal_repository.create_review(db=db, user_id=claims.sub, body=body)
+
+@router.delete("/reviews/{review_id}", status_code=status.HTTP_200_OK)
+@personal_router.delete("/reviews/{review_id}", status_code=status.HTTP_200_OK)
+async def delete_review(
+    review_id: str,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db)
+):
+    """Deletes a review owned by the user."""
+    deleted = await personal_repository.delete_review(db=db, user_id=claims.sub, review_id=review_id)
+    if not deleted:
+        return {"status": "not_found", "review_id": review_id}
+    return {"status": "success", "review_id": review_id}
 
 @router.get("/conflicts", response_model=List[PersonalDataConflictResponse])
 async def list_conflicts(

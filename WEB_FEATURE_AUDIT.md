@@ -1,10 +1,21 @@
-# Web App Feature Audit — 2026-08-25 / 2026-08-26
+# Web App Feature Audit — 2026-08-25 / 2026-08-26 / 2026-08-30
 
 Session goal: user reported the web app showing only 9 movies / 1 series, broken
 filters, and missing images. This audit found the root cause (a dead DB
 connection silently falling back to 10-row seed data) plus several deeper bugs
 uncovered while verifying every page. Fixed items are checked; remaining gaps
 are listed with exact fix paths so the next session can pick up immediately.
+
+**2026-08-30 W3 close-out session:** Core Web Reliability phase. Completed
+personal CRUD operations (ratings/notes/reviews with delete + title_id
+filtering), rewrote movie and series detail pages to render the full canonical
+entity surface (credits, certifications, awards, provenance, editions,
+streaming links, seasons/episodes), hardened library/watchlist/history/
+collections pages against real Postgres data, added 12 TypeScript interfaces
+for the canonical type layer, fixed provenance test regression
+(`original_title` vs `canonical_title`), added `not-found.tsx` for production
+builds, and created `test_w3_core_web_reliability.py` (302 lines, 8 test
+areas). Full 528-test backend suite and 46 E2E tests pass.
 
 **2026-08-26 follow-up session:** resumed the remaining checklist items
 (Import wizard, Invite, Pick rooms, Watch Club creation, Challenges) and found

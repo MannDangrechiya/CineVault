@@ -40,6 +40,7 @@ function HistorySkeleton() {
 
 export default function HistoryPage() {
   const [filter, setFilter] = useState<"ALL" | "MOVIE" | "TV_SERIES">("ALL");
+  const [limit, setLimit] = useState<number>(20);
   const queryClient = useQueryClient();
 
   const {
@@ -48,13 +49,11 @@ export default function HistoryPage() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ["history", filter],
+    queryKey: ["history", filter, limit],
     queryFn: () =>
-      // Initial view caps at the latest 10 events for a clean, uncluttered
-      // timeline; `totalCount` below still reflects the true lifetime total.
       getHistory({
         type: filter === "ALL" ? undefined : filter,
-        limit: 10,
+        limit,
         offset: 0,
       }),
   });
@@ -63,7 +62,8 @@ export default function HistoryPage() {
     mutationFn: (id: string) => deleteHistoryItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["history"] });
-      queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["personalAnalytics"] });
+      queryClient.invalidateQueries({ queryKey: ["userStreak"] });
     },
   });
 
@@ -105,7 +105,10 @@ export default function HistoryPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-zinc-900">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setFilter("ALL")}
+              onClick={() => {
+                setFilter("ALL");
+                setLimit(20);
+              }}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                 filter === "ALL"
                   ? "bg-violet-600/15 text-violet-300 font-semibold border border-violet-500/30 shadow-sm"
@@ -115,7 +118,10 @@ export default function HistoryPage() {
               All Events ({totalCount})
             </button>
             <button
-              onClick={() => setFilter("MOVIE")}
+              onClick={() => {
+                setFilter("MOVIE");
+                setLimit(20);
+              }}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                 filter === "MOVIE"
                   ? "bg-violet-600/15 text-violet-300 font-semibold border border-violet-500/30 shadow-sm"
@@ -125,7 +131,10 @@ export default function HistoryPage() {
               Movies
             </button>
             <button
-              onClick={() => setFilter("TV_SERIES")}
+              onClick={() => {
+                setFilter("TV_SERIES");
+                setLimit(20);
+              }}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                 filter === "TV_SERIES"
                   ? "bg-violet-600/15 text-violet-300 font-semibold border border-violet-500/30 shadow-sm"
@@ -163,11 +172,10 @@ export default function HistoryPage() {
         ) : (
           <div className="space-y-3">
             {items.map((item) => {
-              const poster =
-                item.poster_url ||
-                "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80";
               const isDeleting =
                 deleteMutation.isPending && deleteMutation.variables === item.id;
+              const isMovie = !item.content_type || item.content_type.toUpperCase() === "MOVIE";
+              const detailUrl = isMovie ? `/movies/${item.title_id}` : `/series/${item.title_id}`;
 
               return (
                 <div
@@ -178,21 +186,27 @@ export default function HistoryPage() {
                 >
                   <div className="flex items-center gap-4">
                     <Link
-                      href={`/movies/${item.title_id}`}
+                      href={detailUrl}
                       className="w-12 h-16 rounded-xl bg-zinc-950 overflow-hidden shrink-0 block border border-zinc-800"
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={poster}
-                        alt={item.canonical_title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      />
+                      {item.poster_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={item.poster_url}
+                          alt={item.canonical_title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-700">
+                          {isMovie ? <Film className="w-5 h-5" /> : <Tv className="w-5 h-5" />}
+                        </div>
+                      )}
                     </Link>
 
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <Link
-                          href={`/movies/${item.title_id}`}
+                          href={detailUrl}
                           className="text-xs sm:text-sm font-bold text-zinc-100 group-hover:text-violet-400 transition-colors"
                         >
                           {item.canonical_title}
@@ -217,12 +231,12 @@ export default function HistoryPage() {
                         )}
                         <span>•</span>
                         <span className="inline-flex items-center gap-1 text-zinc-400">
-                          {item.content_type === "MOVIE" ? (
+                          {isMovie ? (
                             <Film className="w-3 h-3 text-violet-400" />
                           ) : (
                             <Tv className="w-3 h-3 text-emerald-400" />
                           )}
-                          {item.content_type === "MOVIE" ? "Movie" : "Series"}
+                          {isMovie ? "Movie" : "Series"}
                         </span>
                       </div>
                     </div>
@@ -232,12 +246,12 @@ export default function HistoryPage() {
                     {item.rating_value !== undefined && item.rating_value !== null && (
                       <div className="flex items-center gap-1 text-xs font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
                         <Sparkles className="w-3 h-3" />
-                        <span>{item.rating_value} / 5</span>
+                        <span>{item.rating_value} / 10</span>
                       </div>
                     )}
 
                     <Link
-                      href={`/movies/${item.title_id}`}
+                      href={detailUrl}
                       className="inline-flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 font-medium px-2 py-1 rounded-lg hover:bg-violet-600/10 transition-colors"
                     >
                       <span>Details</span>
@@ -256,6 +270,18 @@ export default function HistoryPage() {
                 </div>
               );
             })}
+
+            {/* Load More Button */}
+            {items.length < totalCount && (
+              <div className="pt-4 text-center">
+                <button
+                  onClick={() => setLimit((prev) => prev + 20)}
+                  className="px-5 py-2.5 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-xs font-medium text-zinc-300 hover:text-zinc-100 transition-all cursor-pointer"
+                >
+                  Load More Events ({totalCount - items.length} remaining)
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -13,15 +13,89 @@ export interface TitleSummary {
   backdrop_url?: string | null;
 }
 
+export interface TitleAliasSummary {
+  alias_name: string;
+  alias_type: string;
+  language_code?: string | null;
+  country_code?: string | null;
+}
+
+export interface ThemeSummary {
+  theme_id: string;
+  name: string;
+}
+
+export interface KeywordSummary {
+  keyword_id: string;
+  name: string;
+}
+
+export interface CertificationSummary {
+  country_code: string;
+  certification_code: string;
+  rating_body?: string | null;
+  meaning?: string | null;
+  min_age?: number | null;
+  note?: string | null;
+}
+
+export interface CreditSummary {
+  credit_id: string;
+  person_id: string;
+  person_name: string;
+  role_name: string;
+  role_category: string;
+  character_name?: string | null;
+  billing_order?: number | null;
+}
+
+export interface CompanySummary {
+  company_id: string;
+  company_name: string;
+  role: string;
+  country_code?: string | null;
+}
+
+export interface AwardResultSummary {
+  award_name: string;
+  organization: string;
+  category_name: string;
+  year: number;
+  is_winner: boolean;
+}
+
+export interface FestivalParticipationSummary {
+  festival_name: string;
+  year: number;
+  section_name?: string | null;
+}
+
+export interface ReleaseSummary {
+  release_id: string;
+  edition_id: string;
+  release_name: string;
+  release_type: string;
+  release_date?: string | null;
+  country_code?: string | null;
+}
+
+export interface ExternalIdSummary {
+  provider_name: string;
+  external_id: string;
+  external_url?: string | null;
+}
+
 export interface EditionSummary {
   id: string;
   title_id: string;
   edition_name: string;
+  is_primary?: boolean;
   runtime_minutes?: number | null;
   format?: string | null;
   aspect_ratio?: string | null;
   color_format?: string | null;
   sound_mix?: string | null;
+  releases?: ReleaseSummary[];
 }
 
 export interface EpisodeSummary {
@@ -29,6 +103,9 @@ export interface EpisodeSummary {
   season_id: string;
   episode_number: number;
   episode_name?: string | null;
+  air_date?: string | null;
+  runtime_minutes?: number | null;
+  overview?: string | null;
 }
 
 export interface SeasonSummary {
@@ -36,14 +113,60 @@ export interface SeasonSummary {
   title_id: string;
   season_number: number;
   season_name?: string | null;
+  overview?: string | null;
   episodes: EpisodeSummary[];
 }
 
 export interface TitleDetail extends TitleSummary {
+  tagline?: string | null;
   synopsis?: string | null;
   genres: string[];
+  themes?: ThemeSummary[];
+  keywords?: KeywordSummary[];
+  aliases?: TitleAliasSummary[];
+  languages?: string[];
+  countries?: string[];
+  certifications?: CertificationSummary[];
+  credits?: CreditSummary[];
+  companies?: CompanySummary[];
+  awards?: AwardResultSummary[];
+  festival_participations?: FestivalParticipationSummary[];
   primary_edition?: EditionSummary | null;
+  editions?: EditionSummary[];
   seasons?: SeasonSummary[];
+  external_ids?: ExternalIdSummary[];
+}
+
+export interface RatingResponse {
+  id: string;
+  title_id: string;
+  rating_value: number;
+  updated_at: string;
+}
+
+export interface NoteResponse {
+  id: string;
+  title_id: string;
+  note_text: string;
+  updated_at: string;
+}
+
+export interface ReviewResponse {
+  id: string;
+  title_id: string;
+  review_title?: string;
+  review_text: string;
+  is_public: boolean;
+  created_at: string;
+}
+
+export interface UserTitleStateResponse {
+  title_id: string;
+  derived_status: string;
+  manual_status_override?: string | null;
+  is_favorite: boolean;
+  preferred_edition_id?: string | null;
+  updated_at: string;
 }
 
 export interface APIErrorDetail {
