@@ -10,6 +10,7 @@ import {
   Share2,
   Bookmark,
   Check,
+  CheckCircle2,
   ArrowLeft,
   Tv,
   Heart,
@@ -26,6 +27,8 @@ import {
   Eye,
   Plus,
   PlayCircle,
+  RotateCcw,
+  Sparkles,
 } from "lucide-react";
 import { getTitleById } from "@/lib/api/titles";
 import {
@@ -35,6 +38,7 @@ import {
   removeFromLibrary,
   getLibrary,
   logWatchEvent,
+  getWatchEvents,
   getHistory,
   getUserTitleState,
   toggleFavoriteState,
@@ -109,13 +113,19 @@ export default function SeriesDetailPage() {
   });
   const isAddedToLibrary = libraryData?.items.some((i) => i.title_id === titleId) ?? false;
 
-  // 4. Fetch Watch History (to determine if watched)
+  // 4. Fetch Watch History & Title Watch Events (ADR-003)
   const { data: historyData } = useQuery({
     queryKey: ["history"],
     queryFn: () => getHistory({ limit: 100 }),
     enabled: Boolean(titleId),
   });
   const isMarkedWatched = historyData?.items.some((i) => i.title_id === titleId) ?? false;
+
+  const { data: titleWatchEvents = [] } = useQuery({
+    queryKey: ["watchEvents", titleId],
+    queryFn: () => getWatchEvents({ title_id: titleId }),
+    enabled: Boolean(titleId),
+  });
 
   // 5. Fetch Personal Ratings
   const { data: userRatings = [] } = useQuery({
@@ -176,6 +186,8 @@ export default function SeriesDetailPage() {
     mutationFn: (extra?: { season_id?: string; episode_id?: string }) =>
       logWatchEvent(titleId, extra || {}),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["watchEvents", titleId] });
+      queryClient.invalidateQueries({ queryKey: ["userTitleState", titleId] });
       queryClient.invalidateQueries({ queryKey: ["history"] });
       queryClient.invalidateQueries({ queryKey: ["personalAnalytics"] });
       queryClient.invalidateQueries({ queryKey: ["userStreak"] });
@@ -281,6 +293,61 @@ export default function SeriesDetailPage() {
     });
   };
 
+  const seasons = React.useMemo(() => title?.seasons || [], [title?.seasons]);
+  const seasonCount = seasons.length;
+  const episodeCount = React.useMemo(
+    () => seasons.reduce((total, s) => total + (s.episodes?.length ?? 0), 0),
+    [seasons]
+  );
+
+  // Derive episodic tracking state from real watch events (ADR-003)
+  const episodeWatchCounts = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const ev of titleWatchEvents) {
+      if (ev.episode_id) {
+        map.set(ev.episode_id, (map.get(ev.episode_id) || 0) + 1);
+      }
+    }
+    return map;
+  }, [titleWatchEvents]);
+
+  const watchedEpisodeIds = React.useMemo(() => {
+    return new Set(episodeWatchCounts.keys());
+  }, [episodeWatchCounts]);
+
+  const totalWatchedEpisodesCount = React.useMemo(() => {
+    let count = 0;
+    for (const s of seasons) {
+      for (const ep of s.episodes || []) {
+        if (watchedEpisodeIds.has(ep.id)) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }, [seasons, watchedEpisodeIds]);
+
+  const seriesProgressPercent = episodeCount > 0
+    ? Math.round((totalWatchedEpisodesCount / episodeCount) * 100)
+    : (isMarkedWatched ? 100 : 0);
+
+  const isSeriesCompleted = (episodeCount > 0 && totalWatchedEpisodesCount >= episodeCount) || userTitleState?.manual_status_override === "COMPLETED";
+
+  // Find next sequential unwatched episode
+  const nextEpisodeInfo = React.useMemo(() => {
+    for (const s of seasons) {
+      for (const ep of s.episodes || []) {
+        if (!watchedEpisodeIds.has(ep.id)) {
+          return {
+            season: s,
+            episode: ep,
+          };
+        }
+      }
+    }
+    return null;
+  }, [seasons, watchedEpisodeIds]);
+
   if (isLoading) {
     return (
       <div className="p-8">
@@ -318,10 +385,6 @@ export default function SeriesDetailPage() {
   const displayGenres = title.genres && title.genres.length > 0 ? title.genres : [];
   const displayBackdrop = title.backdrop_url || null;
   const displayPoster = title.poster_url || null;
-
-  const seasons = title.seasons || [];
-  const seasonCount = seasons.length;
-  const episodeCount = seasons.reduce((total, s) => total + (s.episodes?.length ?? 0), 0);
 
   // Active Season
   const activeSeason = seasons.find((s) => s.season_number === selectedSeasonNumber) || seasons[0];
@@ -556,6 +619,91 @@ export default function SeriesDetailPage() {
             </p>
           </div>
 
+          {/* CONTINUE WATCHING / NEXT EPISODE HERO CARD */}
+          {seasons.length > 0 && (
+            <div className="p-6 rounded-2xl bg-gradient-to-br from-cyan-950/40 via-zinc-900/60 to-zinc-950 border border-cyan-500/30 space-y-4 shadow-xl shadow-cyan-950/20">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-400">
+                  <Sparkles className="w-4 h-4 text-cyan-400" />
+                  <span>{isSeriesCompleted ? "Series Status" : "Continue Watching"}</span>
+                </div>
+                <span className="text-xs font-mono font-semibold text-cyan-300">
+                  {totalWatchedEpisodesCount} / {episodeCount} Watched ({seriesProgressPercent}%)
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="h-2 w-full bg-zinc-950/80 rounded-full overflow-hidden border border-zinc-800/80">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-500"
+                  style={{ width: `${Math.min(seriesProgressPercent, 100)}%` }}
+                />
+              </div>
+
+              {nextEpisodeInfo ? (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold text-zinc-400">Next Up</span>
+                    <h3 className="text-sm sm:text-base font-bold text-zinc-100">
+                      Season {nextEpisodeInfo.season.season_number} Episode {nextEpisodeInfo.episode.episode_number}:{" "}
+                      {nextEpisodeInfo.episode.episode_name || `Episode ${nextEpisodeInfo.episode.episode_number}`}
+                    </h3>
+                    {nextEpisodeInfo.episode.overview && (
+                      <p className="text-xs text-zinc-400 line-clamp-1 max-w-xl">
+                        {nextEpisodeInfo.episode.overview}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedSeasonNumber(nextEpisodeInfo.season.season_number);
+                      watchEventMutation.mutate({
+                        season_id: nextEpisodeInfo.season.id,
+                        episode_id: nextEpisodeInfo.episode.id,
+                      });
+                    }}
+                    disabled={watchEventMutation.isPending}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/30 transition-all hover:scale-105 active:scale-95 shrink-0 cursor-pointer"
+                  >
+                    <PlayCircle className="w-4 h-4" />
+                    <span>Watch S{nextEpisodeInfo.season.season_number}:E{nextEpisodeInfo.episode.episode_number}</span>
+                  </button>
+                </div>
+              ) : isSeriesCompleted && episodeCount > 0 ? (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Series Completed
+                    </span>
+                    <p className="text-xs text-zinc-300">
+                      You have watched all {episodeCount} episodes across {seasonCount} season{seasonCount !== 1 ? "s" : ""}.
+                    </p>
+                  </div>
+                  {seasons[0]?.episodes?.[0] && (
+                    <button
+                      onClick={() => {
+                        setSelectedSeasonNumber(seasons[0].season_number);
+                        watchEventMutation.mutate({
+                          season_id: seasons[0].id,
+                          episode_id: seasons[0].episodes[0].id,
+                        });
+                      }}
+                      disabled={watchEventMutation.isPending}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs font-semibold transition-all shrink-0 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Rewatch from S1:E1</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-400 pt-1">
+                  Start watching by logging your first episode below.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* SEASONS & EPISODES EXPLORER */}
           {seasons.length > 0 && (
             <div className="p-6 rounded-2xl bg-zinc-900/40 border border-zinc-900 space-y-6">
@@ -565,72 +713,179 @@ export default function SeriesDetailPage() {
                   <span>Seasons & Episodes</span>
                 </div>
                 <span className="text-xs text-zinc-500 font-mono">
-                  {seasonCount} Season{seasonCount !== 1 ? "s" : ""}
+                  {seasonCount} Season{seasonCount !== 1 ? "s" : ""} • {episodeCount} Episodes
                 </span>
               </div>
 
               {/* Season Selection Tabs */}
               <div className="flex flex-wrap gap-2">
-                {seasons.map((s) => (
-                  <button
-                    key={s.id || s.season_number}
-                    onClick={() => setSelectedSeasonNumber(s.season_number)}
-                    className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                      selectedSeasonNumber === s.season_number
-                        ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/30"
-                        : "bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
-                    }`}
-                  >
-                    Season {s.season_number} ({s.episodes?.length || 0} eps)
-                  </button>
-                ))}
+                {seasons.map((s) => {
+                  const sWatched = (s.episodes || []).filter((ep) => watchedEpisodeIds.has(ep.id)).length;
+                  const sTotal = s.episodes?.length || 0;
+                  const isSeasonDone = sTotal > 0 && sWatched === sTotal;
+                  const isSelected = selectedSeasonNumber === s.season_number;
+
+                  return (
+                    <button
+                      key={s.id || s.season_number}
+                      onClick={() => setSelectedSeasonNumber(s.season_number)}
+                      className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        isSelected
+                          ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/30"
+                          : "bg-zinc-950 border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700"
+                      }`}
+                    >
+                      <span>Season {s.season_number}</span>
+                      <span
+                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                          isSelected
+                            ? "bg-cyan-700/80 text-cyan-100"
+                            : isSeasonDone
+                            ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                            : "bg-zinc-900 text-zinc-400"
+                        }`}
+                      >
+                        {sWatched}/{sTotal}{isSeasonDone ? " ✓" : ""}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
+
+              {/* Active Season Overview & Progress */}
+              {activeSeason && (
+                <div className="space-y-2 pt-1 pb-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-zinc-200">
+                      Season {activeSeason.season_number} Progress
+                    </span>
+                    {(() => {
+                      const sWatched = (activeSeason.episodes || []).filter((ep) => watchedEpisodeIds.has(ep.id)).length;
+                      const sTotal = activeSeason.episodes?.length || 0;
+                      const sPercent = sTotal > 0 ? Math.round((sWatched / sTotal) * 100) : 0;
+                      return (
+                        <span className="font-mono text-zinc-400">
+                          {sWatched} of {sTotal} watched ({sPercent}%)
+                        </span>
+                      );
+                    })()}
+                  </div>
+                  <div className="h-1.5 w-full bg-zinc-950 rounded-full overflow-hidden border border-zinc-800/80">
+                    {(() => {
+                      const sWatched = (activeSeason.episodes || []).filter((ep) => watchedEpisodeIds.has(ep.id)).length;
+                      const sTotal = activeSeason.episodes?.length || 0;
+                      const sPercent = sTotal > 0 ? Math.round((sWatched / sTotal) * 100) : 0;
+                      return (
+                        <div
+                          className="h-full bg-gradient-to-r from-cyan-500 to-emerald-400 rounded-full transition-all duration-300"
+                          style={{ width: `${sPercent}%` }}
+                        />
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
 
               {/* Active Season Episodes List */}
               {activeSeason && activeSeason.episodes && activeSeason.episodes.length > 0 ? (
                 <div className="space-y-3 pt-2">
-                  {activeSeason.episodes.map((ep) => (
-                    <div
-                      key={ep.id}
-                      className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors hover:border-zinc-700"
-                    >
-                      <div className="flex items-start gap-3.5">
-                        <div className="w-9 h-9 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs font-mono font-bold text-cyan-400 shrink-0">
-                          E{ep.episode_number}
-                        </div>
-                        <div className="space-y-1">
-                          <h4 className="text-xs sm:text-sm font-bold text-zinc-100">
-                            {ep.episode_name || `Episode ${ep.episode_number}`}
-                          </h4>
-                          {ep.overview && (
-                            <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
-                              {ep.overview}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-3 text-[10px] text-zinc-500 font-mono">
-                            {ep.air_date && <span>Air: {ep.air_date}</span>}
-                            {ep.runtime_minutes && <span>{ep.runtime_minutes} mins</span>}
+                  {activeSeason.episodes.map((ep) => {
+                    const epWatchCount = episodeWatchCounts.get(ep.id) || 0;
+                    const isEpWatched = epWatchCount > 0;
+
+                    return (
+                      <div
+                        key={ep.id}
+                        className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all ${
+                          isEpWatched
+                            ? "bg-zinc-950/80 border-emerald-500/25 hover:border-emerald-500/40"
+                            : "bg-zinc-950/60 border-zinc-800/80 hover:border-zinc-700"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3.5">
+                          <div
+                            className={`w-9 h-9 rounded-lg border flex items-center justify-center text-xs font-mono font-bold shrink-0 ${
+                              isEpWatched
+                                ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+                                : "bg-zinc-900 border-zinc-800 text-cyan-400"
+                            }`}
+                          >
+                            {isEpWatched ? (
+                              <Check className="w-4 h-4 text-emerald-400" />
+                            ) : (
+                              `E${ep.episode_number}`
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="text-xs sm:text-sm font-bold text-zinc-100">
+                                {ep.episode_name || `Episode ${ep.episode_number}`}
+                              </h4>
+                              {isEpWatched && (
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                    epWatchCount > 1
+                                      ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                                      : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                                  }`}
+                                >
+                                  {epWatchCount > 1 ? (
+                                    <>
+                                      <RotateCcw className="w-2.5 h-2.5" />
+                                      <span>Watched {epWatchCount}x</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Check className="w-2.5 h-2.5" />
+                                      <span>Watched</span>
+                                    </>
+                                  )}
+                                </span>
+                              )}
+                            </div>
+                            {ep.overview && (
+                              <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                                {ep.overview}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-3 text-[10px] text-zinc-500 font-mono">
+                              {ep.air_date && <span>Air: {ep.air_date}</span>}
+                              {ep.runtime_minutes && <span>{ep.runtime_minutes} mins</span>}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Log Episode Watch Action */}
-                      <button
-                        onClick={() =>
-                          watchEventMutation.mutate({
-                            season_id: activeSeason.id,
-                            episode_id: ep.id,
-                          })
-                        }
-                        disabled={watchEventMutation.isPending}
-                        title="Mark Episode as Watched"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-medium text-zinc-300 hover:text-cyan-300 hover:border-cyan-500/40 transition-all shrink-0 self-end sm:self-center cursor-pointer"
-                      >
-                        <PlayCircle className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>Log Watch</span>
-                      </button>
-                    </div>
-                  ))}
+                        {/* Log Episode Watch / Rewatch Action */}
+                        <button
+                          onClick={() =>
+                            watchEventMutation.mutate({
+                              season_id: activeSeason.id,
+                              episode_id: ep.id,
+                            })
+                          }
+                          disabled={watchEventMutation.isPending}
+                          title={isEpWatched ? "Log Rewatch" : "Mark Episode as Watched"}
+                          className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all shrink-0 self-end sm:self-center cursor-pointer ${
+                            isEpWatched
+                              ? "bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30 hover:border-amber-500/50"
+                              : "bg-zinc-900 hover:bg-zinc-800 text-zinc-200 hover:text-cyan-300 border-zinc-800 hover:border-cyan-500/40"
+                          }`}
+                        >
+                          {isEpWatched ? (
+                            <>
+                              <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                              <span>Rewatch</span>
+                            </>
+                          ) : (
+                            <>
+                              <PlayCircle className="w-3.5 h-3.5 text-cyan-400" />
+                              <span>Log Watch</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-xs text-zinc-500 italic py-2">

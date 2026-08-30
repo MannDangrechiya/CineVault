@@ -204,19 +204,30 @@ export default function HistoryPage() {
                     </Link>
 
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Link
                           href={detailUrl}
                           className="text-xs sm:text-sm font-bold text-zinc-100 group-hover:text-violet-400 transition-colors"
                         >
                           {item.canonical_title}
                         </Link>
+                        {item.season_number != null && item.episode_number != null && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                            S{item.season_number}:E{item.episode_number}
+                          </span>
+                        )}
                         {item.production_year && (
                           <span className="text-[11px] text-zinc-500">
                             ({item.production_year})
                           </span>
                         )}
                       </div>
+
+                      {item.episode_name && (
+                        <p className="text-xs text-zinc-300 font-medium line-clamp-1">
+                          {item.episode_name}
+                        </p>
+                      )}
 
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
                         <span className="flex items-center gap-1 text-zinc-400">

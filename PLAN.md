@@ -813,7 +813,55 @@ production build passes (missing `not-found.tsx` resolved). The full
 **Carried forward from W2** (unchanged): three `ingestion/pipeline.py`
 issues and backup/DR test coverage gap.
 
-### W4–W13
-Not started. See the master task for full phase breakdown (series/tracking,
-data completeness, recommendations/AI, social, import/export, search
-quality, UX/accessibility, security, full QA, production readiness).
+### W4 — Series & Advanced Watch Tracking
+
+**Goal:** Make CineVault's episodic-content experience genuinely complete,
+reliable, and backed by real PostgreSQL data.
+
+#### Backend (services/api)
+- [x] `canonical.py` (repository): added deterministic season & episode ordering
+      `(season_number ASC, episode_number ASC)` across all season/episode lookups.
+- [x] `schemas/personal.py`: added `season_number`, `episode_number`, and
+      `episode_name` to `HistoryItemResponse`.
+- [x] `personal.py` (repository):
+      - Added `title_id` filtering to `list_watch_events`.
+      - Fixed premature series completion bug in `create_watch_event`
+        (properly checks `watched_count >= total_episodes`; marks `IN_PROGRESS`
+        when partially watched).
+      - Enriched `list_history` with joined episode and season metadata.
+      - Updated `get_user_dashboard_metrics` with episode runtime precision.
+- [x] `personal.py` (router): wired `title_id` query parameter on both
+      `/v1/me/watch-events` and `/v1/personal/watch-events`.
+
+#### Frontend (apps/web)
+- [x] `types.ts`: added episodic fields to `HistoryItem` interface.
+- [x] `personal.ts`: added `getWatchEvents({ title_id })` query support.
+- [x] `series/[id]/page.tsx`: added Continue Watching hero card, overall
+      series and per-season progress bars, episode watched indicators, and
+      rewatch counters. Fixed React Hook order across loading branches.
+- [x] `history/page.tsx`: rendered `S{season}:E{episode}` badges and episode
+      titles for series watch events.
+- [x] Production build & typecheck: `npx tsc --noEmit` and `npm run build`
+      100% clean (0 errors, 25/25 static routes compiled).
+
+#### Tests & Verification
+- [x] `test_w4_series_and_advanced_tracking.py` (305 lines): 8 PostgreSQL
+      integration tests covering deterministic ordering, title_id event
+      filtering, rewatch multi-events, status transitions (IN_PROGRESS → COMPLETED),
+      user isolation, history enrichment, streak increments, and tombstones.
+      (8 passed / 0 failed).
+- [x] `test_series_watch_tracking.js` (Playwright E2E): 7 end-to-end browser
+      tests covering seasons/episodes browsing, episode watch logging, rewatch
+      counters, history badge rendering, and cross-user isolation.
+      (7 passed / 0 failed).
+- [x] Full E2E regression: catalog (12/12), personal (15/15), social (10/10),
+      auth (6/6), oracle (3/3), series tracking (7/7) — 53/53 passed, 0 failed.
+
+**W4 status: COMPLETE.** All episodic series features, watch tracking,
+rewatch counting, history enrichment, and user isolation are verified
+end-to-end on real PostgreSQL data.
+
+### W5–W13
+Not started. See the master task for full phase breakdown (data completeness,
+recommendations/AI, social, import/export, search quality, UX/accessibility,
+security, full QA, production readiness).

@@ -50,6 +50,14 @@ export async function logWatchEvent(
   });
 }
 
+export async function getWatchEvents(
+  params: { title_id?: string } = {}
+): Promise<WatchEventResponse[]> {
+  const qs = params.title_id ? `?title_id=${encodeURIComponent(params.title_id)}` : "";
+  const res = await apiFetch<{ data: WatchEventResponse[] }>(`/v1/me/watch-events${qs}`);
+  return res.data || [];
+}
+
 // ── User Title State (Watchlist, Favorites, Preferred Edition) ─────────────
 
 export async function getUserTitleState(titleId: string): Promise<UserTitleStateResponse> {

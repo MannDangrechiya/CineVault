@@ -6,6 +6,17 @@ connection silently falling back to 10-row seed data) plus several deeper bugs
 uncovered while verifying every page. Fixed items are checked; remaining gaps
 are listed with exact fix paths so the next session can pick up immediately.
 
+**2026-08-30 W4 close-out session:** Series & Advanced Watch Tracking phase.
+Completed full episodic tracking experience: deterministic season/episode ordering,
+`title_id` query filtering on watch-event endpoints, enriched watch history with
+`S{season}:E{episode}` badges and episode names, exact episode runtime metrics on
+user dashboard, Continue Watching hero card on series detail, series & season
+progress tracking, episode checkmark indicators, and rewatch count badges. Fixed
+premature series completion bug where watching episode 1 marked a multi-episode
+series as `COMPLETED` instead of `IN_PROGRESS`. Created `test_w4_series_and_advanced_tracking.py`
+(8 passed / 0 failed) and `test_series_watch_tracking.js` (7 passed / 0 failed).
+All 53 E2E tests across 6 test suites pass with 0 failures.
+
 **2026-08-30 W3 close-out session:** Core Web Reliability phase. Completed
 personal CRUD operations (ratings/notes/reviews with delete + title_id
 filtering), rewrote movie and series detail pages to render the full canonical

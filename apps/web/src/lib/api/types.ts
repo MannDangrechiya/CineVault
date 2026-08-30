@@ -225,6 +225,11 @@ export interface HistoryItem {
   rating_value?: number | null;
   device_type?: string | null;
   progress_percentage: number;
+  season_id?: string | null;
+  episode_id?: string | null;
+  season_number?: number | null;
+  episode_number?: number | null;
+  episode_name?: string | null;
 }
 
 export interface HistoryParams {

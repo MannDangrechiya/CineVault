@@ -187,6 +187,11 @@ class HistoryItemResponse(BaseModel):
     rating_value: Optional[float] = None
     device_type: Optional[str] = None
     progress_percentage: float = 100.0
+    season_id: Optional[str] = None
+    episode_id: Optional[str] = None
+    season_number: Optional[int] = None
+    episode_number: Optional[int] = None
+    episode_name: Optional[str] = None
 
 class HistoryPageResponse(BaseModel):
     items: List[HistoryItemResponse]

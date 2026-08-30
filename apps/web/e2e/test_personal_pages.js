@@ -290,7 +290,8 @@ async function runPersonalTests() {
     await page.locator('button:has-text("Curator Profile")').click();
     await page.waitForURL('**/dashboard', { timeout: 10000 });
     await page.waitForSelector('header:has-text("curator")', { timeout: 10000 });
-    await page.waitForTimeout(1000);
+    await page.reload({ waitUntil: 'networkidle' });
+    await page.waitForSelector('h3:has-text("Top AI Taste Recommendations")', { timeout: 10000 });
 
     const curatorMetrics = await page.locator('main').innerText();
     console.log('Curator Dashboard preview:', curatorMetrics.slice(0, 300).replace(/\n/g, ' '));

@@ -588,7 +588,9 @@ class CanonicalRepository:
                             primary_ed = ed_sum
 
                     season_summaries = []
-                    for s in title_orm.seasons:
+                    sorted_seasons = sorted(title_orm.seasons, key=lambda s: s.season_number if s.season_number is not None else 0)
+                    for s in sorted_seasons:
+                        sorted_episodes = sorted(s.episodes, key=lambda ep: ep.episode_number if ep.episode_number is not None else 0)
                         ep_summaries = [
                             EpisodeSummary(
                                 id=str(ep.episode_id),
@@ -599,7 +601,7 @@ class CanonicalRepository:
                                 runtime_minutes=ep.runtime_minutes,
                                 overview=ep.overview
                             )
-                            for ep in s.episodes
+                            for ep in sorted_episodes
                         ]
                         season_summaries.append(
                             SeasonSummary(

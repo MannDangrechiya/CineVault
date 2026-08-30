@@ -4,6 +4,22 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc3] - 2026-08-30 (W4 — Series & Advanced Watch Tracking)
+
+### Added
+- Deterministic canonical sorting `(season_number ASC, episode_number ASC)` across all season and episode listings.
+- `title_id` query filtering for watch events repository and `/v1/me/watch-events` / `/v1/personal/watch-events` endpoints.
+- Enriched `HistoryItemResponse` schema and history repository queries with `season_number`, `episode_number`, and `episode_name`.
+- Series Detail page enhancements: Continue Watching hero card, Series & Season watch progress indicators, episode watched state checkmarks, and rewatch count badges.
+- History Page UI enhancement: `S{season}:E{episode}` badges and episode names for episodic watch logs.
+- `test_w4_series_and_advanced_tracking.py` — 8 real PostgreSQL integration tests covering series lookups, episode watch events, status transitions, rewatch counts, streak evaluation, and user isolation.
+- `test_series_watch_tracking.js` — 7 Playwright E2E browser tests for the series episodic experience.
+
+### Fixed
+- Fixed premature series completion bug where watching the first episode marked the entire multi-episode series as `COMPLETED` instead of `IN_PROGRESS`.
+- Corrected user dashboard watch time calculation to include exact episodic duration instead of 0 minutes.
+- Fixed React Hook ordering in `series/[id]/page.tsx` ensuring `useMemo` hooks execute unconditionally before early return branches.
+
 ## [1.0.0-rc2] - 2026-08-30 (W3 — Core Web Reliability)
 
 ### Added

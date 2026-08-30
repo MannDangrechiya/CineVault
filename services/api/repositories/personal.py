@@ -22,7 +22,7 @@ from ..models.personal import (
     UserListModel, UserListItemModel, UserStreakModel
 )
 from ..models.canonical import (
-    TitleModel, EditionModel, TitleCountryModel, TitleLanguageModel, CreditModel
+    TitleModel, EditionModel, SeasonModel, EpisodeModel, TitleCountryModel, TitleLanguageModel, CreditModel
 )
 from ..schemas.personal import (
     WatchEventCreate, WatchEventResponse,
@@ -136,20 +136,26 @@ class PersonalRepository:
     """Provides async database operations for user personal library, watch history, and state."""
 
     async def list_watch_events(
-        self, db: Optional[AsyncSession], user_id: str
+        self,
+        db: Optional[AsyncSession],
+        user_id: str,
+        title_id: Optional[str] = None,
     ) -> List[WatchEventResponse]:
-        """Lists append-only watch events owned by the specified user (CAT-2)."""
+        """Lists append-only watch events owned by the specified user (CAT-2), optionally filtered by title_id."""
         if db is not None:
             try:
                 user_uuid = _resolve_user_uuid(user_id)
+                filters = [
+                    WatchEventModel.user_id == user_uuid,
+                    WatchEventModel.is_tombstoned == False,  # noqa: E712
+                ]
+                if title_id:
+                    title_uuid = _resolve_title_uuid(title_id)
+                    filters.append(WatchEventModel.title_id == title_uuid)
+
                 stmt = (
                     select(WatchEventModel)
-                    .where(
-                        and_(
-                            WatchEventModel.user_id == user_uuid,
-                            WatchEventModel.is_tombstoned == False,  # noqa: E712
-                        )
-                    )
+                    .where(and_(*filters))
                     .order_by(WatchEventModel.watched_at.desc())
                 )
                 result = await db.execute(stmt)
@@ -260,7 +266,36 @@ class PersonalRepository:
                 db.add(event_orm)
                 await db.flush()
 
-                # Automatically maintain user title state
+                # Automatically maintain user title state (ADR-003)
+                target_status = "COMPLETED"
+                if episode_uuid:
+                    # Query total episodes belonging to this series
+                    ep_count_stmt = (
+                        select(func.count(EpisodeModel.episode_id))
+                        .join(SeasonModel, SeasonModel.season_id == EpisodeModel.season_id)
+                        .where(SeasonModel.title_id == title_uuid)
+                    )
+                    total_episodes = (await db.execute(ep_count_stmt)).scalar() or 0
+
+                    # Query distinct watched episodes for this user on this series
+                    watched_eps_stmt = (
+                        select(func.count(func.distinct(WatchEventModel.episode_id)))
+                        .where(
+                            and_(
+                                WatchEventModel.user_id == user_uuid,
+                                WatchEventModel.title_id == title_uuid,
+                                WatchEventModel.episode_id.isnot(None),
+                                WatchEventModel.is_tombstoned == False,  # noqa: E712
+                            )
+                        )
+                    )
+                    distinct_watched = (await db.execute(watched_eps_stmt)).scalar() or 0
+
+                    if total_episodes > 0 and distinct_watched >= total_episodes:
+                        target_status = "COMPLETED"
+                    else:
+                        target_status = "WATCHING"
+
                 state_stmt = select(UserTitleStateModel).where(
                     and_(
                         UserTitleStateModel.user_id == user_uuid,
@@ -273,12 +308,16 @@ class PersonalRepository:
                     st_orm = UserTitleStateModel(
                         user_id=user_uuid,
                         title_id=title_uuid,
-                        manual_status_override="COMPLETED",
+                        manual_status_override=target_status,
                         is_favorite=False,
                         preferred_edition_id=edition_uuid,
                         updated_at=datetime.now(timezone.utc),
                     )
                     db.add(st_orm)
+                else:
+                    if target_status == "COMPLETED" or st_orm.manual_status_override in (None, "PLAN_TO_WATCH", "WATCHLIST", "WATCHING"):
+                        st_orm.manual_status_override = target_status
+                        st_orm.updated_at = datetime.now(timezone.utc)
 
                 # Maintain streak progression (Part 2 Item 2.3)
                 watch_dt = event_orm.watched_at
@@ -660,8 +699,14 @@ class PersonalRepository:
                 events = (await db.execute(stmt)).scalars().all()
 
                 title_ids = [e.title_id for e in events]
+                episode_ids = [e.episode_id for e in events if e.episode_id]
+                season_ids = [e.season_id for e in events if e.season_id]
+
                 title_map: Dict[uuid.UUID, TitleModel] = {}
                 rating_map: Dict[uuid.UUID, RatingModel] = {}
+                episode_map: Dict[uuid.UUID, EpisodeModel] = {}
+                season_map: Dict[uuid.UUID, SeasonModel] = {}
+
                 if title_ids:
                     titles = (
                         await db.execute(select(TitleModel).where(TitleModel.title_id.in_(title_ids)))
@@ -680,21 +725,44 @@ class PersonalRepository:
                     ).scalars().all()
                     rating_map = {r.title_id: r for r in ratings}
 
-                items = [
-                    HistoryItemResponse(
-                        id=str(e.watch_event_id),
-                        title_id=str(e.title_id),
-                        canonical_title=(title_map[e.title_id].canonical_title if e.title_id in title_map else "Unknown Title"),
-                        production_year=(title_map[e.title_id].production_year if e.title_id in title_map else None),
-                        content_type=((title_map[e.title_id].content_type_id if e.title_id in title_map else None) or "MOVIE").upper(),
-                        poster_url=(title_map[e.title_id].poster_url if e.title_id in title_map else None),
-                        watched_at=e.watched_at.isoformat() if e.watched_at else datetime.now(timezone.utc).isoformat(),
-                        rating_value=(rating_map[e.title_id].rating_value if e.title_id in rating_map else None),
-                        device_type=e.device_type,
-                        progress_percentage=100.0,
+                if episode_ids:
+                    episodes = (
+                        await db.execute(select(EpisodeModel).where(EpisodeModel.episode_id.in_(episode_ids)))
+                    ).scalars().all()
+                    episode_map = {ep.episode_id: ep for ep in episodes}
+                    for ep in episodes:
+                        if ep.season_id and ep.season_id not in season_ids:
+                            season_ids.append(ep.season_id)
+
+                if season_ids:
+                    seasons = (
+                        await db.execute(select(SeasonModel).where(SeasonModel.season_id.in_(season_ids)))
+                    ).scalars().all()
+                    season_map = {s.season_id: s for s in seasons}
+
+                items = []
+                for e in events:
+                    ep_orm = episode_map.get(e.episode_id) if e.episode_id else None
+                    s_orm = season_map.get(e.season_id) if e.season_id else (season_map.get(ep_orm.season_id) if ep_orm else None)
+                    items.append(
+                        HistoryItemResponse(
+                            id=str(e.watch_event_id),
+                            title_id=str(e.title_id),
+                            canonical_title=(title_map[e.title_id].canonical_title if e.title_id in title_map else "Unknown Title"),
+                            production_year=(title_map[e.title_id].production_year if e.title_id in title_map else None),
+                            content_type=((title_map[e.title_id].content_type_id if e.title_id in title_map else None) or "MOVIE").upper(),
+                            poster_url=(title_map[e.title_id].poster_url if e.title_id in title_map else None),
+                            watched_at=e.watched_at.isoformat() if e.watched_at else datetime.now(timezone.utc).isoformat(),
+                            rating_value=(rating_map[e.title_id].rating_value if e.title_id in rating_map else None),
+                            device_type=e.device_type,
+                            progress_percentage=100.0,
+                            season_id=str(s_orm.season_id) if s_orm else (str(e.season_id) if e.season_id else None),
+                            episode_id=str(e.episode_id) if e.episode_id else None,
+                            season_number=s_orm.season_number if s_orm else None,
+                            episode_number=ep_orm.episode_number if ep_orm else None,
+                            episode_name=ep_orm.episode_name if ep_orm else None,
+                        )
                     )
-                    for e in events
-                ]
 
                 return HistoryPageResponse(items=items, total=total, limit=limit, offset=offset)
             except ValueError:
@@ -1653,14 +1721,24 @@ class PersonalRepository:
                     titles_data = (await db.execute(stmt_titles)).scalars().all()
                     title_map = {t.title_id: t for t in titles_data}
 
+                    watched_ep_ids = [ev.episode_id for ev in watch_events if ev.episode_id]
+                    ep_map = {}
+                    if watched_ep_ids:
+                        ep_records = (await db.execute(select(EpisodeModel).where(EpisodeModel.episode_id.in_(watched_ep_ids)))).scalars().all()
+                        ep_map = {ep.episode_id: ep for ep in ep_records}
+
                     for ev in watch_events:
                         t = title_map.get(ev.title_id)
                         if t:
-                            runtime = 120
-                            if t.editions:
-                                primary_ed = next((ed for ed in t.editions if ed.is_primary), t.editions[0])
-                                if primary_ed.runtime_minutes:
-                                    runtime = primary_ed.runtime_minutes
+                            if ev.episode_id:
+                                ep_rec = ep_map.get(ev.episode_id)
+                                runtime = ep_rec.runtime_minutes if (ep_rec and ep_rec.runtime_minutes) else 45
+                            else:
+                                runtime = 120
+                                if t.editions:
+                                    primary_ed = next((ed for ed in t.editions if ed.is_primary), t.editions[0])
+                                    if primary_ed.runtime_minutes:
+                                        runtime = primary_ed.runtime_minutes
                             total_watch_minutes += runtime
 
                     for s in title_states:

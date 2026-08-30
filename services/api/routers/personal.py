@@ -420,12 +420,14 @@ async def get_dashboard_metrics(
     return await personal_repository.get_user_dashboard_metrics(db=db, user_id=claims.sub)
 
 @router.get("/watch-events", response_model=PaginatedResponse[WatchEventResponse], dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+@personal_router.get("/watch-events", response_model=PaginatedResponse[WatchEventResponse], dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 async def list_watch_events(
+    title_id: Optional[str] = None,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
-    """Lists append-only watch events owned by current authenticated user (CAT-2)."""
-    events = await personal_repository.list_watch_events(db=db, user_id=claims.sub)
+    """Lists append-only watch events owned by current authenticated user (CAT-2), optionally filtered by title_id."""
+    events = await personal_repository.list_watch_events(db=db, user_id=claims.sub, title_id=title_id)
     return PaginatedResponse(data=events, pagination=CursorPagination(limit=25, has_more=False))
 
 @router.post("/watch-events", response_model=WatchEventResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
