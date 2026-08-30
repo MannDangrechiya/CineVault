@@ -106,6 +106,12 @@ export async function updateFriendshipStatus(
   });
 }
 
+export async function deleteFriendship(friendshipId: string): Promise<void> {
+  await apiFetch<void>(`/social/friendships/${encodeURIComponent(friendshipId)}`, {
+    method: "DELETE",
+  });
+}
+
 export interface TasteMatch {
   friend_id: string;
   compatibility_score: number;

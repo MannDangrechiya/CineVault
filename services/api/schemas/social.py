@@ -477,6 +477,12 @@ class ClubActivityResponse(BaseModel):
     created_at: datetime
 
 
+class ClubActivityCreate(BaseModel):
+    activity_type: str = Field(..., max_length=64)
+    reference_id: Optional[uuid.UUID] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
 class ChallengeCreate(BaseModel):
     title: str = Field(..., max_length=200)
     description: Optional[str] = None

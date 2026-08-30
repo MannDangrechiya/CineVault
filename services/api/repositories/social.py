@@ -214,11 +214,14 @@ class SocialRepository:
         """Creates or initializes a friendship relation."""
         req_uuid = _resolve_uuid(requester_id, "user_id")
         add_uuid = _resolve_uuid(addressee_id, "user_id")
+        if req_uuid == add_uuid:
+            raise ValueError("Users cannot create a friendship with themselves.")
+
         now = datetime.now(timezone.utc)
         friendship_id = uuid.uuid4()
 
         if db is not None:
-            # Check existing
+            # Check existing pairwise relation
             stmt = select(FriendshipModel).where(
                 or_(
                     and_(
@@ -234,6 +237,13 @@ class SocialRepository:
             res = await db.execute(stmt)
             existing = res.scalars().first()
             if existing:
+                # If already ACCEPTED or BLOCKED, preserve existing relationship
+                if existing.status in (FriendshipStatusEnum.ACCEPTED.value, FriendshipStatusEnum.BLOCKED.value):
+                    return FriendshipResponse.model_validate(existing)
+                # If already PENDING, return existing request without duplicating
+                if existing.status == FriendshipStatusEnum.PENDING.value:
+                    return FriendshipResponse.model_validate(existing)
+
                 existing.status = status.value
                 existing.trust_score = trust_score
                 existing.updated_at = now
@@ -258,6 +268,9 @@ class SocialRepository:
                 if (f.requester_id == req_uuid and f.addressee_id == add_uuid) or (
                     f.requester_id == add_uuid and f.addressee_id == req_uuid
                 ):
+                    if f.status in (FriendshipStatusEnum.ACCEPTED, FriendshipStatusEnum.BLOCKED, FriendshipStatusEnum.PENDING):
+                        return f
+
                     updated = FriendshipResponse(
                         friendship_id=f.friendship_id,
                         requester_id=f.requester_id,
@@ -288,9 +301,11 @@ class SocialRepository:
         friendship_id: uuid.UUID,
         status: FriendshipStatusEnum,
         trust_score: Optional[float] = None,
+        actor_id: Optional[uuid.UUID] = None,
     ) -> Optional[FriendshipResponse]:
-        """Updates status of a friendship (e.g. ACCEPTED or BLOCKED)."""
+        """Updates status of a friendship (e.g. ACCEPTED or BLOCKED) with strict actor authorization."""
         fid_uuid = _resolve_uuid(friendship_id, "friendship_id")
+        a_uuid = _resolve_uuid(actor_id, "actor_id") if actor_id else None
         now = datetime.now(timezone.utc)
 
         if db is not None:
@@ -301,6 +316,19 @@ class SocialRepository:
             rec = res.scalars().first()
             if not rec:
                 return None
+
+            # Authorization checks
+            if a_uuid:
+                if a_uuid != rec.requester_id and a_uuid != rec.addressee_id:
+                    raise PermissionError("You are not a participant in this friendship.")
+                if status == FriendshipStatusEnum.ACCEPTED and a_uuid != rec.addressee_id:
+                    raise PermissionError("Only the recipient of a friend request can accept it.")
+                if status == FriendshipStatusEnum.BLOCKED and a_uuid not in (rec.requester_id, rec.addressee_id):
+                    raise PermissionError("Only participants can block a friendship.")
+
+            if rec.status == FriendshipStatusEnum.ACCEPTED.value and status == FriendshipStatusEnum.PENDING:
+                raise ValueError("Cannot transition an accepted friendship back to pending.")
+
             rec.status = status.value
             if trust_score is not None:
                 rec.trust_score = trust_score
@@ -311,6 +339,16 @@ class SocialRepository:
             if fid_uuid not in SEED_FRIENDSHIPS:
                 return None
             curr = SEED_FRIENDSHIPS[fid_uuid]
+
+            if a_uuid:
+                if a_uuid != curr.requester_id and a_uuid != curr.addressee_id:
+                    raise PermissionError("You are not a participant in this friendship.")
+                if status == FriendshipStatusEnum.ACCEPTED and a_uuid != curr.addressee_id:
+                    raise PermissionError("Only the recipient of a friend request can accept it.")
+
+            if curr.status == FriendshipStatusEnum.ACCEPTED and status == FriendshipStatusEnum.PENDING:
+                raise ValueError("Cannot transition an accepted friendship back to pending.")
+
             updated = FriendshipResponse(
                 friendship_id=curr.friendship_id,
                 requester_id=curr.requester_id,
@@ -322,6 +360,35 @@ class SocialRepository:
             )
             SEED_FRIENDSHIPS[fid_uuid] = updated
             return updated
+
+    async def delete_friendship(
+        self,
+        db: Optional[AsyncSession],
+        friendship_id: uuid.UUID,
+        actor_id: Optional[uuid.UUID] = None,
+    ) -> bool:
+        """Deletes / cancels a friendship or pending request. Only participants can delete."""
+        fid_uuid = _resolve_uuid(friendship_id, "friendship_id")
+        a_uuid = _resolve_uuid(actor_id, "actor_id") if actor_id else None
+        if db is not None:
+            stmt = select(FriendshipModel).where(FriendshipModel.friendship_id == fid_uuid)
+            res = await db.execute(stmt)
+            rec = res.scalars().first()
+            if not rec:
+                return False
+            if a_uuid and a_uuid != rec.requester_id and a_uuid != rec.addressee_id:
+                raise PermissionError("You are not a participant in this friendship.")
+            await db.delete(rec)
+            await db.flush()
+            return True
+        else:
+            if fid_uuid not in SEED_FRIENDSHIPS:
+                return False
+            curr = SEED_FRIENDSHIPS[fid_uuid]
+            if a_uuid and a_uuid != curr.requester_id and a_uuid != curr.addressee_id:
+                raise PermissionError("You are not a participant in this friendship.")
+            del SEED_FRIENDSHIPS[fid_uuid]
+            return True
 
     async def list_friendships(
         self, db: Optional[AsyncSession], user_id: uuid.UUID
@@ -366,6 +433,9 @@ class SocialRepository:
         sender_uuid = _resolve_uuid(sender_id, "user_id")
         recipient_uuid = _resolve_uuid(body.recipient_id, "user_id")
         title_uuid = _resolve_uuid(body.title_id, "title_id")
+        if sender_uuid == recipient_uuid:
+            raise ValueError("Users cannot send recommendations to themselves.")
+
         now = datetime.now(timezone.utc)
         rec_id = uuid.uuid4()
 
@@ -441,6 +511,7 @@ class SocialRepository:
           WATCHED -> RATED (requires recipient_actual_rating)
         """
         rec_uuid = _resolve_uuid(recommendation_id, "recommendation_id")
+        a_uuid = _resolve_uuid(actor_id, "actor_id") if actor_id else None
         now = datetime.now(timezone.utc)
 
         if db is not None:
@@ -451,6 +522,10 @@ class SocialRepository:
             rec = res.scalars().first()
             if not rec:
                 raise KeyError(f"Recommendation with ID {recommendation_id} not found.")
+
+            # Recipient-only mutation authorization
+            if a_uuid and rec.recipient_id != a_uuid:
+                raise PermissionError("Only the recipient of a recommendation can update its lifecycle state.")
 
             current_status = RecommendationStatusEnum(rec.status)
             target_status = body.status
@@ -478,6 +553,9 @@ class SocialRepository:
                 raise KeyError(f"Recommendation with ID {recommendation_id} not found.")
 
             curr = SEED_RECOMMENDATIONS[rec_uuid]
+            if a_uuid and curr.recipient_id != a_uuid:
+                raise PermissionError("Only the recipient of a recommendation can update its lifecycle state.")
+
             current_status = curr.status
             target_status = body.status
 
@@ -2219,7 +2297,7 @@ class SocialRepository:
     async def join_watch_club(
         self, db: Optional[AsyncSession], slug: str, user_id: uuid.UUID,
     ) -> ClubMembershipResponse:
-        """Add a user to a watch club."""
+        """Add a user to a watch club idempotently."""
         u_uuid = _resolve_uuid(user_id, "user_id")
         now = datetime.now(timezone.utc)
         if db is not None:
@@ -2228,12 +2306,28 @@ class SocialRepository:
             club = (await db.execute(stmt)).scalar_one_or_none()
             if not club:
                 raise ValueError("Watch club not found.")
+
+            stmt_m = select(ClubMembershipModel).where(
+                and_(
+                    ClubMembershipModel.club_id == club.club_id,
+                    ClubMembershipModel.user_id == u_uuid,
+                )
+            )
+            existing_m = (await db.execute(stmt_m)).scalar_one_or_none()
+            if existing_m:
+                return ClubMembershipResponse(
+                    club_id=existing_m.club_id,
+                    user_id=existing_m.user_id,
+                    role=existing_m.role,
+                    joined_at=existing_m.joined_at,
+                )
+
             membership = ClubMembershipModel(
                 club_id=club.club_id, user_id=u_uuid, role="MEMBER", joined_at=now,
             )
             db.add(membership)
             club.member_count += 1
-            await db.commit()
+            await db.flush()
             return ClubMembershipResponse(
                 club_id=club.club_id, user_id=u_uuid, role="MEMBER", joined_at=now,
             )
@@ -2241,6 +2335,9 @@ class SocialRepository:
             rec = SEED_CLUBS.get(slug)
             if not rec:
                 raise ValueError("Watch club not found.")
+            for m in SEED_CLUB_MEMBERSHIPS:
+                if m["club_id"] == rec["club_id"] and m["user_id"] == u_uuid:
+                    return ClubMembershipResponse(**m)
             m = {"club_id": rec["club_id"], "user_id": u_uuid, "role": "MEMBER", "joined_at": now}
             SEED_CLUB_MEMBERSHIPS.append(m)
             rec["member_count"] = rec.get("member_count", 1) + 1
@@ -2288,7 +2385,7 @@ class SocialRepository:
                 reference_id=reference_id, metadata_json=metadata or {}, created_at=now,
             )
             db.add(act)
-            await db.commit()
+            await db.flush()
             return ClubActivityResponse(
                 activity_id=act.activity_id, club_id=c_uuid, user_id=u_uuid,
                 activity_type=activity_type, reference_id=reference_id,
@@ -2352,7 +2449,7 @@ class SocialRepository:
                 starts_at=payload.starts_at, ends_at=payload.ends_at, created_at=now,
             )
             db.add(ch)
-            await db.commit()
+            await db.flush()
             return ChallengeResponse(
                 challenge_id=ch.challenge_id, title=ch.title, description=ch.description,
                 challenge_type=ch.challenge_type, club_id=ch.club_id,
@@ -2374,23 +2471,43 @@ class SocialRepository:
     async def join_challenge(
         self, db: Optional[AsyncSession], challenge_id: uuid.UUID, user_id: uuid.UUID,
     ) -> ChallengeParticipantResponse:
-        """Join a challenge as a participant."""
+        """Join a challenge as a participant idempotently."""
         ch_uuid = _resolve_uuid(challenge_id, "challenge_id")
         u_uuid = _resolve_uuid(user_id, "user_id")
         now = datetime.now(timezone.utc)
         if db is not None:
             from ..models.social import ChallengeParticipantModel
+            stmt_p = select(ChallengeParticipantModel).where(
+                and_(
+                    ChallengeParticipantModel.challenge_id == ch_uuid,
+                    ChallengeParticipantModel.user_id == u_uuid,
+                )
+            )
+            existing_p = (await db.execute(stmt_p)).scalar_one_or_none()
+            if existing_p:
+                return ChallengeParticipantResponse(
+                    challenge_id=existing_p.challenge_id,
+                    user_id=existing_p.user_id,
+                    progress=existing_p.progress,
+                    completed=existing_p.completed,
+                    completed_at=existing_p.completed_at,
+                    joined_at=existing_p.joined_at,
+                )
+
             p = ChallengeParticipantModel(
                 challenge_id=ch_uuid, user_id=u_uuid, progress=0, completed=False, joined_at=now,
             )
             db.add(p)
-            await db.commit()
+            await db.flush()
             return ChallengeParticipantResponse(
                 challenge_id=ch_uuid, user_id=u_uuid, progress=0, completed=False, joined_at=now,
             )
         else:
             if ch_uuid not in SEED_CHALLENGES:
                 raise ValueError("Challenge not found.")
+            for p in SEED_CHALLENGE_PARTICIPANTS:
+                if p["challenge_id"] == ch_uuid and p["user_id"] == u_uuid:
+                    return ChallengeParticipantResponse(**p)
             rec = {"challenge_id": ch_uuid, "user_id": u_uuid, "progress": 0, "completed": False, "completed_at": None, "joined_at": now}
             SEED_CHALLENGE_PARTICIPANTS.append(rec)
             SEED_CHALLENGES[ch_uuid]["participant_count"] = SEED_CHALLENGES[ch_uuid].get("participant_count", 0) + 1
@@ -2399,12 +2516,20 @@ class SocialRepository:
     async def update_challenge_progress(
         self, db: Optional[AsyncSession], challenge_id: uuid.UUID, user_id: uuid.UUID, increment: int = 1,
     ) -> ChallengeParticipantResponse:
-        """Increment a participant's challenge progress."""
+        """Increment a participant's challenge progress with active time window validation."""
         ch_uuid = _resolve_uuid(challenge_id, "challenge_id")
         u_uuid = _resolve_uuid(user_id, "user_id")
         now = datetime.now(timezone.utc)
         if db is not None:
             from ..models.social import ChallengeParticipantModel, ChallengeModel
+            # Validate challenge exists and is active
+            goal_stmt = select(ChallengeModel).where(ChallengeModel.challenge_id == ch_uuid)
+            ch = (await db.execute(goal_stmt)).scalar_one_or_none()
+            if not ch:
+                raise ValueError("Challenge not found.")
+            if now < ch.starts_at or now >= ch.ends_at:
+                raise ValueError("Cannot update progress on an inactive or expired challenge.")
+
             stmt = select(ChallengeParticipantModel).where(
                 and_(ChallengeParticipantModel.challenge_id == ch_uuid, ChallengeParticipantModel.user_id == u_uuid)
             )
@@ -2412,21 +2537,25 @@ class SocialRepository:
             if not p:
                 raise ValueError("Not a participant in this challenge.")
             p.progress += increment
-            goal_stmt = select(ChallengeModel.goal_count).where(ChallengeModel.challenge_id == ch_uuid)
-            goal = (await db.execute(goal_stmt)).scalar_one_or_none() or 1
+            goal = ch.goal_count or 1
             if p.progress >= goal and not p.completed:
                 p.completed = True
                 p.completed_at = now
-            await db.commit()
+            await db.flush()
             return ChallengeParticipantResponse(
                 challenge_id=ch_uuid, user_id=u_uuid, progress=p.progress,
                 completed=p.completed, completed_at=p.completed_at, joined_at=p.joined_at,
             )
         else:
+            ch = SEED_CHALLENGES.get(ch_uuid)
+            if not ch:
+                raise ValueError("Challenge not found.")
+            if now < ch["starts_at"] or now >= ch["ends_at"]:
+                raise ValueError("Cannot update progress on an inactive or expired challenge.")
+
             for rec in SEED_CHALLENGE_PARTICIPANTS:
                 if rec["challenge_id"] == ch_uuid and rec["user_id"] == u_uuid:
                     rec["progress"] += increment
-                    ch = SEED_CHALLENGES.get(ch_uuid, {})
                     if rec["progress"] >= ch.get("goal_count", 1) and not rec["completed"]:
                         rec["completed"] = True
                         rec["completed_at"] = now

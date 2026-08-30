@@ -1,5 +1,22 @@
 # Web App Feature Audit — 2026-08-25 / 2026-08-26 / 2026-08-30
 
+**2026-08-30 W7 close-out session:** Social & Multiplayer Reliability phase.
+Hardened CineVault's complete social and multiplayer surface against real PostgreSQL:
+- **Flyway Migration V3.6**: Applied `V3.6__harden_social_constraints.sql` creating unique pairwise index `uq_friendship_pairwise` on `social.friendship (LEAST(requester_id, addressee_id), GREATEST(requester_id, addressee_id))` enforcing database-level race safety and preventing reciprocal duplicate rows. Added performance indexes on `social.recommendation`, `social.pick_vote`, and `social.challenge`.
+- **Friendships Security & Lifecycle**: Enforced strict actor authorization on status updates (`ACCEPTED` requires addressee; `BLOCKED` requires participant), prevented status downgrades, rejected self-friendships with `400 Bad Request`, and added participant-only `DELETE /social/friendships/{id}` for unfriend/cancellation.
+- **Peer Recommendations (IDOR & Privacy)**: Strict recipient-only authorization for recommendation lifecycle state mutations (`403 Forbidden` for non-recipients), sender/recipient-only access on `GET /social/recommendations/{id}`, rejected self-recommendations with `400 Bad Request`.
+- **Watch Clubs (Idempotency & Activity Feeds)**: Added idempotency check in `join_watch_club` preventing unique constraint collisions and membership count inflation; added `POST /social/clubs/{slug}/activities` endpoint for live activity stream logging.
+- **Viewing Challenges (Time-Window Validation & Idempotency)**: Added idempotency check in `join_challenge`; enforced active time window validation (`starts_at <= now < ends_at`) rejecting progress increments on expired challenges with `400 Bad Request`.
+- **Pick Rooms (Multiplayer Voting & Concurrency)**: Enforced unique constraint `uq_pick_vote_voter_candidate (room_id, voter_fingerprint, title_id)` for atomic 1-user-1-vote tallying; host-only room close with deterministic winning candidate resolution.
+- **Verification Suites**:
+  - `test_w7_social_and_multiplayer.py`: 12 passed / 0 failed in 12.09s against live PostgreSQL.
+  - Full Social Backend Regression (9 test files, 49 tests): 49 passed / 0 failed in 35.68s.
+  - Weekly Backend Regression (W3 + W4 + W5 + W6 + W7 - 50 tests): 50 passed / 0 failed in 74.54s.
+  - Playwright Multi-User E2E (`node e2e/test_social_multiplayer.js`): 10 passed / 0 failed across Dev and Curator browser sessions.
+  - TypeScript: 0 errors (`npx tsc --noEmit`).
+  - ESLint: 0 errors / 0 warnings (`npm run lint`).
+  - Production build: PASS (`npm run build`, 25 routes compiled).
+
 Session goal: user reported the web app showing only 9 movies / 1 series, broken
 filters, and missing images. This audit found the root cause (a dead DB
 connection silently falling back to 10-row seed data) plus several deeper bugs

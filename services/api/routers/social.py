@@ -7,6 +7,7 @@ import random
 from typing import Optional, List, Dict, Any
 import uuid
 from fastapi import APIRouter, Depends, Query, Path, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..schemas.social import (
@@ -41,6 +42,7 @@ from ..schemas.social import (
     ClubMembershipResponse,
     ClubDetailResponse,
     ClubActivityResponse,
+    ClubActivityCreate,
     ChallengeCreate,
     ChallengeResponse,
     ChallengeParticipantResponse,
@@ -128,6 +130,7 @@ async def update_recommendation_state(
     - SENT -> ACCEPTED or REJECTED
     - ACCEPTED -> WATCHED
     - WATCHED -> RATED (requires recipient_actual_rating)
+    Only the recipient of the recommendation is authorized to mutate its lifecycle state.
     """
     actor_id = _extract_user_id(claims)
 
@@ -142,6 +145,11 @@ async def update_recommendation_state(
     except KeyError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
     except ValueError as exc:
@@ -161,12 +169,18 @@ async def get_recommendation_by_id(
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db),
 ):
-    """Retrieves a single recommendation record by ID."""
+    """Retrieves a single recommendation record by ID (authorized for sender or recipient only)."""
+    user_id = _extract_user_id(claims)
     rec = await social_repository.get_recommendation(db=db, recommendation_id=id)
     if not rec:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Recommendation with ID {id} not found.",
+        )
+    if rec.sender_id != user_id and rec.recipient_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not authorized to view this recommendation.",
         )
     return rec
 
@@ -259,19 +273,63 @@ async def update_friendship_status(
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db),
 ):
-    """Updates the status of a friendship relationship (e.g. ACCEPTED or BLOCKED)."""
-    updated = await social_repository.update_friendship_status(
-        db=db,
-        friendship_id=id,
-        status=body.status,
-        trust_score=body.trust_score,
-    )
-    if not updated:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Friendship with ID {id} not found.",
+    """Updates the status of a friendship relationship (e.g. ACCEPTED or BLOCKED) with strict actor authorization."""
+    actor_id = _extract_user_id(claims)
+    try:
+        updated = await social_repository.update_friendship_status(
+            db=db,
+            friendship_id=id,
+            status=body.status,
+            trust_score=body.trust_score,
+            actor_id=actor_id,
         )
-    return updated
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Friendship with ID {id} not found.",
+            )
+        return updated
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.delete(
+    "/friendships/{id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))],
+)
+async def delete_friendship(
+    id: uuid.UUID = Path(..., description="Friendship UUID"),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Cancels a pending request or removes an existing friendship (unfriend)."""
+    actor_id = _extract_user_id(claims)
+    try:
+        deleted = await social_repository.delete_friendship(
+            db=db,
+            friendship_id=id,
+            actor_id=actor_id,
+        )
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Friendship with ID {id} not found.",
+            )
+        return None
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get(
@@ -904,6 +962,42 @@ async def get_club_feed(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
+@router.post(
+    "/clubs/{slug}/activities",
+    response_model=ClubActivityResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(enforce_rate_limit("SOCIAL_WRITE"))],
+)
+async def post_club_activity(
+    slug: str,
+    payload: ClubActivityCreate,
+    claims: SecurityTokenClaims = Depends(require_authenticated_user),
+    db: Optional[AsyncSession] = Depends(get_db),
+):
+    """Post an activity event to a club feed."""
+    user_id = _extract_user_id(claims)
+    if db is not None:
+        from ..models.social import WatchClubModel
+        stmt = select(WatchClubModel.club_id).where(WatchClubModel.slug == slug)
+        club_id = (await db.execute(stmt)).scalar_one_or_none()
+    else:
+        from ..repositories.social import SEED_CLUBS
+        rec = SEED_CLUBS.get(slug)
+        club_id = rec["club_id"] if rec else None
+
+    if not club_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Watch club not found.")
+
+    return await social_repository.post_club_activity(
+        db=db,
+        club_id=club_id,
+        user_id=user_id,
+        activity_type=payload.activity_type,
+        reference_id=payload.reference_id,
+        metadata=payload.metadata,
+    )
+
+
 # ── Phase 3: Monthly Challenges (2.13) ──────────────────────────────────────
 
 @router.post(
@@ -988,7 +1082,9 @@ async def update_challenge_progress(
             db=db, challenge_id=challenge_id, user_id=user_id, increment=increment
         )
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        if "not found" in str(exc).lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 

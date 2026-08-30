@@ -159,8 +159,8 @@ def test_full_social_core_and_recommendation_state_machine_lifecycle():
     5. User B rates it (status: RATED, rating: 9.5).
     6. Invalid transitions are properly rejected.
     """
-    user_a_id = "018f4a00-0000-7000-8000-000000000010"
-    user_b_id = "018f4a00-0000-7000-8000-000000000020"
+    user_a_id = str(uuid.uuid4())
+    user_b_id = str(uuid.uuid4())
     title_id = get_any_real_title_id()
 
     token_a = get_test_token(user_a_id)
@@ -272,8 +272,8 @@ def test_full_social_core_and_recommendation_state_machine_lifecycle():
 
 def test_recommendation_rejection_path():
     """Tests the state transition SENT -> REJECTED and verifies terminal rejection state."""
-    user_c_id = "018f4a00-0000-7000-8000-000000000040"
-    user_d_id = "018f4a00-0000-7000-8000-000000000050"
+    user_c_id = str(uuid.uuid4())
+    user_d_id = str(uuid.uuid4())
     title_id = get_any_real_title_id()
 
     token_c = get_test_token(user_c_id)

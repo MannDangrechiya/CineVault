@@ -4,6 +4,34 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc6] - 2026-08-30 (W7 — Social & Multiplayer Reliability)
+
+### Added
+- Flyway Migration `V3.6__harden_social_constraints.sql`:
+  - Enforced pairwise friendship uniqueness via unique index `uq_friendship_pairwise` on `social.friendship (LEAST(requester_id, addressee_id), GREATEST(requester_id, addressee_id))`.
+  - Added query performance indexes on `social.recommendation`, `social.pick_vote`, and `social.challenge`.
+- Friendship Authorization & Lifecycle Hardening:
+  - Strict self-friendship rejection (`400 Bad Request`).
+  - Status mutation authorization: `ACCEPTED` requires addressee; `BLOCKED` requires participant; status downgrades from `ACCEPTED` prevented.
+  - Added participant-only `DELETE /social/friendships/{id}` endpoint for friendship unlinking.
+- Peer Recommendations Security (IDOR & State Machine):
+  - Strict recipient-only authorization for recommendation state transitions (`ACCEPTED`, `REJECTED`, `WATCHED`, `RATED`). Non-recipients receive `403 Forbidden`.
+  - Sender/recipient-only access on `GET /social/recommendations/{id}`.
+  - Rejected self-recommendations (`400 Bad Request`).
+- Watch Clubs & Challenges Hardening:
+  - Idempotent `join_watch_club` and `join_challenge` operations preventing duplicate member rows and counter inflation.
+  - Added `POST /social/clubs/{slug}/activities` endpoint for club activity stream logging.
+  - Active challenge window validation: `update_challenge_progress` rejects increments on expired challenges with `400 Bad Request`.
+- Pick Rooms Concurrency & Deduplication:
+  - Unique voter constraint `uq_pick_vote_voter_candidate (room_id, voter_fingerprint, title_id)` ensuring atomic 1-voter-1-candidate tallying.
+  - Host-only ballot closure with deterministic winner resolution.
+- `test_w7_social_and_multiplayer.py` — 12 comprehensive real PostgreSQL integration tests across User A, User B, and User C (Attacker).
+- Playwright Multi-User E2E suite (`node e2e/test_social_multiplayer.js`) — 10 tests across Dev and Curator browser contexts.
+
+### Fixed
+- Fixed unhandled `select` import and 404 vs 400 error handling in `routers/social.py`.
+- Fixed Playwright E2E invite generation async waiting and club creation flows.
+
 ## [1.0.0-rc5] - 2026-08-30 (W6 — Recommendations + AI / Oracle Reliability)
 
 ### Added

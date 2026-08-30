@@ -985,6 +985,47 @@ profiling, episodic watch exclusions, grounded explanations, AI provider
 abstractions, and CAT-6 governance are verified end-to-end against real
 PostgreSQL data.
 
-### W7–W13
-Not started. See the master task for full phase breakdown (social multiplayer,
-import/export, search quality, UX/accessibility, security, full QA, production readiness).
+### W7 — Social & Multiplayer Reliability `[x]` COMPLETE (2026-08-30)
+
+**Goal:** Make CineVault's existing social and multiplayer features real,
+persistent, authorized, private, consistent, resilient, race-safe, refresh-safe,
+multi-user safe, PostgreSQL-backed, and browser-verified without paid SaaS.
+
+#### Database & Schema (V3.6 Migration)
+- [x] Applied Flyway migration `V3.6__harden_social_constraints.sql` to PostgreSQL container:
+      - Unique index `uq_friendship_pairwise` on `social.friendship (LEAST(requester_id, addressee_id), GREATEST(requester_id, addressee_id))` for race-safe pairwise friendship uniqueness.
+      - Performance indexes on `social.recommendation (recipient_id, status)`, `social.pick_vote (room_id, title_id)`, `social.challenge (starts_at, ends_at)`.
+
+#### Backend Repositories & Routers (services/api)
+- [x] `repositories/social.py` & `routers/social.py`:
+      - **Friendship Hardening**: Self-friendship rejection (`400`), pairwise uniqueness via DB constraint, status downgrade prevention, strict actor authorization (`ACCEPTED` requires addressee; `BLOCKED` requires participant), participant-only `DELETE /social/friendships/{id}`.
+      - **Peer Recommendations**: IDOR protection (`403` on state mutation by non-recipient; participant-only read authorization), self-recommendation rejection (`400`).
+      - **Watch Clubs**: Idempotent join (`join_watch_club` checks existing membership before insert), `POST /social/clubs/{slug}/activities` endpoint for activity stream logging.
+      - **Challenges**: Idempotent join (`join_challenge` checks existing participant record), active window validation (`update_challenge_progress` rejects increments on expired challenges with `400 Bad Request`).
+      - **Pick Rooms**: Atomic multi-user vote tallying (`social.pick_vote`), unique voter deduplication, host-only room close with deterministic winner resolution.
+
+#### Web Interface (apps/web)
+- [x] `src/lib/api/ai.ts`: Added `deleteFriendship(friendshipId: string)` client API function.
+- [x] `e2e/test_social_multiplayer.js`: Hardened Playwright multi-user E2E tests across Dev and Curator accounts covering Viral Invites, Friends Circle, Peer Recommendations, Notification Bell, Watch Clubs & Standalone slug page, Monthly Challenges, Pick Rooms Voting & 404 screen, and Friend Leaderboard.
+
+#### Tests & Verification
+- [x] `test_w7_social_and_multiplayer.py` (12 tests):
+      - 12 passed / 0 failed in 12.09s against live PostgreSQL.
+- [x] Full Social Backend Regression (9 test files, 49 tests):
+      - 49 passed / 0 failed in 35.68s.
+- [x] Weekly Backend Regression (W3 + W4 + W5 + W6 + W7 - 50 tests):
+      - 50 passed / 0 failed in 74.54s.
+- [x] Playwright Multi-User E2E (`node e2e/test_social_multiplayer.js`):
+      - 10 passed / 0 failed across Dev and Curator browser sessions.
+- [x] TypeScript: `npx tsc --noEmit` — PASS (0 errors).
+- [x] ESLint: `npm run lint` — PASS (0 warnings, 0 errors).
+- [x] Production build: `npm run build` — PASS (25 routes compiled).
+
+**W7 status: COMPLETE.** All social, friend circles, peer recommendations,
+watch clubs, viewing challenges, pick room multiplayer voting, viral invites,
+and leaderboards are robust, race-safe, IDOR-protected, and verified on real PostgreSQL.
+
+### W8–W13
+Not started. See the master task for full phase breakdown (import/export,
+search quality, UX/accessibility, security, full QA, production readiness).
+
