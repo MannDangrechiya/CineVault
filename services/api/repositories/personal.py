@@ -22,7 +22,7 @@ from ..models.personal import (
     UserListModel, UserListItemModel, UserStreakModel
 )
 from ..models.canonical import (
-    TitleModel, EditionModel, SeasonModel, EpisodeModel, TitleCountryModel, TitleLanguageModel, CreditModel
+    TitleModel, EditionModel, SeasonModel, EpisodeModel, TitleCountryModel, TitleLanguageModel, CreditModel, TitleExternalIdModel
 )
 from ..schemas.personal import (
     WatchEventCreate, WatchEventResponse,
@@ -36,6 +36,7 @@ from ..schemas.personal import (
     ImportPreviewResponse,
     ImportPreviewRequest,
     ImportConflictItem,
+    ImportCandidateMatch,
     ImportApplyResponse,
     ImportApplyRequest,
     ImportItemPayload,
@@ -55,6 +56,13 @@ from ..schemas.personal import (
     CollectionTitleItem,
     LibraryItemResponse,
     LibraryPageResponse,
+)
+from ..personal.export_service import (
+    build_json_export, build_csv_zip_export, build_excel_export, build_markdown_export
+)
+from ..personal.mapping import (
+    parse_csv_content, parse_json_content, parse_xlsx_content, parse_unstructured_text_content,
+    convert_raw_dict_to_import_payload
 )
 
 # Both values are treated as "on the watchlist" — some pre-existing rows use
@@ -1942,101 +1950,377 @@ class PersonalRepository:
         export_format: str = "json",
         scope: Optional[str] = None
     ) -> PersonalDataExportResponse:
-        """Exports user personal library data across watch events, ratings, states, notes, and custom lists."""
+        """Exports complete user personal data across library, watchlist, watch events, ratings, states, notes, reviews, custom lists, and streak."""
         user_uuid = _resolve_user_uuid(user_id)
         exported_at = datetime.now(timezone.utc).isoformat()
 
+        library: List[Dict[str, Any]] = []
+        watchlist: List[Dict[str, Any]] = []
         watch_history: List[Dict[str, Any]] = []
         ratings: List[Dict[str, Any]] = []
         states: List[Dict[str, Any]] = []
         notes: List[Dict[str, Any]] = []
+        reviews: List[Dict[str, Any]] = []
         custom_lists: List[Dict[str, Any]] = []
+        streak_data: Dict[str, Any] = {}
 
         if db is not None:
             try:
-                if scope is None or scope == "watch_history":
-                    we_stmt = select(WatchEventModel).where(
-                        and_(
+                # 1. Library entries joined with TitleModel
+                if scope is None or scope in ("library", "all"):
+                    lib_stmt = (
+                        select(LibraryEntryModel, TitleModel)
+                        .join(TitleModel, LibraryEntryModel.title_id == TitleModel.title_id)
+                        .where(LibraryEntryModel.user_id == user_uuid)
+                        .order_by(LibraryEntryModel.added_at.desc())
+                    )
+                    lib_res = await db.execute(lib_stmt)
+                    for le, t in lib_res.all():
+                        library.append({
+                            "title_id": str(le.title_id),
+                            "display_id": t.display_id,
+                            "canonical_title": t.canonical_title,
+                            "production_year": t.production_year,
+                            "content_type": t.content_type_id,
+                            "added_at": le.added_at.isoformat() if le.added_at else None,
+                            "status_override": le.status_override
+                        })
+
+                # 2. Watchlist (from user_title_state where manual_status_override is PLAN_TO_WATCH or WATCHLIST)
+                if scope is None or scope in ("watchlist", "all"):
+                    wl_stmt = (
+                        select(UserTitleStateModel, TitleModel)
+                        .join(TitleModel, UserTitleStateModel.title_id == TitleModel.title_id)
+                        .where(
+                            UserTitleStateModel.user_id == user_uuid,
+                            UserTitleStateModel.manual_status_override.in_(["PLAN_TO_WATCH", "WATCHLIST"])
+                        )
+                        .order_by(UserTitleStateModel.updated_at.desc())
+                    )
+                    wl_res = await db.execute(wl_stmt)
+                    for st, t in wl_res.all():
+                        watchlist.append({
+                            "title_id": str(st.title_id),
+                            "display_id": t.display_id,
+                            "canonical_title": t.canonical_title,
+                            "production_year": t.production_year,
+                            "content_type": t.content_type_id,
+                            "added_at": st.updated_at.isoformat() if st.updated_at else None
+                        })
+
+                # 3. Watch history joined with TitleModel, SeasonModel, EpisodeModel
+                if scope is None or scope in ("watch_history", "history", "all"):
+                    we_stmt = (
+                        select(
+                            WatchEventModel,
+                            TitleModel,
+                            SeasonModel.season_number,
+                            EpisodeModel.episode_number,
+                            EpisodeModel.episode_name
+                        )
+                        .join(TitleModel, WatchEventModel.title_id == TitleModel.title_id)
+                        .outerjoin(SeasonModel, WatchEventModel.season_id == SeasonModel.season_id)
+                        .outerjoin(EpisodeModel, WatchEventModel.episode_id == EpisodeModel.episode_id)
+                        .where(
                             WatchEventModel.user_id == user_uuid,
                             WatchEventModel.is_tombstoned == False  # noqa: E712
                         )
-                    ).order_by(WatchEventModel.watched_at.desc())
+                        .order_by(WatchEventModel.watched_at.desc())
+                    )
                     we_res = await db.execute(we_stmt)
-                    for we in we_res.scalars().all():
+                    for we, t, s_num, ep_num, ep_name in we_res.all():
                         watch_history.append({
                             "watch_event_id": str(we.watch_event_id),
                             "title_id": str(we.title_id),
+                            "display_id": t.display_id,
+                            "canonical_title": t.canonical_title,
+                            "production_year": t.production_year,
+                            "content_type": t.content_type_id,
+                            "season_id": str(we.season_id) if we.season_id else None,
+                            "episode_id": str(we.episode_id) if we.episode_id else None,
+                            "season_number": s_num,
+                            "episode_number": ep_num,
+                            "episode_name": ep_name,
                             "watched_at": we.watched_at.isoformat() if we.watched_at else None,
                             "notes": we.notes,
-                            "device_type": we.device_type
+                            "device_type": we.device_type,
+                            "is_tombstoned": we.is_tombstoned
                         })
 
-                if scope is None or scope == "ratings":
-                    r_stmt = select(RatingModel).where(RatingModel.user_id == user_uuid)
+                # 4. Ratings joined with TitleModel
+                if scope is None or scope in ("ratings", "all"):
+                    r_stmt = (
+                        select(RatingModel, TitleModel)
+                        .join(TitleModel, RatingModel.title_id == TitleModel.title_id)
+                        .where(RatingModel.user_id == user_uuid)
+                        .order_by(RatingModel.rated_at.desc())
+                    )
                     r_res = await db.execute(r_stmt)
-                    for r in r_res.scalars().all():
+                    for r, t in r_res.all():
                         ratings.append({
                             "rating_id": str(r.rating_id),
                             "title_id": str(r.title_id),
+                            "display_id": t.display_id,
+                            "canonical_title": t.canonical_title,
+                            "production_year": t.production_year,
                             "rating_value": r.rating_value,
                             "rated_at": r.rated_at.isoformat() if r.rated_at else None
                         })
 
-                if scope is None or scope == "states":
-                    st_stmt = select(UserTitleStateModel).where(UserTitleStateModel.user_id == user_uuid)
+                # 5. User title states joined with TitleModel
+                if scope is None or scope in ("states", "all"):
+                    st_stmt = (
+                        select(UserTitleStateModel, TitleModel)
+                        .join(TitleModel, UserTitleStateModel.title_id == TitleModel.title_id)
+                        .where(UserTitleStateModel.user_id == user_uuid)
+                        .order_by(UserTitleStateModel.updated_at.desc())
+                    )
                     st_res = await db.execute(st_stmt)
-                    for st in st_res.scalars().all():
+                    for st, t in st_res.all():
                         states.append({
                             "title_id": str(st.title_id),
+                            "display_id": t.display_id,
+                            "canonical_title": t.canonical_title,
                             "manual_status_override": st.manual_status_override,
                             "is_favorite": st.is_favorite,
                             "updated_at": st.updated_at.isoformat() if st.updated_at else None
                         })
 
-                if scope is None or scope == "notes":
-                    n_stmt = select(NoteModel).where(NoteModel.user_id == user_uuid)
+                # 6. Notes joined with TitleModel
+                if scope is None or scope in ("notes", "all"):
+                    n_stmt = (
+                        select(NoteModel, TitleModel)
+                        .join(TitleModel, NoteModel.title_id == TitleModel.title_id)
+                        .where(NoteModel.user_id == user_uuid)
+                        .order_by(NoteModel.created_at.desc())
+                    )
                     n_res = await db.execute(n_stmt)
-                    for n in n_res.scalars().all():
+                    for n, t in n_res.all():
                         notes.append({
                             "note_id": str(n.note_id),
                             "title_id": str(n.title_id),
+                            "display_id": t.display_id,
+                            "canonical_title": t.canonical_title,
+                            "production_year": t.production_year,
                             "note_text": n.note_text,
                             "created_at": n.created_at.isoformat() if n.created_at else None
                         })
 
-                if scope is None or scope == "lists":
-                    ul_stmt = select(UserListModel).options(selectinload(UserListModel.items)).where(UserListModel.user_id == user_uuid)
+                # 7. Reviews joined with TitleModel
+                if scope is None or scope in ("reviews", "all"):
+                    rev_stmt = (
+                        select(ReviewModel, TitleModel)
+                        .join(TitleModel, ReviewModel.title_id == TitleModel.title_id)
+                        .where(ReviewModel.user_id == user_uuid)
+                        .order_by(ReviewModel.created_at.desc())
+                    )
+                    rev_res = await db.execute(rev_stmt)
+                    for rev, t in rev_res.all():
+                        reviews.append({
+                            "review_id": str(rev.review_id),
+                            "title_id": str(rev.title_id),
+                            "display_id": t.display_id,
+                            "canonical_title": t.canonical_title,
+                            "production_year": t.production_year,
+                            "review_title": rev.review_title,
+                            "review_text": rev.review_text,
+                            "contains_spoilers": rev.contains_spoilers,
+                            "created_at": rev.created_at.isoformat() if rev.created_at else None
+                        })
+
+                # 8. Custom lists / collections
+                if scope is None or scope in ("lists", "collections", "all"):
+                    ul_stmt = (
+                        select(UserListModel)
+                        .options(selectinload(UserListModel.items))
+                        .where(UserListModel.user_id == user_uuid)
+                        .order_by(UserListModel.created_at.desc())
+                    )
                     ul_res = await db.execute(ul_stmt)
-                    for ul in ul_res.scalars().all():
+                    user_lists = ul_res.scalars().all()
+                    all_item_title_ids = [it.title_id for ul in user_lists for it in ul.items]
+                    titles_map = {}
+                    if all_item_title_ids:
+                        t_stmt = select(TitleModel).where(TitleModel.title_id.in_(all_item_title_ids))
+                        t_res = await db.execute(t_stmt)
+                        for t in t_res.scalars().all():
+                            titles_map[t.title_id] = t
+
+                    for ul in user_lists:
                         custom_lists.append({
                             "list_id": str(ul.list_id),
                             "title": ul.title,
                             "description": ul.description,
+                            "is_private": ul.is_private,
+                            "created_at": ul.created_at.isoformat() if ul.created_at else None,
                             "items": [
                                 {
+                                    "item_id": str(it.item_id),
                                     "title_id": str(it.title_id),
+                                    "display_id": titles_map[it.title_id].display_id if it.title_id in titles_map else "",
+                                    "canonical_title": titles_map[it.title_id].canonical_title if it.title_id in titles_map else "",
+                                    "production_year": titles_map[it.title_id].production_year if it.title_id in titles_map else None,
                                     "position": it.position,
-                                    "notes": it.notes
+                                    "notes": it.notes,
+                                    "added_at": it.added_at.isoformat() if it.added_at else None
                                 }
                                 for it in ul.items
                             ]
                         })
+
+                # 9. User streak
+                streak_stmt = select(UserStreakModel).where(UserStreakModel.user_id == user_uuid)
+                streak_res = await db.execute(streak_stmt)
+                stk = streak_res.scalar_one_or_none()
+                if stk:
+                    streak_data = {
+                        "current_streak": stk.current_streak,
+                        "longest_streak": stk.longest_streak,
+                        "last_watch_date": stk.last_watch_date.isoformat() if stk.last_watch_date else None
+                    }
 
             except Exception as exc:
                 logger.error("export_user_data failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        return PersonalDataExportResponse(
-            schema_version="v1.0.0",
-            exported_at=exported_at,
-            user_id=user_id,
-            watch_history=watch_history,
-            ratings=ratings,
-            user_title_states=states,
-            private_notes=notes,
-            custom_lists=custom_lists
-        )
+        raw_export = {
+            "schema_version": "2.0.0",
+            "exported_at": exported_at,
+            "user_id": user_id,
+            "user_profile": {"user_id": user_id, "streak": streak_data},
+            "streak": streak_data,
+            "library": library,
+            "watchlist": watchlist,
+            "watch_history": watch_history,
+            "ratings": ratings,
+            "user_title_states": states,
+            "private_notes": notes,
+            "reviews": reviews,
+            "custom_lists": custom_lists
+        }
+        return PersonalDataExportResponse(**raw_export)
+
+    async def _resolve_import_candidate_titles(
+        self,
+        db: AsyncSession,
+        item: ImportItemPayload
+    ) -> Tuple[Optional[TitleModel], float, str, List[ImportCandidateMatch], List[str]]:
+        """
+        4-Tier deterministic title identity resolution:
+        1. Exact title_id UUID lookup
+        2. External ID lookup (IMDb tt..., TMDB) or display_id
+        3. Deterministic exact (canonical_title, production_year) match
+        4. Exact title match (single -> EXACT/PROBABLE, multiple -> REVIEW_REQUIRED)
+        5. Normalized title match (single -> PROBABLE, multiple -> REVIEW_REQUIRED)
+        6. Substring/ilike match (PROBABLE)
+        Returns: (matched_title_or_none, confidence_score, verdict, candidate_list, reasons)
+        """
+        import re
+
+        # Tier 1: Canonical Title UUID
+        if item.title_id:
+            try:
+                t_uuid = uuid.UUID(item.title_id)
+                matched = await db.get(TitleModel, t_uuid)
+                if matched:
+                    return matched, 1.0, "EXACT_MATCH", [], ["Exact canonical UUID match"]
+            except ValueError:
+                pass
+
+        # Tier 2: External IDs (IMDb, TMDB) or Display ID
+        ext_candidate_id = item.imdb_id or (item.title_id if item.title_id and item.title_id.startswith("tt") else None)
+        if ext_candidate_id:
+            ext_stmt = select(TitleExternalIdModel).where(TitleExternalIdModel.external_id == ext_candidate_id)
+            ext_res = await db.execute(ext_stmt)
+            ext_row = ext_res.scalars().first()
+            if ext_row:
+                matched = await db.get(TitleModel, ext_row.title_id)
+                if matched:
+                    return matched, 1.0, "EXACT_MATCH", [], [f"Matched via provider external ID {ext_candidate_id}"]
+
+        if item.display_id:
+            disp_stmt = select(TitleModel).where(TitleModel.display_id == item.display_id.strip().upper())
+            disp_res = await db.execute(disp_stmt)
+            matched = disp_res.scalars().first()
+            if matched:
+                return matched, 1.0, "EXACT_MATCH", [], [f"Matched via display ID {item.display_id}"]
+
+        # Tier 3 & 4: Title + Year or Exact Title
+        if item.canonical_title:
+            clean_title = item.canonical_title.strip()
+            if item.production_year:
+                stmt = select(TitleModel).where(
+                    func.lower(TitleModel.canonical_title) == clean_title.lower(),
+                    TitleModel.production_year == item.production_year
+                )
+                res = await db.execute(stmt)
+                matches = res.scalars().all()
+                if len(matches) == 1:
+                    return matches[0], 1.0, "EXACT_MATCH", [], ["Exact title and production year match"]
+                elif len(matches) > 1:
+                    cands = [
+                        ImportCandidateMatch(
+                            title_id=str(m.title_id),
+                            display_id=m.display_id,
+                            canonical_title=m.canonical_title,
+                            production_year=m.production_year,
+                            content_type=m.content_type_id,
+                            confidence=0.95
+                        )
+                        for m in matches
+                    ]
+                    return matches[0], 0.95, "EXACT_MATCH", cands, ["Matched exact title and year with multiple catalog editions"]
+
+            # Exact title match without year constraint
+            stmt = select(TitleModel).where(
+                func.lower(TitleModel.canonical_title) == clean_title.lower()
+            )
+            res = await db.execute(stmt)
+            matches = res.scalars().all()
+            if len(matches) == 1:
+                conf = 0.95 if not item.production_year else 0.85
+                return matches[0], conf, "EXACT_MATCH" if not item.production_year else "PROBABLE_MATCH", [], ["Exact title match"]
+            elif len(matches) > 1:
+                cands = [
+                    ImportCandidateMatch(
+                        title_id=str(m.title_id),
+                        display_id=m.display_id,
+                        canonical_title=m.canonical_title,
+                        production_year=m.production_year,
+                        content_type=m.content_type_id,
+                        confidence=0.70
+                    )
+                    for m in matches
+                ]
+                return None, 0.60, "REVIEW_REQUIRED", cands, [f"Ambiguous title: found {len(matches)} distinct works matching '{clean_title}'."]
+
+            # Normalized title match (strip leading articles "The", "A", and special characters)
+            norm_title = re.sub(r"^(the|a|an)\s+", "", clean_title.lower())
+            norm_title = re.sub(r"[^\w\s]", "", norm_title).strip()
+            if norm_title and len(norm_title) > 2:
+                stmt = select(TitleModel).where(
+                    func.lower(TitleModel.canonical_title).ilike(f"%{norm_title}%")
+                ).limit(5)
+                res = await db.execute(stmt)
+                matches = res.scalars().all()
+                if len(matches) == 1:
+                    return matches[0], 0.80, "PROBABLE_MATCH", [], ["Matched via title normalization"]
+                elif len(matches) > 1:
+                    cands = [
+                        ImportCandidateMatch(
+                            title_id=str(m.title_id),
+                            display_id=m.display_id,
+                            canonical_title=m.canonical_title,
+                            production_year=m.production_year,
+                            content_type=m.content_type_id,
+                            confidence=0.60
+                        )
+                        for m in matches
+                    ]
+                    return None, 0.55, "REVIEW_REQUIRED", cands, [f"Multiple candidate matches found for '{clean_title}'."]
+
+        return None, 0.0, "UNMATCHED", [], ["No matching canonical title found in catalog"]
 
     async def preview_user_import(
         self,
@@ -2049,83 +2333,24 @@ class PersonalRepository:
         conflicts: List[ImportConflictItem] = []
         item_verdicts: List[ImportItemVerdict] = []
         matched_count = 0
+        probable_count = 0
+        review_count = 0
         unmatched_count = 0
+        duplicate_skips_count = 0
 
         if db is not None:
             try:
                 for idx, item in enumerate(items):
-                    matched_title: Optional[TitleModel] = None
-                    confidence: float = 0.0
-                    verdict: str = "UNMATCHED"
-
-                    if item.title_id:
-                        try:
-                            t_uuid = uuid.UUID(item.title_id)
-                            matched_title = await db.get(TitleModel, t_uuid)
-                            if matched_title:
-                                confidence = 1.0
-                                verdict = "EXACT_MATCH"
-                        except ValueError:
-                            pass
-
-                    if not matched_title and item.canonical_title:
-                        clean_title = item.canonical_title.strip()
-                        if item.production_year:
-                            # 1. Exact title (case-insensitive) + exact production year
-                            stmt = select(TitleModel).where(
-                                func.lower(TitleModel.canonical_title) == clean_title.lower(),
-                                TitleModel.production_year == item.production_year
-                            )
-                            res = await db.execute(stmt)
-                            matched_title = res.scalars().first()
-                            if matched_title:
-                                confidence = 1.0
-                                verdict = "EXACT_MATCH"
-                            else:
-                                # 2. Exact title (case-insensitive) without year filter
-                                stmt = select(TitleModel).where(
-                                    func.lower(TitleModel.canonical_title) == clean_title.lower()
-                                )
-                                res = await db.execute(stmt)
-                                matched_title = res.scalars().first()
-                                if matched_title:
-                                    confidence = 0.80
-                                    verdict = "PROBABLE_MATCH"
-                                else:
-                                    # 3. Substring / ILIKE match
-                                    stmt = select(TitleModel).where(
-                                        TitleModel.canonical_title.ilike(f"%{clean_title}%")
-                                    ).limit(1)
-                                    res = await db.execute(stmt)
-                                    matched_title = res.scalars().first()
-                                    if matched_title:
-                                        confidence = 0.65
-                                        verdict = "PROBABLE_MATCH"
-                        else:
-                            # No production year provided
-                            # 1. Exact title match
-                            stmt = select(TitleModel).where(
-                                func.lower(TitleModel.canonical_title) == clean_title.lower()
-                            )
-                            res = await db.execute(stmt)
-                            matched_title = res.scalars().first()
-                            if matched_title:
-                                confidence = 0.95
-                                verdict = "EXACT_MATCH"
-                            else:
-                                # 2. Substring / ILIKE match
-                                stmt = select(TitleModel).where(
-                                    TitleModel.canonical_title.ilike(f"%{clean_title}%")
-                                ).limit(1)
-                                res = await db.execute(stmt)
-                                matched_title = res.scalars().first()
-                                if matched_title:
-                                    confidence = 0.65
-                                    verdict = "PROBABLE_MATCH"
+                    matched_title, confidence, verdict, candidates, reasons = await self._resolve_import_candidate_titles(db, item)
 
                     if matched_title:
-                        matched_count += 1
                         t_id_str = str(matched_title.title_id)
+                        d_id_str = matched_title.display_id
+                        if verdict == "EXACT_MATCH":
+                            matched_count += 1
+                        else:
+                            probable_count += 1
+
                         item_verdicts.append(
                             ImportItemVerdict(
                                 index=idx,
@@ -2133,10 +2358,33 @@ class PersonalRepository:
                                 production_year=item.production_year or matched_title.production_year,
                                 matched=True,
                                 matched_title_id=t_id_str,
+                                matched_display_id=d_id_str,
                                 confidence_score=confidence,
-                                verdict=verdict
+                                verdict=verdict,
+                                candidates=candidates,
+                                reasons=reasons
                             )
                         )
+
+                        # Check for duplicate watch event
+                        if item.watched_at:
+                            try:
+                                target_dt = datetime.fromisoformat(item.watched_at.replace("Z", "+00:00"))
+                                we_check_stmt = select(WatchEventModel).where(
+                                    and_(
+                                        WatchEventModel.user_id == user_uuid,
+                                        WatchEventModel.title_id == matched_title.title_id,
+                                        WatchEventModel.is_tombstoned == False  # noqa: E712
+                                    )
+                                )
+                                we_check_res = await db.execute(we_check_stmt)
+                                existing_wes = we_check_res.scalars().all()
+                                for existing_we in existing_wes:
+                                    if existing_we.watched_at and abs(existing_we.watched_at - target_dt) <= timedelta(minutes=2):
+                                        duplicate_skips_count += 1
+                                        break
+                            except Exception:
+                                pass
 
                         # Check for conflicts against existing rating
                         if item.rating_value is not None:
@@ -2174,7 +2422,11 @@ class PersonalRepository:
                                     )
                                 )
                     else:
-                        unmatched_count += 1
+                        if verdict == "REVIEW_REQUIRED":
+                            review_count += 1
+                        else:
+                            unmatched_count += 1
+
                         item_verdicts.append(
                             ImportItemVerdict(
                                 index=idx,
@@ -2182,8 +2434,11 @@ class PersonalRepository:
                                 production_year=item.production_year,
                                 matched=False,
                                 matched_title_id=None,
-                                confidence_score=0.0,
-                                verdict="UNMATCHED"
+                                matched_display_id=None,
+                                confidence_score=confidence,
+                                verdict=verdict,
+                                candidates=candidates,
+                                reasons=reasons
                             )
                         )
 
@@ -2194,9 +2449,12 @@ class PersonalRepository:
 
         return ImportPreviewResponse(
             total_items=len(items),
-            matched_titles=matched_count,
+            matched_titles=matched_count + probable_count,
+            probable_matches=probable_count,
+            review_required=review_count,
             unmatched_titles=unmatched_count,
             conflicts_count=len(conflicts),
+            duplicate_skips_count=duplicate_skips_count,
             conflicts=conflicts,
             item_verdicts=item_verdicts
         )
@@ -2208,7 +2466,7 @@ class PersonalRepository:
         items: List[ImportItemPayload],
         conflict_strategy: str = "KEEP_EXISTING"
     ) -> ImportApplyResponse:
-        """Applies validated imported records into the personal user domain using the chosen conflict strategy."""
+        """Applies validated imported records into the personal user domain using the chosen conflict strategy with strict idempotency."""
         user_uuid = _resolve_user_uuid(user_id)
         applied_count = 0
         conflicts_resolved = 0
@@ -2217,53 +2475,48 @@ class PersonalRepository:
         if db is not None:
             try:
                 for item in items:
-                    matched_title: Optional[TitleModel] = None
-
-                    if item.title_id:
-                        try:
-                            t_uuid = uuid.UUID(item.title_id)
-                            matched_title = await db.get(TitleModel, t_uuid)
-                        except ValueError:
-                            pass
-
-                    if not matched_title and item.canonical_title:
-                        clean_title = item.canonical_title.strip()
-                        if item.production_year:
-                            stmt = select(TitleModel).where(
-                                func.lower(TitleModel.canonical_title) == clean_title.lower(),
-                                TitleModel.production_year == item.production_year
-                            )
-                            res = await db.execute(stmt)
-                            matched_title = res.scalars().first()
-                        if not matched_title:
-                            stmt = select(TitleModel).where(
-                                func.lower(TitleModel.canonical_title) == clean_title.lower()
-                            )
-                            res = await db.execute(stmt)
-                            matched_title = res.scalars().first()
-                        if not matched_title:
-                            stmt = select(TitleModel).where(
-                                TitleModel.canonical_title.ilike(f"%{clean_title}%")
-                            ).limit(1)
-                            res = await db.execute(stmt)
-                            matched_title = res.scalars().first()
+                    matched_title, _, _, _, _ = await self._resolve_import_candidate_titles(db, item)
 
                     if not matched_title:
                         continue
 
                     t_uuid = matched_title.title_id
 
-                    # 1. Watch event
+                    # 1. Watch event (Idempotent: prevent duplicate identical watch events within 2 minutes)
                     if item.watched_at:
-                        we = WatchEventModel(
-                            watch_event_id=uuid.uuid4(),
-                            user_id=user_uuid,
-                            title_id=t_uuid,
-                            watched_at=datetime.fromisoformat(item.watched_at.replace("Z", "+00:00")),
-                            notes=item.notes,
-                            created_at=now
+                        try:
+                            target_dt = datetime.fromisoformat(item.watched_at.replace("Z", "+00:00"))
+                            if target_dt.tzinfo is None:
+                                target_dt = target_dt.replace(tzinfo=timezone.utc)
+                        except Exception:
+                            target_dt = now
+
+                        we_check_stmt = select(WatchEventModel).where(
+                            and_(
+                                WatchEventModel.user_id == user_uuid,
+                                WatchEventModel.title_id == t_uuid,
+                                WatchEventModel.is_tombstoned == False  # noqa: E712
+                            )
                         )
-                        db.add(we)
+                        we_check_res = await db.execute(we_check_stmt)
+                        existing_wes = we_check_res.scalars().all()
+                        is_duplicate_we = False
+                        for existing_we in existing_wes:
+                            if existing_we.watched_at and abs(existing_we.watched_at - target_dt) <= timedelta(minutes=2):
+                                is_duplicate_we = True
+                                break
+
+                        if not is_duplicate_we:
+                            we = WatchEventModel(
+                                watch_event_id=uuid.uuid4(),
+                                user_id=user_uuid,
+                                title_id=t_uuid,
+                                watched_at=target_dt,
+                                notes=item.notes,
+                                is_tombstoned=False,
+                                created_at=now
+                            )
+                            db.add(we)
 
                     # 2. Rating
                     if item.rating_value is not None:
@@ -2280,7 +2533,7 @@ class PersonalRepository:
                             existing_r.rated_at = now
                             conflicts_resolved += 1
 
-                    # 3. Title state
+                    # 3. Title state & Library Entry
                     if item.is_favorite or item.manual_status_override:
                         st_stmt = select(UserTitleStateModel).where(
                             and_(UserTitleStateModel.user_id == user_uuid, UserTitleStateModel.title_id == t_uuid)
@@ -2301,10 +2554,49 @@ class PersonalRepository:
                         elif conflict_strategy in ("OVERWRITE", "MERGE"):
                             if item.manual_status_override:
                                 existing_st.manual_status_override = item.manual_status_override
-                            if item.is_favorite:
+                            if item.is_favorite is not None:
                                 existing_st.is_favorite = item.is_favorite
                             existing_st.updated_at = now
                             conflicts_resolved += 1
+
+                        # Upsert LibraryEntryModel if added to library/watched
+                        if item.manual_status_override != "PLAN_TO_WATCH":
+                            lib_stmt = select(LibraryEntryModel).where(
+                                and_(LibraryEntryModel.user_id == user_uuid, LibraryEntryModel.title_id == t_uuid)
+                            )
+                            lib_res = await db.execute(lib_stmt)
+                            existing_lib = lib_res.scalar_one_or_none()
+                            if not existing_lib:
+                                db.add(
+                                    LibraryEntryModel(
+                                        user_id=user_uuid,
+                                        title_id=t_uuid,
+                                        added_at=now,
+                                        status_override=item.manual_status_override
+                                    )
+                                )
+
+                    # 4. Note (Idempotent: avoid duplicate identical note text for same title)
+                    if item.notes:
+                        n_stmt = select(NoteModel).where(
+                            and_(
+                                NoteModel.user_id == user_uuid,
+                                NoteModel.title_id == t_uuid,
+                                NoteModel.note_text == item.notes
+                            )
+                        )
+                        n_res = await db.execute(n_stmt)
+                        existing_note = n_res.scalar_one_or_none()
+                        if not existing_note:
+                            db.add(
+                                NoteModel(
+                                    note_id=uuid.uuid4(),
+                                    user_id=user_uuid,
+                                    title_id=t_uuid,
+                                    note_text=item.notes,
+                                    created_at=now
+                                )
+                            )
 
                     applied_count += 1
 

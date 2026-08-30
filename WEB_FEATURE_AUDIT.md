@@ -1,5 +1,23 @@
 # Web App Feature Audit — 2026-08-25 / 2026-08-26 / 2026-08-30
 
+**2026-08-30 W8 close-out session:** Import / Export & Personal Data Portability phase.
+Hardened CineVault's complete personal data import and export system across backend and web UI:
+- **Multi-Format Export**: Production-ready exporters for JSON v2.0 (lossless schema backup), CSV Relational ZIP (multi-table archive with manifest), Excel `.xlsx` (multi-sheet workbook with custom styles), and Markdown `.md` (human-readable personal archive).
+- **Formula Injection Defense**: Comprehensive neutralization of dangerous spreadsheet triggers (`=`, `+`, `-`, `@`, `\t`, `\r`) in CSV and Excel exports, with clean unescaping on re-import.
+- **4-Tier Identity Resolution**: Deterministic catalog matching (UUID -> External/Display ID -> Canonical Title + Year -> Disambiguation / Review Required candidate cards) ensuring zero false catalog assignments.
+- **Idempotency & Re-Watch Safety**: True idempotency preserving legitimate re-watches (ADR-003) while deduplicating exact duplicate imports within 2 minutes.
+- **Conflict Strategies**: Loss-aware user-selected strategies (`KEEP_EXISTING`, `OVERWRITE`, `MERGE`).
+- **User Data Isolation**: Zero IDOR leakage across user boundaries.
+- **Web UI & Import Wizard**: Interactive 3-step Import Wizard (`/import`) with Excel upload, candidate review cards, and 1-click export hub in `/settings`.
+- **Verification Suites**:
+  - `test_w8_import_export.py`: 7 passed / 0 failed in 12.81s against live PostgreSQL.
+  - Import Regression (3 test files, 15 tests): 15 passed / 0 failed.
+  - Weekly Backend Regression (W3 through W8 - 57 tests): 57 passed / 0 failed in 88.70s.
+  - Playwright E2E (`node apps/web/e2e/test_w8_import_export.js`): 8 passed / 0 failed.
+  - TypeScript: 0 errors (`npx tsc --noEmit`).
+  - ESLint: 0 errors / 0 warnings (`npm run lint`).
+  - Production build: PASS (`npm run build`, 25 routes compiled).
+
 **2026-08-30 W7 close-out session:** Social & Multiplayer Reliability phase.
 Hardened CineVault's complete social and multiplayer surface against real PostgreSQL:
 - **Flyway Migration V3.6**: Applied `V3.6__harden_social_constraints.sql` creating unique pairwise index `uq_friendship_pairwise` on `social.friendship (LEAST(requester_id, addressee_id), GREATEST(requester_id, addressee_id))` enforcing database-level race safety and preventing reciprocal duplicate rows. Added performance indexes on `social.recommendation`, `social.pick_vote`, and `social.challenge`.

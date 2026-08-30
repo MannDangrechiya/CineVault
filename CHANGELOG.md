@@ -4,6 +4,42 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc7] - 2026-08-30 (W8 — Import / Export & Personal Data Portability)
+
+### Added
+- Multi-Format Personal Data Exporter (`services/api/personal/export_service.py`):
+  - **Lossless JSON v2.0**: Full relational export encompassing profile, library, watchlist, watch history, ratings, user title states, private notes, reviews, custom collections, and streaks.
+  - **Relational CSV ZIP**: Structured archive containing `manifest.json`, `library.csv`, `watch_history.csv`, `ratings.csv`, `notes.csv`, `reviews.csv`, `custom_lists.csv`.
+  - **Multi-Sheet Excel Workbook (`.xlsx`)**: Formatted workbook with distinct sheets for `Overview`, `Library & Watchlist`, `Watch Events`, `Ratings`, `Notes & Reviews`, `Collections`.
+  - **Human-Readable Markdown (`.md`)**: Formatted document archive for offline personal reading.
+- Spreadsheet Formula Injection Defense (`services/api/personal/mapping.py`):
+  - Neutralizes dangerous formulas starting with `=`, `+`, `-`, `@`, `\t`, `\r` during CSV and XLSX export by prefixing with `'`.
+  - Automatically unescapes safe prefixes during file ingestion.
+- Four-Tier Deterministic Identity Resolution:
+  - Tier 1: Canonical Title UUID match (confidence 1.0).
+  - Tier 2: External Identifier / Display ID match (IMDb, TMDb, Display ID) (confidence 1.0).
+  - Tier 3: Exact Canonical Title + Production Year match (confidence 0.95).
+  - Tier 4: Disambiguation candidate cards with `REVIEW_REQUIRED` verdict (prevents arbitrary catalog misattributions).
+- Idempotent Ingestion Engine:
+  - Append-only watch history deduplicates identical event uploads within 2 minutes while preserving legitimate re-watches (ADR-003).
+  - Notes, ratings, and library records deduplicated idempotently.
+- Conflict Resolution Strategies:
+  - `KEEP_EXISTING` (preserves existing database records).
+  - `OVERWRITE` (updates database with imported records).
+  - `MERGE` (fills missing attributes without wiping existing non-null fields).
+- Web UI & Import Wizard (`apps/web`):
+  - Interactive 3-step Import Wizard (`/import`) supporting Excel `.xlsx`, Letterboxd/Trakt CSV, JSON, and plain text notes.
+  - Candidate review and disambiguation modal with 1-click candidate selection.
+  - 1-click personal data export hub on `/settings` with direct download buttons for all 4 formats.
+- Verification & Test Suites:
+  - `test_w8_import_export.py` (7 tests, 100% pass rate).
+  - Playwright E2E suite `test_w8_import_export.js` (8 tests, 100% pass rate).
+  - Canonical format specification `docs/export-format.md`.
+
+### Fixed
+- Fixed Next.js `/api/proxy` endpoint routing for personal watch-events and title-states by adding dual `@personal_router` decorators in `services/api/routers/personal.py`.
+- Fixed async connection lifecycle in integration tests for deterministic repeatability.
+
 ## [1.0.0-rc6] - 2026-08-30 (W7 — Social & Multiplayer Reliability)
 
 ### Added

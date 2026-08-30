@@ -25,6 +25,7 @@ import {
   previewImport,
   applyImport,
   extractPdfText,
+  uploadImportFile,
   ImportItemPayload,
   ImportPreviewResponse,
   ImportApplyResponse,
@@ -114,6 +115,22 @@ export default function ImportPage() {
     previewMutation.mutate(items);
   };
 
+  // File upload mutation (Excel XLSX and binary spreadsheets)
+  const uploadFileMutation = useMutation({
+    mutationFn: (file: File) => uploadImportFile(file),
+    onSuccess: (data) => {
+      if (data.items && data.items.length > 0) {
+        setParsedItems(data.items);
+        previewMutation.mutate(data.items);
+      } else {
+        setPdfNotice("No valid media titles could be extracted from the file.");
+      }
+    },
+    onError: (error: unknown) => {
+      setPdfNotice(error instanceof Error ? error.message : "Failed to parse uploaded spreadsheet.");
+    },
+  });
+
   // PDFs need server-side text extraction (pypdf) — a browser FileReader can't
   // parse the binary format the way it can read .txt/.csv/.json as plain text.
   const pdfExtractMutation = useMutation({
@@ -137,6 +154,11 @@ export default function ImportPage() {
 
     if (file.name.toLowerCase().endsWith(".pdf")) {
       pdfExtractMutation.mutate(file);
+      return;
+    }
+
+    if (file.name.toLowerCase().endsWith(".xlsx")) {
+      uploadFileMutation.mutate(file);
       return;
     }
 
@@ -306,7 +328,7 @@ export default function ImportPage() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".csv,.json,.txt,.pdf"
+                    accept=".csv,.json,.txt,.pdf,.xlsx"
                     onChange={handleFileUpload}
                     className="hidden"
                   />
@@ -315,15 +337,14 @@ export default function ImportPage() {
                   </div>
                   <div>
                     <p className="text-xs sm:text-sm font-bold text-zinc-200">
-                      {pdfExtractMutation.isPending
-                        ? "Extracting text from PDF…"
+                      {pdfExtractMutation.isPending || uploadFileMutation.isPending
+                        ? "Parsing uploaded media archive…"
                         : fileName
                           ? `Selected: ${fileName}`
                           : "Click or drag & drop files here"}
                     </p>
                     <p className="text-[11px] text-zinc-500 mt-1">
-                      Supports Letterboxd CSV exports, CineVault JSON, raw Samsung Notes text files, and
-                      text-based PDFs (scanned/image-only PDFs aren&apos;t OCR&apos;d yet)
+                      Supports Letterboxd/Trakt CSV, Excel (.xlsx), CineVault JSON, plain text/notes, and PDFs
                     </p>
                   </div>
                 </div>
@@ -549,6 +570,11 @@ export default function ImportPage() {
                               <Sparkles className="w-3 h-3" />
                               <span>Probable ({Math.round(verdict.confidence_score * 100)}%)</span>
                             </span>
+                          ) : verdict.verdict === "REVIEW_REQUIRED" ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-violet-500/15 text-violet-300 border border-violet-500/30">
+                              <AlertTriangle className="w-3 h-3 text-violet-400" />
+                              <span>Review ({verdict.candidates?.length || 0} Options)</span>
+                            </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
                               <AlertTriangle className="w-3 h-3" />
@@ -697,11 +723,41 @@ export default function ImportPage() {
                 Adjust title name or select canonical entity to resolve matching uncertainty:
               </p>
 
+              {disambiguationIndex !== null &&
+                previewResult?.item_verdicts?.[disambiguationIndex]?.candidates &&
+                previewResult.item_verdicts[disambiguationIndex].candidates!.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-semibold text-zinc-300">Catalog Candidate Matches:</p>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {previewResult.item_verdicts[disambiguationIndex].candidates!.map((cand, cIdx) => (
+                        <button
+                          key={cIdx}
+                          type="button"
+                          onClick={() => handleResolveDisambiguation(cand.canonical_title, cand.production_year)}
+                          className="w-full p-2.5 rounded-xl border border-zinc-800 bg-zinc-950/80 hover:bg-violet-950/30 hover:border-violet-500/50 flex items-center justify-between text-left transition-all cursor-pointer group"
+                        >
+                          <div>
+                            <p className="text-xs font-bold text-zinc-100 group-hover:text-violet-300">
+                              {cand.canonical_title} {cand.production_year ? `(${cand.production_year})` : ""}
+                            </p>
+                            <p className="text-[10px] text-zinc-500">
+                              {cand.content_type?.toUpperCase()} • {cand.display_id || cand.title_id.slice(0, 8)}
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-semibold text-violet-400 bg-violet-600/15 px-2 py-0.5 rounded-full border border-violet-500/30">
+                            Select →
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
               <input
                 type="text"
                 value={customTitleInput}
                 onChange={(e) => setCustomTitleInput(e.target.value)}
-                placeholder="Search canonical title..."
+                placeholder="Or search canonical title manually..."
                 className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500"
               />
             </div>
@@ -710,14 +766,14 @@ export default function ImportPage() {
               <button
                 type="button"
                 onClick={() => setDisambiguationIndex(null)}
-                className="px-4 py-2 rounded-xl text-xs text-zinc-400 hover:text-zinc-200"
+                className="px-4 py-2 rounded-xl text-xs text-zinc-400 hover:text-zinc-200 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => handleResolveDisambiguation(customTitleInput)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 cursor-pointer"
               >
                 Save Resolution
               </button>

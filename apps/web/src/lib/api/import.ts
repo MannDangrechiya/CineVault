@@ -16,6 +16,15 @@ export interface ImportItemPayload {
   notes?: string;
 }
 
+export interface ImportCandidateMatch {
+  title_id: string;
+  display_id?: string;
+  canonical_title: string;
+  production_year?: number;
+  content_type?: string;
+  confidence: number;
+}
+
 export interface ImportConflictItem {
   title_id: string;
   canonical_title: string;
@@ -30,15 +39,21 @@ export interface ImportItemVerdict {
   production_year?: number;
   matched: boolean;
   matched_title_id?: string;
+  matched_display_id?: string;
   confidence_score: number;
-  verdict: "EXACT_MATCH" | "PROBABLE_MATCH" | "UNMATCHED";
+  verdict: "EXACT_MATCH" | "PROBABLE_MATCH" | "REVIEW_REQUIRED" | "UNMATCHED";
+  candidates?: ImportCandidateMatch[];
+  reasons?: string[];
 }
 
 export interface ImportPreviewResponse {
   total_items: number;
   matched_titles: number;
+  probable_matches?: number;
+  review_required?: number;
   unmatched_titles: number;
   conflicts_count: number;
+  duplicate_skips_count?: number;
   conflicts: ImportConflictItem[];
   item_verdicts?: ImportItemVerdict[];
 }
@@ -50,7 +65,75 @@ export interface ImportApplyResponse {
   applied_at: string;
 }
 
+export interface ImportUploadResponse {
+  filename: string;
+  total_parsed: number;
+  items: ImportItemPayload[];
+}
+
 // ── API Operations ─────────────────────────────────────────────────────────
+
+export async function uploadImportFile(file: File): Promise<ImportUploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  let response: Response;
+  try {
+    response = await fetch("/api/proxy/v1/personal/import/upload", {
+      method: "POST",
+      body: formData,
+    });
+  } catch (error) {
+    throw new APIClientError(
+      error instanceof Error ? error.message : "Failed to reach the CineVault API server.",
+      0
+    );
+  }
+
+  if (!response.ok) {
+    let message = `HTTP ${response.status} ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      message = errorData?.detail || errorData?.error?.message || message;
+    } catch {
+      // Fallback
+    }
+    throw new APIClientError(message, response.status);
+  }
+
+  return (await response.json()) as ImportUploadResponse;
+}
+
+export async function downloadExport(
+  format: "json" | "csv" | "excel" | "xlsx" | "markdown" | "md" = "json",
+  scope?: string
+): Promise<void> {
+  const params = new URLSearchParams({ format, download: "true" });
+  if (scope) params.append("scope", scope);
+
+  const res = await fetch(`/api/proxy/v1/personal/export?${params.toString()}`);
+  if (!res.ok) {
+    let message = `Export failed: ${res.statusText}`;
+    try {
+      const err = await res.json();
+      message = err?.detail || message;
+    } catch {
+      // ignore
+    }
+    throw new Error(message);
+  }
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const ext = format === "excel" || format === "xlsx" ? "xlsx" : format === "csv" ? "zip" : format === "markdown" || format === "md" ? "md" : "json";
+  a.download = `cinevault_export_${new Date().toISOString().slice(0, 10)}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  a.remove();
+}
 
 export async function previewImport(
   items: ImportItemPayload[]

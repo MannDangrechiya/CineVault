@@ -1025,7 +1025,65 @@ multi-user safe, PostgreSQL-backed, and browser-verified without paid SaaS.
 watch clubs, viewing challenges, pick room multiplayer voting, viral invites,
 and leaderboards are robust, race-safe, IDOR-protected, and verified on real PostgreSQL.
 
-### W8–W13
-Not started. See the master task for full phase breakdown (import/export,
-search quality, UX/accessibility, security, full QA, production readiness).
+### W8 — Import / Export & Personal Data Portability `[x]` COMPLETE (2026-08-30)
+
+**Goal:** Make CineVault's personal-data import/export system complete, reliable,
+loss-aware, idempotent, privacy-safe, user-isolated, PostgreSQL-backed, format-compatible,
+transparent, recoverable, and free-first.
+
+#### Core Capabilities & Infrastructure
+- [x] **Multi-Format Export**:
+      - JSON v2.0 (`application/json`): Lossless schema archive covering profile, library, watchlist, watch history, ratings, user title states, private notes, reviews, custom collections, and streaks.
+      - CSV Relational ZIP (`application/zip`): Structured archive with `manifest.json`, `library.csv`, `watch_history.csv`, `ratings.csv`, `notes.csv`, `reviews.csv`, `custom_lists.csv`.
+      - Excel Workbook (`.xlsx`): Multi-sheet stylized workbook (`Overview`, `Library & Watchlist`, `Watch Events`, `Ratings`, `Notes & Reviews`, `Collections`).
+      - Markdown Archive (`.md`): Human-readable formatted document archive.
+- [x] **Spreadsheet Formula Injection Defense**:
+      - `services/api/personal/mapping.py`: `sanitize_formula_injection` prepends single quotes to dangerous formula triggers (`=`, `+`, `-`, `@`, `\t`, `\r`).
+      - `strip_formula_prefix`: Safely unescapes prefix on import without data distortion.
+- [x] **4-Tier Identity Resolution Engine**:
+      - Tier 1: Canonical Title UUID match (confidence 1.0).
+      - Tier 2: External Identifier / Display ID match (IMDb `tt...`, TMDb ID, Display ID) (confidence 1.0).
+      - Tier 3: Exact Canonical Title + Production Year match (confidence 0.95).
+      - Tier 4: Disambiguation (`REVIEW_REQUIRED` with candidate list) on ambiguous titles (NEVER picks arbitrary film).
+- [x] **Idempotent Ingestion & Duplicate Protection**:
+      - Append-only watch history preserves legitimate re-watches while deduplicating identical event imports within 2 minutes.
+      - Notes, ratings, and library entries deduplicated idempotently.
+- [x] **Loss-Aware Conflict Strategies**:
+      - `KEEP_EXISTING` (preserves existing database records).
+      - `OVERWRITE` (replaces conflicting records with imported data).
+      - `MERGE` (fills missing attributes without wiping existing non-null data).
+- [x] **User Data Isolation & IDOR Protection**:
+      - Export and import queries scoped strictly to authenticated user context.
+      - Zero cross-user data leakage.
+
+#### Web Interface (apps/web)
+- [x] `src/app/import/page.tsx`:
+      - 3-step interactive Import Wizard (Upload & Parse -> Preview & Match -> Ingest & Apply).
+      - Added Excel `.xlsx` file upload parsing via `uploadFileMutation`.
+      - Enhanced disambiguation modal to render catalog candidate cards with 1-click selection.
+      - Rendered `REVIEW_REQUIRED` badge (`Review (N Options)`).
+- [x] `src/app/settings/page.tsx`:
+      - 1-click download cards for all 4 export formats (JSON v2.0, CSV ZIP, Excel XLSX, Markdown).
+
+#### Tests & Verification
+- [x] `test_w8_import_export.py` (7 tests):
+      - 7 passed / 0 failed in 12.81s against live PostgreSQL.
+- [x] Full Import Regression (15 tests across `test_v2_import_engine.py`, `test_phase17_import_export.py`, `test_w8_import_export.py`):
+      - 15 passed / 0 failed.
+- [x] Weekly Backend Regression (W3 + W4 + W5 + W6 + W7 + W8 - 57 tests):
+      - 57 passed / 0 failed in 88.70s.
+- [x] Playwright E2E (`node apps/web/e2e/test_w8_import_export.js`):
+      - 8 passed / 0 failed across Dev user browser session.
+- [x] TypeScript: `npx tsc --noEmit` — PASS (0 errors).
+- [x] ESLint: `npm run lint` — PASS (0 warnings, 0 errors).
+- [x] Production build: `npm run build` — PASS (25 static and dynamic routes compiled).
+- [x] Documentation: Created canonical specification `docs/export-format.md`.
+
+**W8 status: COMPLETE.** All import/export formats, 4-tier disambiguation, formula
+injection security, conflict strategies, user isolation, and web UX workflows are
+verified and production-ready.
+
+### W9–W13
+Not started. See the master task for full phase breakdown (search quality, UX/accessibility, security, full QA, production readiness).
+
 

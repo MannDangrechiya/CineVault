@@ -5,16 +5,24 @@ from pydantic import BaseModel, Field
 class ExportFormatEnum(str, Enum):
     JSON = "json"
     CSV = "csv"
+    EXCEL = "excel"
+    XLSX = "xlsx"
+    MARKDOWN = "markdown"
+    MD = "md"
 
 class PersonalDataExportResponse(BaseModel):
-    schema_version: str = "v1.0.0"
+    schema_version: str = "2.0.0"
     exported_at: str
     user_id: str
-    watch_history: List[Dict[str, Any]]
-    ratings: List[Dict[str, Any]]
-    user_title_states: List[Dict[str, Any]]
-    private_notes: List[Dict[str, Any]]
-    custom_lists: List[Dict[str, Any]]
+    user_profile: Optional[Dict[str, Any]] = None
+    library: List[Dict[str, Any]] = Field(default_factory=list)
+    watchlist: List[Dict[str, Any]] = Field(default_factory=list)
+    watch_history: List[Dict[str, Any]] = Field(default_factory=list)
+    ratings: List[Dict[str, Any]] = Field(default_factory=list)
+    user_title_states: List[Dict[str, Any]] = Field(default_factory=list)
+    private_notes: List[Dict[str, Any]] = Field(default_factory=list)
+    reviews: List[Dict[str, Any]] = Field(default_factory=list)
+    custom_lists: List[Dict[str, Any]] = Field(default_factory=list)
 
 class ImportConflictStrategyEnum(str, Enum):
     KEEP_EXISTING = "KEEP_EXISTING"
@@ -25,6 +33,11 @@ class ImportItemPayload(BaseModel):
     canonical_title: Optional[str] = None
     production_year: Optional[int] = None
     title_id: Optional[str] = None
+    display_id: Optional[str] = None
+    imdb_id: Optional[str] = None
+    tmdb_id: Optional[str] = None
+    season_number: Optional[int] = None
+    episode_number: Optional[int] = None
     watched_at: Optional[str] = None
     progress_percentage: Optional[float] = 100.0
     rating_value: Optional[int] = None
@@ -42,20 +55,34 @@ class ImportConflictItem(BaseModel):
     existing_value: Any
     imported_value: Any
 
+class ImportCandidateMatch(BaseModel):
+    title_id: str
+    display_id: str
+    canonical_title: str
+    production_year: Optional[int] = None
+    content_type: str = "movie"
+    confidence: float = 0.0
+
 class ImportItemVerdict(BaseModel):
     index: int
     canonical_title: str
     production_year: Optional[int] = None
     matched: bool = False
     matched_title_id: Optional[str] = None
+    matched_display_id: Optional[str] = None
     confidence_score: float = 0.0
-    verdict: str = "UNMATCHED"  # EXACT_MATCH, PROBABLE_MATCH, UNMATCHED
+    verdict: str = "UNMATCHED"  # EXACT_MATCH, PROBABLE_MATCH, REVIEW_REQUIRED, UNMATCHED
+    candidates: List[ImportCandidateMatch] = Field(default_factory=list)
+    reasons: List[str] = Field(default_factory=list)
 
 class ImportPreviewResponse(BaseModel):
     total_items: int
     matched_titles: int
+    probable_matches: int = 0
+    review_required: int = 0
     unmatched_titles: int
     conflicts_count: int
+    duplicate_skips_count: int = 0
     conflicts: List[ImportConflictItem] = Field(default_factory=list)
     item_verdicts: List[ImportItemVerdict] = Field(default_factory=list)
 

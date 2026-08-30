@@ -3,8 +3,9 @@
 
 import io
 import logging
-from typing import List, Optional
-from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, status
+from typing import List, Optional, Dict, Any
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile, Query, Response, status
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +39,13 @@ from ..repositories.social import social_repository
 from ..models.personal import UserListModel, WatchEventModel
 from ..models.canonical import TitleModel
 from ..schemas.social import RecommendationStatusEnum
+from ..personal.export_service import (
+    build_json_export, build_csv_zip_export, build_excel_export, build_markdown_export
+)
+from ..personal.mapping import (
+    parse_csv_content, parse_json_content, parse_xlsx_content, parse_unstructured_text_content,
+    convert_raw_dict_to_import_payload
+)
 
 logger = logging.getLogger("cinevault.personal")
 
@@ -431,6 +439,7 @@ async def list_watch_events(
     return PaginatedResponse(data=events, pagination=CursorPagination(limit=25, has_more=False))
 
 @router.post("/watch-events", response_model=WatchEventResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+@personal_router.post("/watch-events", response_model=WatchEventResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
 async def create_watch_event(
     body: WatchEventCreate,
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
@@ -446,6 +455,7 @@ async def create_watch_event(
     )
 
 @router.get("/title-states/{title_id}", response_model=UserTitleStateResponse)
+@personal_router.get("/title-states/{title_id}", response_model=UserTitleStateResponse)
 async def get_user_title_state(
     title_id: str,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
@@ -455,6 +465,7 @@ async def get_user_title_state(
     return await personal_repository.get_user_title_state(db=db, user_id=claims.sub, title_id=title_id)
 
 @router.patch("/title-states/{title_id}", response_model=UserTitleStateResponse, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+@personal_router.patch("/title-states/{title_id}", response_model=UserTitleStateResponse, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
 async def update_user_title_state(
     title_id: str,
     body: UserTitleStateUpdate,
@@ -590,22 +601,121 @@ async def resolve_conflict(
         "chosen_option_id": body.chosen_option_id
     }
 
-@router.get("/export", response_model=PersonalDataExportResponse, dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+@router.get("/export", dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
+@personal_router.get("/export", dependencies=[Depends(enforce_rate_limit("PUBLIC_READ"))])
 async def export_personal_data(
-    format: str = "json",
+    format: str = Query("json", description="Export format: json, csv, excel, xlsx, markdown, md"),
+    download: bool = Query(False, description="Whether to trigger file attachment download"),
     scope: Optional[str] = None,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
     db: Optional[AsyncSession] = Depends(get_db)
 ):
     """Exports personal library data (watch history, ratings, title states, notes, custom lists) for portability."""
-    return await personal_repository.export_user_data(
+    raw_data = await personal_repository.export_user_data(
         db=db,
         user_id=claims.sub,
         export_format=format,
         scope=scope
     )
+    fmt = format.lower().strip()
+    ts_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+    if fmt == "json":
+        if not download:
+            return raw_data
+        json_content = build_json_export(raw_data)
+        return Response(
+            content=json_content,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="cinevault_export_{ts_str}.json"'}
+        )
+    elif fmt == "csv":
+        zip_bytes = build_csv_zip_export(raw_data)
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="cinevault_export_{ts_str}.zip"'}
+        )
+    elif fmt in ("excel", "xlsx"):
+        xlsx_bytes = build_excel_export(raw_data)
+        return Response(
+            content=xlsx_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="cinevault_export_{ts_str}.xlsx"'}
+        )
+    elif fmt in ("markdown", "md"):
+        md_text = build_markdown_export(raw_data)
+        return Response(
+            content=md_text,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="cinevault_export_{ts_str}.md"'}
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported export format '{format}'. Supported formats are: json, csv, excel, xlsx, markdown, md."
+        )
+
+@router.post("/import/upload", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+@personal_router.post("/import/upload", status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+async def upload_import_file(
+    file: UploadFile = File(...),
+    claims: SecurityTokenClaims = Depends(require_authenticated_user)
+):
+    """Uploads and parses CSV, Excel (.xlsx), JSON, or text documents into normalized import candidate items."""
+    MAX_FILE_SIZE = 25 * 1024 * 1024
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Uploaded file exceeds maximum allowed size of 25MB."
+        )
+
+    filename = (file.filename or "").lower()
+    raw_rows: List[Dict[str, Any]] = []
+
+    try:
+        if filename.endswith(".xlsx"):
+            raw_rows = parse_xlsx_content(content)
+        elif filename.endswith(".json"):
+            text = content.decode("utf-8", errors="replace")
+            raw_rows = parse_json_content(text)
+        elif filename.endswith(".csv"):
+            text = content.decode("utf-8", errors="replace")
+            raw_rows = parse_csv_content(text)
+        elif filename.endswith(".pdf"):
+            reader = PdfReader(io.BytesIO(content))
+            extracted_pages = []
+            for p in reader.pages:
+                t = p.extract_text()
+                if t:
+                    extracted_pages.append(t)
+            full_text = "\n".join(extracted_pages)
+            raw_rows = parse_unstructured_text_content(full_text)
+        else:
+            text = content.decode("utf-8", errors="replace")
+            if "," in text and "\n" in text:
+                raw_rows = parse_csv_content(text)
+            if not raw_rows:
+                raw_rows = parse_unstructured_text_content(text)
+    except Exception as exc:
+        logger.error("Failed to parse uploaded import file %s: %s", file.filename, exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unable to parse import file '{file.filename}'. Please verify file integrity and format."
+        )
+
+    items = [convert_raw_dict_to_import_payload(r) for r in raw_rows]
+    valid_items = [it for it in items if it.get("canonical_title") or it.get("title_id")]
+
+    return {
+        "filename": file.filename,
+        "total_parsed": len(valid_items),
+        "items": valid_items
+    }
 
 @router.post("/import/preview", response_model=ImportPreviewResponse, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+@personal_router.post("/import/preview", response_model=ImportPreviewResponse, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
 async def preview_personal_data_import(
     body: ImportPreviewRequest,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
@@ -619,6 +729,7 @@ async def preview_personal_data_import(
     )
 
 @router.post("/import/apply", response_model=ImportApplyResponse, status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
+@personal_router.post("/import/apply", response_model=ImportApplyResponse, status_code=status.HTTP_200_OK, dependencies=[Depends(enforce_rate_limit("PERSONAL_WRITE"))])
 async def apply_personal_data_import(
     body: ImportApplyRequest,
     claims: SecurityTokenClaims = Depends(require_authenticated_user),
