@@ -4,6 +4,27 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc5] - 2026-08-30 (W6 — Recommendations + AI / Oracle Reliability)
+
+### Added
+- Targeted candidate generation across 89k+ titles in PostgreSQL: pushes down SQL filters for seed similarity (shared genres/directors), preferred genres, and release year bounds.
+- Episodic watched-title exclusion policy: completed movies are excluded from candidate pools, while in-progress TV series remain eligible for continue-watching discovery.
+- Seed self-exclusion: target seed titles are automatically excluded from their own "Because You Liked" and similar title recommendations.
+- Enhanced personal taste scoring: integrates positive ratings (>=8), negative ratings (<=3), explicit favorites (+3), dropped penalties (-5), preferred directors, actors, and thematic keywords.
+- Deterministic ranking: enforces strict tie-breaking on `(recommendation_score DESC, title_id DESC)`.
+- Grounded transparent explanations: provides factually accurate matched genres, directors, actors, and seed title names without hallucination.
+- AI Provider Abstraction (`AIProviderFactory`): unified adapter interface supporting Mock, OpenAI, Gemini, Groq, and Grok with free-first offline safety.
+- Prompt injection defense & PII redaction (`PromptSanitizer`): neutralizes instruction overrides and redacts emails, API keys, bearer tokens, and credentials.
+- CAT-6 AI proposal staging (`quality.ai_proposal_staging`): AI generated metadata updates staged for curator review with HMAC SHA-256 integrity audit logs.
+- Group taste matchmaking: multi-user cosine distance consensus with mathematical mean vector aggregation.
+- `test_w6_recommendations_and_ai.py` — 13 real PostgreSQL integration tests covering the complete recommendations, cold start, taste profiling, determinism, AI provider, and CAT-6 governance surfaces.
+- `test_w6_recommendations_and_oracle.js` — Playwright E2E browser tests for dashboard recommendations shelf, Oracle AI chat, and group taste matchmaking.
+
+### Fixed
+- Fixed candidate generation bottleneck: replaced arbitrary 200 newest title loading with targeted SQL candidate generation across the 89,141+ catalog.
+- Fixed mock provider enum casing in AI tests.
+- Fixed `PersonModel`, `SeasonModel`, and `EpisodeModel` test instantiation attributes to match canonical schema.
+
 ## [1.0.0-rc4] - 2026-08-30 (W5 — Data Completeness & Ingestion Reliability)
 
 ### Added

@@ -929,7 +929,62 @@ Identity resolution, provenance tracking, and conflict handling verified
 end-to-end. All W1–W4 baselines maintained with zero regression.
 **Carried forward from W2** (unchanged): backup/DR test coverage gap.
 
-### W6–W13
-Not started. See the master task for full phase breakdown (recommendations/AI,
-social, import/export, search quality, UX/accessibility, security, full QA,
-production readiness).
+### W6 — Recommendations + AI / Oracle Reliability `[x]` COMPLETE (2026-08-30)
+
+**Goal:** Make CineVault recommendations genuinely useful, explainable,
+deterministic, and grounded in real PostgreSQL data (89k+ catalog titles),
+while keeping canonical metadata authoritative, personal data private, AI
+optional/provider-independent with free-first offline safety, and protecting
+against hallucinated metadata and prompt injection.
+
+#### Backend (services/api)
+- [x] `repositories/recommendations.py`: Enhanced `_load_catalog_from_db` to
+      push down seed similarity, preferred genres, and release year bounds
+      directly to SQL across 89k+ title catalog for high-performance candidate retrieval.
+- [x] `repositories/recommendations.py`: Hardened `get_recommendations` with
+      episodic watched-title exclusion (movies excluded on watch, in-progress
+      series retained for continued discovery), seed self-exclusion, theme and
+      actor personal taste integration, and deterministic tie-breaking.
+- [x] `ai/provider.py`: AI Provider Abstraction (`AIProviderFactory`) supporting
+      Mock, OpenAI, Gemini, Groq, Grok with free-first offline fallback.
+- [x] `ai/provider.py`: `PromptSanitizer` with instruction injection token
+      neutralization and PII/API key/token redaction.
+- [x] `repositories/ai_assistant.py`: Grounded query processing and CAT-6 AI
+      proposal staging (`quality.ai_proposal_staging`) with curator review
+      lifecycle and HMAC SHA-256 integrity audit logs.
+- [x] `routers/ai.py`: Group taste matchmaking with vector consensus mean.
+
+#### Web Interface (apps/web)
+- [x] Dashboard: Top AI Taste Recommendations shelf rendering with real-time
+      recommendation scores and grounded transparent explanations.
+- [x] Oracle AI Assistant (`/oracle`): Conversational natural language queries,
+      grounded responses, starter prompts, and watch mood search.
+- [x] Group Taste Matchmaker: Multi-friend selection, watch mood input, and
+      group consensus vector analysis.
+
+#### Tests & Verification
+- [x] `test_w6_recommendations_and_ai.py` (13 tests): Cold start, explicit
+      filters, personalization signals, episodic watched exclusion, similar titles,
+      determinism, user isolation, taste profiles, group vectors, AI fallback,
+      CAT-6 proposal staging, prompt sanitization, query performance (<1.5s).
+      (13 passed / 0 failed against live PostgreSQL in 31.42s).
+- [x] Full AI & Recs Backend Regression (10 test files, 62 tests):
+      62 passed / 0 failed in 71.77s.
+- [x] `test_w6_recommendations_and_oracle.js` (Playwright E2E): Dev login,
+      dashboard recommendations shelf, Oracle chat, and group taste matchmaking.
+      (7 passed / 0 failed).
+- [x] Full E2E Regression: Auth (6/6), Catalog (12/12), Series Tracking (7/7),
+      Personal (15/15), W5 Completeness (7/7), Social Multiplayer (10/10),
+      W6 Recs & Oracle (7/7) — 64 passed / 0 failed.
+- [x] TypeScript: `npx tsc --noEmit` — PASS (0 errors).
+- [x] ESLint: `npm run lint` — PASS (0 warnings, 0 errors).
+- [x] Production build: `npm run build` — PASS (25 routes compiled).
+
+**W6 status: COMPLETE.** All recommendation algorithms, personal taste
+profiling, episodic watch exclusions, grounded explanations, AI provider
+abstractions, and CAT-6 governance are verified end-to-end against real
+PostgreSQL data.
+
+### W7–W13
+Not started. See the master task for full phase breakdown (social multiplayer,
+import/export, search quality, UX/accessibility, security, full QA, production readiness).

@@ -6,6 +6,24 @@ connection silently falling back to 10-row seed data) plus several deeper bugs
 uncovered while verifying every page. Fixed items are checked; remaining gaps
 are listed with exact fix paths so the next session can pick up immediately.
 
+**2026-08-30 W6 close-out session:** Recommendations + AI / Oracle Reliability
+phase. Hardened the candidate generation and scoring pipeline against the live
+89k+ title PostgreSQL catalog: SQL filter push-down for seed similarity, preferred
+genres, and release year bounds; hardened episodic watched-title exclusion policy
+(movies excluded on watch, in-progress episodic series preserved for continued
+discovery); seed self-exclusion; enhanced personal taste scoring with theme and
+actor affinities; deterministic ordering (`recommendation_score` DESC, `title_id`
+DESC); grounded transparent explanations with exact matched genres and directors;
+AI provider abstraction supporting Mock, OpenAI, Gemini, Groq, Grok with free-first
+offline fallback; CAT-6 AI proposal staging (`quality.ai_proposal_staging`) with
+curator review and HMAC SHA-256 integrity logs; prompt injection defense with
+PII/token sanitization; and group taste vector consensus. Created
+`test_w6_recommendations_and_ai.py` (13 passed / 0 failed in 31.42s) and
+`test_w6_recommendations_and_oracle.js` (7 passed / 0 failed). Full AI & Recs
+backend regression (10 test files, 62 tests): 62 passed / 0 failed. Full E2E
+regression (64 tests across 7 test suites): 64 passed / 0 failed. TypeScript:
+0 errors. ESLint: 0 errors / 0 warnings. Production build: PASS, 25 routes compiled.
+
 **2026-08-30 W5 close-out session:** Data Completeness & Ingestion Reliability
 phase. Hardened the entire ingestion pipeline against real 89k+ title databases:
 fixed scaling bottleneck (eliminated eager `length(display_id)` table scans on

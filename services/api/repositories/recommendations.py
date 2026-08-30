@@ -165,6 +165,10 @@ SEED_CATALOG = [
 async def _load_catalog_from_db(
     db: AsyncSession,
     genre_filter: Optional[str] = None,
+    preferred_genres: Optional[List[str]] = None,
+    seed_title_id: Optional[str] = None,
+    min_year: Optional[int] = None,
+    max_year: Optional[int] = None,
     max_runtime: Optional[int] = None,
     limit: int = 200,
 ) -> List[Dict[str, Any]]:
@@ -174,27 +178,122 @@ async def _load_catalog_from_db(
 
     Joins: canonical.title -> canonical.title_genre -> canonical.genre (for genre names)
            canonical.title -> canonical.credit -> canonical.person (for cast/crew names)
+           canonical.title -> canonical.title_theme -> canonical.theme (for themes)
+           canonical.title -> canonical.title_lang (for languages)
+           canonical.title -> canonical.title_country (for countries)
 
-    Genre and runtime filters are pushed down to SQL for efficiency.
-    The result limit is set to 200 to keep candidate pool manageable while
-    ensuring diversity beyond the original 8 hardcoded titles.
+    Targeted candidate generation pushes down filters for seed similarity,
+    preferred genres, and release years directly to SQL for high-performance
+    candidate retrieval on 89k+ title catalogs.
     """
     try:
-        # Excludes RETIRED titles (the tombstone value the title-merge/
-        # reconciliation soft-delete path actually sets, per
-        # quality/reconciliation.py -- nothing anywhere ever sets
-        # "DELETED", so filtering on that was dead code that let merged-
-        # away duplicate titles keep appearing in the candidate pool.
+        candidate_ids: List[UUID] = []
+
+        # 1. If seed_title_id is provided, retrieve candidate IDs sharing genres or directors
+        if seed_title_id:
+            try:
+                seed_uuid = UUID(seed_title_id)
+                # Seed genres
+                seed_genres_res = await db.execute(
+                    select(TitleGenreModel.genre_id).where(TitleGenreModel.title_id == seed_uuid)
+                )
+                seed_genre_ids = [r[0] for r in seed_genres_res.fetchall()]
+
+                # Seed directors
+                seed_dirs_res = await db.execute(
+                    select(CreditModel.person_id).where(
+                        and_(CreditModel.title_id == seed_uuid, CreditModel.credit_role_id == "DIRECTOR")
+                    )
+                )
+                seed_director_ids = [r[0] for r in seed_dirs_res.fetchall()]
+
+                # Query titles sharing genres or directors
+                conds = []
+                if seed_genre_ids:
+                    conds.append(
+                        TitleModel.title_id.in_(
+                            select(TitleGenreModel.title_id).where(TitleGenreModel.genre_id.in_(seed_genre_ids))
+                        )
+                    )
+                if seed_director_ids:
+                    conds.append(
+                        TitleModel.title_id.in_(
+                            select(CreditModel.title_id).where(
+                                and_(
+                                    CreditModel.person_id.in_(seed_director_ids),
+                                    CreditModel.credit_role_id == "DIRECTOR"
+                                )
+                            )
+                        )
+                    )
+
+                if conds:
+                    seed_cand_stmt = (
+                        select(TitleModel.title_id)
+                        .where(
+                            and_(
+                                TitleModel.title_id != seed_uuid,
+                                TitleModel.status_flag != "RETIRED",
+                                or_(*conds)
+                            )
+                        )
+                        .limit(limit)
+                    )
+                    seed_cands = (await db.execute(seed_cand_stmt)).scalars().all()
+                    candidate_ids.extend(seed_cands)
+            except (ValueError, Exception) as exc:
+                logger.warning("Targeted seed candidate lookup failed for %s: %s", seed_title_id, exc)
+
+        # 2. General / Genre-filtered / Year-bounded candidate query
+        general_conds = [TitleModel.status_flag != "RETIRED"]
+        if seed_title_id:
+            try:
+                general_conds.append(TitleModel.title_id != UUID(seed_title_id))
+            except ValueError:
+                pass
+
+        if min_year:
+            general_conds.append(TitleModel.production_year >= min_year)
+        if max_year:
+            general_conds.append(TitleModel.production_year <= max_year)
+
+        target_genre_names = []
+        if genre_filter:
+            target_genre_names.append(genre_filter.lower())
+        elif preferred_genres:
+            target_genre_names.extend([g.lower() for g in preferred_genres if g])
+
+        if target_genre_names:
+            general_conds.append(
+                TitleModel.title_id.in_(
+                    select(TitleGenreModel.title_id)
+                    .join(GenreModel, TitleGenreModel.genre_id == GenreModel.genre_id)
+                    .where(func.lower(GenreModel.name).in_(target_genre_names))
+                )
+            )
+
         title_query = (
             select(TitleModel)
             .options(selectinload(TitleModel.editions))
-            .where(TitleModel.status_flag != "RETIRED")
+            .where(and_(*general_conds))
             .limit(limit)
             .order_by(TitleModel.created_at.desc(), TitleModel.title_id.desc())
         )
 
         title_result = await db.execute(title_query)
-        titles = title_result.scalars().all()
+        titles = list(title_result.scalars().all())
+
+        # If we had targeted seed candidates not already in titles, load them too
+        loaded_ids = {t.title_id for t in titles}
+        extra_ids = [cid for cid in candidate_ids if cid not in loaded_ids][:limit]
+        if extra_ids:
+            extra_query = (
+                select(TitleModel)
+                .options(selectinload(TitleModel.editions))
+                .where(TitleModel.title_id.in_(extra_ids))
+            )
+            extra_titles = (await db.execute(extra_query)).scalars().all()
+            titles.extend(extra_titles)
 
         if not titles:
             logger.info("No titles found in canonical catalog for recommendation candidate pool.")
@@ -214,15 +313,36 @@ async def _load_catalog_from_db(
         for row in genre_result.fetchall():
             genres_by_title.setdefault(row.title_id, []).append(row.name)
 
-        # If a genre filter is specified, filter title IDs to those with the genre
-        if genre_filter:
-            genre_filter_lower = genre_filter.lower()
-            title_ids = [
-                tid for tid in title_ids
-                if any(g.lower() == genre_filter_lower for g in genres_by_title.get(tid, []))
-            ]
-            if not title_ids:
-                return []
+        # Load themes for candidate titles
+        theme_query = (
+            select(TitleThemeModel.title_id, ThemeModel.name)
+            .join(ThemeModel, TitleThemeModel.theme_id == ThemeModel.theme_id)
+            .where(TitleThemeModel.title_id.in_(title_ids))
+        )
+        theme_result = await db.execute(theme_query)
+        themes_by_title: Dict[UUID, List[str]] = {}
+        for row in theme_result.fetchall():
+            themes_by_title.setdefault(row.title_id, []).append(row.name)
+
+        # Load languages for candidate titles
+        lang_query = (
+            select(TitleLanguageModel.title_id, TitleLanguageModel.language_code)
+            .where(TitleLanguageModel.title_id.in_(title_ids))
+        )
+        lang_result = await db.execute(lang_query)
+        languages_by_title: Dict[UUID, List[str]] = {}
+        for row in lang_result.fetchall():
+            languages_by_title.setdefault(row.title_id, []).append(row.language_code)
+
+        # Load countries for candidate titles
+        country_query = (
+            select(TitleCountryModel.title_id, TitleCountryModel.country_code)
+            .where(TitleCountryModel.title_id.in_(title_ids))
+        )
+        country_result = await db.execute(country_query)
+        countries_by_title: Dict[UUID, List[str]] = {}
+        for row in country_result.fetchall():
+            countries_by_title.setdefault(row.title_id, []).append(row.country_code)
 
         # Load credits (directors and top-billed actors) for candidate titles
         credit_query = (
@@ -270,10 +390,13 @@ async def _load_catalog_from_db(
                     "canonical_title": t.canonical_title or t.original_title or "Unknown Title",
                     "original_title": t.original_title,
                     "release_year": t.production_year,
-                    "content_type": t.content_type_id or "MOVIE",
+                    "content_type": (t.content_type_id or "MOVIE").upper(),
                     "runtime_minutes": runtime,
                     "vote_average": 8.0,
                     "genres": genres_by_title.get(tid, []),
+                    "themes": themes_by_title.get(tid, []),
+                    "languages": languages_by_title.get(tid, []),
+                    "countries": countries_by_title.get(tid, []),
                     "directors": directors_by_title.get(tid, []),
                     "actors": actors_by_title.get(tid, []),
                     "is_available": True,
@@ -315,7 +438,7 @@ class RecommendationRepository:
         Personal Taste -> Context -> Ranking -> Explanation
         """
 
-        # 1. CAT-2 Personal Context Extraction (unchanged — always from DB)
+        # 1. CAT-2 Personal Context Extraction (always from DB when available)
         watched_title_ids: Set[str] = set()
         user_ratings: Dict[str, int] = {}
         favorite_title_ids: Set[str] = set()
@@ -332,38 +455,41 @@ class RecommendationRepository:
                     user_uuid = None
 
                 if user_uuid is not None:
-                    we_stmt = select(WatchEventModel.title_id).where(
+                    # 1. User Title States (Explicit Favorites, Dropped, Completed)
+                    st_stmt = select(UserTitleStateModel).where(UserTitleStateModel.user_id == user_uuid)
+                    st_res = await db.execute(st_stmt)
+                    for state in st_res.scalars().all():
+                        tid_str = str(state.title_id)
+                        if state.is_favorite:
+                            favorite_title_ids.add(tid_str)
+                        if state.manual_status_override == "DROPPED":
+                            dropped_title_ids.add(tid_str)
+                        elif state.manual_status_override == "COMPLETED":
+                            watched_title_ids.add(tid_str)
+
+                    # 2. Watch Events: Completed Movies vs In-Progress Series
+                    we_stmt = select(
+                        WatchEventModel.title_id,
+                        WatchEventModel.episode_id
+                    ).where(
                         and_(
                             WatchEventModel.user_id == user_uuid,
                             WatchEventModel.is_tombstoned == False,  # noqa: E712
                         )
                     )
                     we_res = await db.execute(we_stmt)
-                    watched_title_ids = {str(r[0]) for r in we_res.fetchall()}
+                    for r in we_res.fetchall():
+                        t_id, ep_id = str(r[0]), r[1]
+                        if ep_id is None:
+                            # Standalone film watch event: counts as fully watched
+                            watched_title_ids.add(t_id)
 
+                    # 3. Ratings
                     r_stmt = select(RatingModel.title_id, RatingModel.rating_value).where(
                         RatingModel.user_id == user_uuid
                     )
                     r_res = await db.execute(r_stmt)
                     user_ratings = {str(r[0]): r[1] for r in r_res.fetchall()}
-
-                    f_stmt = select(UserTitleStateModel.title_id).where(
-                        and_(
-                            UserTitleStateModel.user_id == user_uuid,
-                            UserTitleStateModel.is_favorite == True,  # noqa: E712
-                        )
-                    )
-                    f_res = await db.execute(f_stmt)
-                    favorite_title_ids = {str(r[0]) for r in f_res.fetchall()}
-
-                    d_stmt = select(UserTitleStateModel.title_id).where(
-                        and_(
-                            UserTitleStateModel.user_id == user_uuid,
-                            UserTitleStateModel.manual_status_override == "DROPPED",
-                        )
-                    )
-                    d_res = await db.execute(d_stmt)
-                    dropped_title_ids = {str(r[0]) for r in d_res.fetchall()}
 
             except Exception as exc:
                 logger.warning(
@@ -379,7 +505,7 @@ class RecommendationRepository:
         ) or (mode == RecommendationModeEnum.COLD_START)
 
         # -----------------------------------------------------------------------
-        # 2. Candidate Generation (P2 Fix — live DB query replaces SEED_CATALOG)
+        # 2. Candidate Generation (Targeted live DB queries across 89k+ titles)
         # -----------------------------------------------------------------------
         catalog: List[Dict[str, Any]] = []
 
@@ -392,9 +518,20 @@ class RecommendationRepository:
                         effective_max_for_db or 9999, 90
                     )
 
+                pref_genres_list = (
+                    cold_start_input.preferred_genres if cold_start_input and cold_start_input.preferred_genres
+                    else None
+                )
+                min_yr = cold_start_input.min_release_year if cold_start_input else None
+                max_yr = cold_start_input.max_release_year if cold_start_input else None
+
                 catalog = await _load_catalog_from_db(
                     db,
                     genre_filter=genre,
+                    preferred_genres=pref_genres_list,
+                    seed_title_id=seed_title_id,
+                    min_year=min_yr,
+                    max_year=max_yr,
                     max_runtime=effective_max_for_db,
                     limit=200,
                 )
@@ -451,21 +588,23 @@ class RecommendationRepository:
                                 and_(CreditModel.title_id == seed_uuid, CreditModel.credit_role_id == "DIRECTOR")
                             )
                         )
+                        seed_actors_res = await db.execute(
+                            select(PersonModel.canonical_name)
+                            .join(CreditModel, PersonModel.person_id == CreditModel.person_id)
+                            .where(
+                                and_(CreditModel.title_id == seed_uuid, CreditModel.credit_role_id == "ACTOR")
+                            )
+                        )
                         seed_item = {
                             "title_id": str(seed_uuid),
                             "canonical_title": seed_title_orm.canonical_title or "",
                             "genres": [r[0] for r in seed_genres_res.fetchall()],
                             "directors": [r[0] for r in seed_directors_res.fetchall()],
-                            "actors": [],
+                            "actors": [r[0] for r in seed_actors_res.fetchall()],
                         }
                 except (ValueError, Exception) as exc:
                     logger.warning("Could not fetch seed title %s from DB: %s", seed_title_id, exc)
 
-            # Only scan the hardcoded demo catalog when there's no real DB
-            # to have checked in the first place -- a seed_title_id that
-            # genuinely doesn't exist in real-DB mode should stay
-            # unmatched, not silently pick up a demo title's genres/
-            # directors for a live scoring computation.
             if seed_item is None and db is None:
                 for item in SEED_CATALOG:
                     if item["title_id"] == seed_title_id:
@@ -475,6 +614,8 @@ class RecommendationRepository:
         # 4. User Preference Profile Derivation (Personal Taste Signals)
         preferred_genres: Dict[str, float] = {}
         preferred_directors: Dict[str, float] = {}
+        preferred_actors: Dict[str, float] = {}
+        preferred_themes: Dict[str, float] = {}
 
         if not is_cold_start:
             for item in catalog:
@@ -503,6 +644,10 @@ class RecommendationRepository:
                         preferred_genres[g] = preferred_genres.get(g, 0.0) + weight
                     for d in item.get("directors", []):
                         preferred_directors[d] = preferred_directors.get(d, 0.0) + weight
+                    for a in item.get("actors", []):
+                        preferred_actors[a] = preferred_actors.get(a, 0.0) + weight
+                    for th in item.get("themes", []):
+                        preferred_themes[th] = preferred_themes.get(th, 0.0) + weight
         elif cold_start_input:
             if cold_start_input.preferred_genres:
                 for g in cold_start_input.preferred_genres:
@@ -514,10 +659,15 @@ class RecommendationRepository:
         for item in catalog:
             tid = item["title_id"]
 
+            # Exclude seed title itself from its own recommendations
+            if seed_title_id and tid == seed_title_id:
+                continue
+
+            # Watched exclusion
             if not include_watched and tid in watched_title_ids:
                 continue
 
-            # Genre filter (already applied at DB level, but re-check for seed fallback)
+            # Genre filter (re-check in case of seed fallback or multi-item candidate pool)
             if genre and genre.lower() not in [g.lower() for g in item.get("genres", [])]:
                 continue
 
@@ -595,6 +745,14 @@ class RecommendationRepository:
             cand_directors_list = item.get("directors", [])
             for d in cand_directors_list:
                 personal_taste += preferred_directors.get(d, 0.0) * 2.0
+
+            cand_actors_list = item.get("actors", [])
+            for a in cand_actors_list:
+                personal_taste += preferred_actors.get(a, 0.0) * 0.5
+
+            cand_themes_list = item.get("themes", [])
+            for th in cand_themes_list:
+                personal_taste += preferred_themes.get(th, 0.0)
 
             # 8. Context & Mode Scoring
             context_score = 0.0
