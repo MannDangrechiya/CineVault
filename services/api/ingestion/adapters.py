@@ -330,6 +330,10 @@ class KobisProviderAdapter(BaseProviderAdapter):
         """Normalizes KOBIS raw response to standardized intermediate schema."""
         runtime_raw = raw_payload.get("showTm")
         runtime_min = int(runtime_raw) if runtime_raw and str(runtime_raw).isdigit() else None
+        prod_year_raw = raw_payload.get("prdtYear")
+        prod_year = int(prod_year_raw) if prod_year_raw and str(prod_year_raw).isdigit() else None
+        nation = raw_payload.get("nationAlt")
+        origin_country = "KR" if nation and ("한국" in nation or "KR" in nation.upper()) else ("US" if nation and "미국" in nation else ("JP" if nation and "일본" in nation else ("FR" if nation and "프랑스" in nation else ("GB" if nation and "영국" in nation else None))))
 
         return {
             "provider_name": "KOBIS",
@@ -337,12 +341,12 @@ class KobisProviderAdapter(BaseProviderAdapter):
             "canonical_title_proposal": raw_payload.get("movieNmEn") or raw_payload.get("movieNm"),
             "original_title": raw_payload.get("movieNm"),
             "content_type": "MOVIE",
-            "production_year": int(raw_payload.get("prdtYear", 2019)) if raw_payload.get("prdtYear") else None,
+            "production_year": prod_year,
             "runtime_minutes": runtime_min,
-            "origin_country": "KR",
-            "genres": [g["genreNm"] for g in raw_payload.get("genres", [])] if isinstance(raw_payload.get("genres"), list) else [],
-            "directors": [d["peopleNm"] for d in raw_payload.get("directors", [])] if isinstance(raw_payload.get("directors"), list) else [],
-            "cast": [a["peopleNm"] for a in raw_payload.get("actors", [])] if isinstance(raw_payload.get("actors"), list) else []
+            "origin_country": origin_country or "KR",
+            "genres": [g["genreNm"] for g in raw_payload.get("genres", []) if isinstance(g, dict) and g.get("genreNm")] if isinstance(raw_payload.get("genres"), list) else [],
+            "directors": [d["peopleNm"] for d in raw_payload.get("directors", []) if isinstance(d, dict) and d.get("peopleNm")] if isinstance(raw_payload.get("directors"), list) else [],
+            "cast": [a["peopleNm"] for a in raw_payload.get("actors", []) if isinstance(a, dict) and a.get("peopleNm")] if isinstance(raw_payload.get("actors"), list) else []
         }
 
 
@@ -425,16 +429,33 @@ class TvdbProviderAdapter(BaseProviderAdapter):
 
     def normalize_payload(self, raw_payload: Dict[str, Any]) -> Dict[str, Any]:
         """Normalizes TVDB raw response to standardized intermediate schema."""
+        raw_country = raw_payload.get("originalCountry")
+        clean_country = None
+        if raw_country:
+            rc = str(raw_country).strip().lower()
+            if rc in ("kor", "kr", "korea", "south korea"):
+                clean_country = "KR"
+            elif rc in ("usa", "us", "united states"):
+                clean_country = "US"
+            elif rc in ("jpn", "jp", "japan"):
+                clean_country = "JP"
+            elif rc in ("gbr", "gb", "uk", "united kingdom"):
+                clean_country = "GB"
+            elif rc in ("fra", "fr", "france"):
+                clean_country = "FR"
+            elif len(rc) == 2:
+                clean_country = rc.upper()
+
         return {
             "provider_name": "TVDB",
             "external_id": str(raw_payload.get("id")),
             "canonical_title_proposal": raw_payload.get("name"),
             "original_title": raw_payload.get("originalName"),
             "content_type": "TV_SERIES",
-            "production_year": raw_payload.get("year"),
+            "production_year": int(raw_payload.get("year")) if raw_payload.get("year") and str(raw_payload.get("year")).isdigit() else None,
             "runtime_minutes": raw_payload.get("runtime_minutes") or raw_payload.get("runtime") or raw_payload.get("averageRuntime"),
-            "origin_country": "KR",
-            "genres": [g["name"] for g in raw_payload.get("genres", [])] if isinstance(raw_payload.get("genres"), list) else [],
+            "origin_country": clean_country,
+            "genres": [g["name"] for g in raw_payload.get("genres", []) if isinstance(g, dict) and g.get("name")] if isinstance(raw_payload.get("genres"), list) else [],
             "synopsis": raw_payload.get("overview"),
             "seasons": raw_payload.get("seasons"),
             "episodes": raw_payload.get("episodes") if isinstance(raw_payload.get("episodes"), list) else None,
@@ -626,6 +647,13 @@ class TmdbProviderAdapter(BaseProviderAdapter):
         else:
             c_type = "MOVIE"
 
+        origin_countries = raw_payload.get("origin_country")
+        origin_country = None
+        if isinstance(origin_countries, list) and origin_countries:
+            origin_country = str(origin_countries[0])[:2].upper()
+        elif isinstance(origin_countries, str) and origin_countries:
+            origin_country = origin_countries[:2].upper()
+
         return {
             "provider_name": "TMDB",
             "external_id": str(raw_payload.get("id")),
@@ -634,8 +662,8 @@ class TmdbProviderAdapter(BaseProviderAdapter):
             "content_type": c_type,
             "production_year": prod_year,
             "runtime_minutes": raw_payload.get("runtime"),
-            "origin_country": (raw_payload.get("origin_country") or ["US"])[0] if isinstance(raw_payload.get("origin_country"), list) and raw_payload.get("origin_country") else "US",
-            "genres": [g["name"] for g in raw_payload.get("genres", [])] if isinstance(raw_payload.get("genres"), list) else [],
+            "origin_country": origin_country,
+            "genres": [g["name"] for g in raw_payload.get("genres", []) if isinstance(g, dict) and g.get("name")] if isinstance(raw_payload.get("genres"), list) else [],
             "synopsis": raw_payload.get("overview"),
             "seasons": raw_payload.get("seasons"),
             "episodes": raw_payload.get("episodes") if isinstance(raw_payload.get("episodes"), list) else None,

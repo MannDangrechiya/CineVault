@@ -116,22 +116,37 @@ class IngestionRepository:
         """Inspects historical and active ingestion pipeline executions."""
         if db is not None:
             try:
-                stmt = select(RawPayloadCaptureModel).order_by(RawPayloadCaptureModel.acquired_at.desc()).limit(25)
+                from ..models.ingestion import IngestionRunModel
+                stmt = select(IngestionRunModel).order_by(IngestionRunModel.started_at.desc()).limit(25)
                 res = await db.execute(stmt)
                 records = res.scalars().all()
-                # Real result returned unconditionally, even if empty -- no
-                # ingestion runs recorded yet is honest, healthy state.
+                if records:
+                    return [
+                        IngestionRunSummary(
+                            run_id=str(r.run_id),
+                            provider_id=r.provider_name,
+                            status=r.status,
+                            started_at=r.started_at.isoformat() if r.started_at else datetime.now(timezone.utc).isoformat(),
+                            completed_at=r.completed_at.isoformat() if r.completed_at else None,
+                            records_fetched=r.records_seen,
+                            records_quarantined=r.records_rejected
+                        )
+                        for r in records
+                    ]
+                stmt_raw = select(RawPayloadCaptureModel).order_by(RawPayloadCaptureModel.acquired_at.desc()).limit(25)
+                res_raw = await db.execute(stmt_raw)
+                records_raw = res_raw.scalars().all()
                 return [
                     IngestionRunSummary(
                         run_id=str(r.ingestion_run_id),
                         provider_id=r.provider_name,
                         status="COMPLETED" if r.http_status_code == 200 else "QUARANTINED",
-                        started_at=r.acquired_at.isoformat(),
-                        completed_at=r.acquired_at.isoformat(),
+                        started_at=r.acquired_at.isoformat() if r.acquired_at else datetime.now(timezone.utc).isoformat(),
+                        completed_at=r.acquired_at.isoformat() if r.acquired_at else None,
                         records_fetched=1,
                         records_quarantined=0 if r.http_status_code == 200 else 1
                     )
-                    for r in records
+                    for r in records_raw
                 ]
             except Exception as e:
                 logger.error(f"Database query list_ingestion_runs failed: {e}", exc_info=True)

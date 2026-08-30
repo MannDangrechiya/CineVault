@@ -4,6 +4,28 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc4] - 2026-08-30 (W5 — Data Completeness & Ingestion Reliability)
+
+### Added
+- Source registry and licensing gates: enforced per-provider access control and data license verification before any ingestion.
+- Provider normalization hardening across 6 data sources (KOBIS, TVDB, TMDB, AniList, MAL, Wikidata) — no fabricated default values (`N/A`, `Unknown`, etc.) injected into canonical records.
+- 4-level identity resolution engine: exact external ID → fuzzy title match → year+type constraint → external ID cross-reference.
+- Pipeline Level-1 preload failure resilience: graceful SQL fallback when cache initialization fails on large catalogs.
+- Truthful ingestion run reporting: quarantine schema validation failures properly buffered to prevent foreign key errors; runs return truthful `PARTIAL` status instead of false `COMPLETED`.
+- Duplicate prevention on re-ingestion: metadata updates are idempotent without creating duplicate canonical records.
+- Series hierarchy ingestion: season/episode upserting handles refreshes and new episodes without duplicate rows.
+- Provenance tracking and conflict handling: domain authority resolved per field, metadata conflicts persisted for curator review.
+- Personal data preservation guarantee: library, watchlist, watch events, ratings, notes, and reviews remain 100% intact across catalog re-ingestion.
+- Control room operational endpoints verified: health, sources, candidate review, conflicts, provenance, and trigger endpoints.
+- `test_w5_data_completeness.py` — 10 real PostgreSQL integration tests covering the full data quality and pipeline reliability surface.
+- `test_w5_catalog_completeness.js` — 7 Playwright E2E browser tests verifying catalog navigation, episodic explorer, personal pages, and Oracle AI interface after ingestion hardening.
+
+### Fixed
+- Fixed scaling bottleneck on 89k+ title databases: eliminated eager `length(display_id)` table scans on pipeline startup, replaced with lazy per-prefix count resolution for sub-second initialization.
+- Capped `CATALOG_SNAPSHOT_LIMIT` to 5,000 for rapid initialization while providing full-fidelity SQL candidate lookups enriched with provider external IDs.
+- Fixed multi-phase database flush ordering: parent rows (`raw_payload_capture`, `titles`) now flush before referencing rows (`quarantine_record`, `ingestion_items`, `title_genre`) to prevent foreign key constraint violations.
+- Hardened `list_ingestion_runs` to query `IngestionRunModel` directly for truthful run statistics instead of potentially stale aggregates.
+
 ## [1.0.0-rc3] - 2026-08-30 (W4 — Series & Advanced Watch Tracking)
 
 ### Added

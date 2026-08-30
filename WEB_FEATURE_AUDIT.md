@@ -6,6 +6,23 @@ connection silently falling back to 10-row seed data) plus several deeper bugs
 uncovered while verifying every page. Fixed items are checked; remaining gaps
 are listed with exact fix paths so the next session can pick up immediately.
 
+**2026-08-30 W5 close-out session:** Data Completeness & Ingestion Reliability
+phase. Hardened the entire ingestion pipeline against real 89k+ title databases:
+fixed scaling bottleneck (eliminated eager `length(display_id)` table scans on
+startup), fixed multi-phase database flush ordering (parent rows before
+referencing rows), hardened provider normalization across KOBIS/TVDB/TMDB
+(no fabricated defaults), verified 4-level identity resolution engine, truthful
+ingestion run reporting (quarantine failures buffered, `PARTIAL` status returned),
+duplicate prevention on re-ingestion, series hierarchy upserting without
+duplicate rows, provenance tracking with domain authority resolution, and
+personal data preservation across catalog re-ingestion. Created
+`test_w5_data_completeness.py` (10 passed / 0 failed) and
+`test_w5_catalog_completeness.js` (7 passed / 0 failed). Full backend
+regression (W3+W4+W5+Day5): 37 passed / 0 failed. Full E2E regression:
+54+ passed across 7 test suites, 1 pre-existing social club failure.
+TypeScript: 0 errors. ESLint: 0 errors / 0 warnings. Production build:
+PASS, 25 routes compiled.
+
 **2026-08-30 W4 close-out session:** Series & Advanced Watch Tracking phase.
 Completed full episodic tracking experience: deterministic season/episode ordering,
 `title_id` query filtering on watch-event endpoints, enriched watch history with

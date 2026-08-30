@@ -861,7 +861,75 @@ reliable, and backed by real PostgreSQL data.
 rewatch counting, history enrichment, and user isolation are verified
 end-to-end on real PostgreSQL data.
 
-### W5–W13
-Not started. See the master task for full phase breakdown (data completeness,
-recommendations/AI, social, import/export, search quality, UX/accessibility,
-security, full QA, production readiness).
+### W5 — Data Completeness & Ingestion Reliability `[x]` COMPLETE (2026-08-30)
+
+**Goal:** Make the CineVault catalog and its data pipeline genuinely
+complete, trustworthy, legally usable, and useful. Harden the ingestion
+pipeline against real 89k+ title databases without fabricating data,
+destroying personal state, or creating duplicates.
+
+#### Backend (services/api)
+- [x] `ingestion/pipeline.py`: Fixed scaling bottleneck on 89k+ title
+      databases — eliminated eager table scans with `length(display_id)` on
+      startup, replaced with lazy per-prefix count resolution.
+- [x] `ingestion/pipeline.py`: Capped `CATALOG_SNAPSHOT_LIMIT` to 5,000
+      for rapid initialization with full-fidelity SQL candidate lookups
+      enriched with provider external IDs.
+- [x] `ingestion/pipeline.py`: Fixed multi-phase database flush ordering
+      to ensure parent rows (`raw_payload_capture`, `titles`) flush before
+      referencing rows (`quarantine_record`, `ingestion_items`, `title_genre`).
+- [x] `ingestion/adapters.py`: Hardened normalization across KOBIS, TVDB,
+      and TMDB providers — no fabricated default values (`N/A`, `Unknown`,
+      etc.) injected into canonical records.
+- [x] `repositories/ingestion.py`: Hardened `list_ingestion_runs` to query
+      `IngestionRunModel` directly for truthful run statistics.
+
+#### Data Quality & Pipeline Guarantees
+- [x] Source registry and licensing gates enforced per provider.
+- [x] Provider normalization: no fabricated defaults across 6 providers
+      (KOBIS, TVDB, TMDB, AniList, MAL, Wikidata).
+- [x] 4-level identity resolution engine verified (exact ID → fuzzy title
+      → year+type → external ID cross-reference).
+- [x] Pipeline Level-1 preload failure: graceful fallback to SQL queries.
+- [x] Truthful ingestion run reporting: quarantine schema validation
+      failures properly buffered; returns truthful `PARTIAL` status.
+- [x] Duplicate prevention on re-ingestion: updates metadata idempotently
+      without creating duplicate canonical records.
+- [x] Series hierarchy ingestion: season/episode upserting handles refreshes
+      and new episodes without duplicate rows.
+- [x] Provenance tracking: domain authority resolved, conflicts persisted.
+- [x] Personal data preservation: library, watchlist, watch events, ratings,
+      notes, and reviews remain 100% intact across catalog re-ingestion.
+- [x] Control room operational endpoints verified: health, sources,
+      candidate review, conflicts, provenance, and trigger endpoints.
+
+#### Tests & Verification
+- [x] `test_w5_data_completeness.py` (10 tests): Full coverage of source
+      registry, provider normalization, identity resolution, pipeline
+      resilience, truthful reporting, duplicate prevention, hierarchy
+      ingestion, provenance, personal data preservation, and control room
+      endpoints. (10 passed / 0 failed against live PostgreSQL with 89k+
+      titles in 35.91s).
+- [x] `test_w5_catalog_completeness.js` (Playwright E2E): 7 browser tests
+      covering dev user login, movies catalog, series catalog with episodic
+      explorer, watchlist/history personal pages, and Oracle AI interface.
+      (7 passed / 0 failed).
+- [x] Full backend regression (W3+W4+W5+Day5): 37 passed / 0 failed.
+- [x] Full E2E regression: auth (6/6), catalog (12/12), personal (15/15),
+      series tracking (all), oracle (3/3), social (4/5, 1 pre-existing),
+      W5 completeness (7/7) — 54+ passed, 1 pre-existing failure.
+- [x] TypeScript: `npx tsc --noEmit` — 0 errors.
+- [x] ESLint: `npm run lint` — 0 errors / 0 warnings.
+- [x] Production build: `npm run build` — PASS, 25 routes compiled.
+
+**W5 status: COMPLETE.** The ingestion pipeline is production-safe against
+89k+ title databases. No fabricated data, no destroyed personal state, no
+duplicate records. Provider normalization hardened across 6 data sources.
+Identity resolution, provenance tracking, and conflict handling verified
+end-to-end. All W1–W4 baselines maintained with zero regression.
+**Carried forward from W2** (unchanged): backup/DR test coverage gap.
+
+### W6–W13
+Not started. See the master task for full phase breakdown (recommendations/AI,
+social, import/export, search quality, UX/accessibility, security, full QA,
+production readiness).

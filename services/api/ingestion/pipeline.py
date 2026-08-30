@@ -101,10 +101,10 @@ class IngestionPipelineEngine:
             # weaker multilingual candidate recall at very large catalog
             # sizes. A phonetic-indexed candidate search is future work, not
             # attempted here.
-            "catalog_snapshot": [],
+            "catalog_snapshot": None,
             "pending_genres": []
         }
-        CATALOG_SNAPSHOT_LIMIT = int(os.getenv("CATALOG_SNAPSHOT_LIMIT", "200000"))
+        CATALOG_SNAPSHOT_LIMIT = int(os.getenv("CATALOG_SNAPSHOT_LIMIT", "5000"))
 
         if db is not None:
             run_orm = IngestionRunModel(
@@ -139,8 +139,9 @@ class IngestionPipelineEngine:
                     )
                 )
                 run_context["external_id_map"] = {str(r[0]): str(r[1]) for r in ext_res.all()}
-            except Exception:
-                run_context["external_id_map"] = {}
+            except Exception as e:
+                logger.warning(f"Failed to preload external ID mappings for '{provider_name}': {e}")
+                run_context["external_id_map"] = None
 
             # Preload a catalog snapshot for the real identity resolver (see
             # note on run_context["catalog_snapshot"] above).
@@ -196,28 +197,7 @@ class IngestionPipelineEngine:
             except Exception:
                 run_context["catalog_snapshot"] = None
 
-            # Preload max sequence counters per prefix
-            for pfx in ["MOV-", "TV-", "ANI-", "DOC-", "SHO-"]:
-                try:
-                    stmt = (
-                        select(TitleModel.display_id)
-                        .where(TitleModel.display_id.like(f"{pfx}%"))
-                        .order_by(func.length(TitleModel.display_id).desc(), TitleModel.display_id.desc())
-                        .limit(500)
-                    )
-                    res = await db.execute(stmt)
-                    ids = res.scalars().all()
-                    max_num = 0
-                    for d_id in ids:
-                        parts = d_id.split("-")
-                        if len(parts) >= 2 and parts[-1].isdigit():
-                            max_num = max(max_num, int(parts[-1]))
-                    if max_num == 0:
-                        count_stmt = select(func.count()).select_from(TitleModel).where(TitleModel.display_id.like(f"{pfx}%"))
-                        max_num = (await db.execute(count_stmt)).scalar_one()
-                    run_context["seq_counters"][pfx] = max_num
-                except Exception:
-                    run_context["seq_counters"][pfx] = 0
+
 
         adapter = get_provider_adapter(provider_name)
         candidate_results = []
@@ -275,7 +255,10 @@ class IngestionPipelineEngine:
                             diagnostic_details={"errors": validation_errors, "external_id": ext_id},
                             review_status="PENDING"
                         )
-                        db.add(q_orm)
+                        if "pending_quarantines" not in run_context:
+                            run_context["pending_quarantines"] = []
+                        run_context["pending_quarantines"].append(q_orm)
+
                         item_orm = IngestionItemModel(
                             item_id=uuid.uuid4(),
                             ingestion_run_id=uuid.UUID(run_id),
@@ -284,7 +267,18 @@ class IngestionPipelineEngine:
                             status="REJECTED",
                             error_details={"errors": validation_errors}
                         )
-                        db.add(item_orm)
+                        if "pending_items" not in run_context:
+                            run_context["pending_items"] = []
+                        run_context["pending_items"].append(item_orm)
+
+                    candidate_results.append({
+                        "external_id": ext_id,
+                        "candidate_id": None,
+                        "match_status": "REJECTED",
+                        "matched_canonical_title_id": None,
+                        "match_score": 0.0,
+                        "item_status": "QUARANTINED_SCHEMA_ERROR" if not dry_run else "DRY_RUN_REJECTED"
+                    })
                     return
 
                 records_valid += 1
@@ -326,17 +320,30 @@ class IngestionPipelineEngine:
                 # H. Controlled Apply (Only if dry_run=False)
                 item_final_status = "STAGED_CANDIDATE"
                 if not dry_run:
-                    apply_created, apply_updated = await self._controlled_apply(
-                        db, provider_name, ext_id, normalized, match_status, matched_title_id, run_context=run_context
-                    )
-                    if apply_created:
-                        records_created += 1
-                        item_final_status = "CREATED"
-                    elif apply_updated:
-                        records_updated += 1
-                        item_final_status = "UPDATED"
+                    if db is not None:
+                        apply_created, apply_updated = await self._controlled_apply(
+                            db, provider_name, ext_id, normalized, match_status, matched_title_id, run_context=run_context
+                        )
+                        if apply_created:
+                            records_created += 1
+                            item_final_status = "CREATED"
+                        elif apply_updated:
+                            records_updated += 1
+                            item_final_status = "UPDATED"
+                        elif match_status in ("AUTO_MATCH", "MATCH_EXACT"):
+                            item_final_status = "MATCHED"
+                        elif match_status in ("REQUIRES_REVIEW", "MATCH_AMBIGUOUS"):
+                            item_final_status = "STAGED_CANDIDATE"
+                        else:
+                            item_final_status = "STAGED_CANDIDATE"
                     else:
-                        item_final_status = "MATCHED"
+                        # db is None mode (dry / test evaluation)
+                        if match_status in ("AUTO_MATCH", "MATCH_EXACT"):
+                            item_final_status = "MATCHED"
+                        elif match_status in ("REQUIRES_REVIEW", "MATCH_AMBIGUOUS"):
+                            item_final_status = "STAGED_CANDIDATE"
+                        else:
+                            item_final_status = "UNAPPLIED"
                 else:
                     item_final_status = "DRY_RUN_VALIDATED"
 
@@ -374,7 +381,11 @@ class IngestionPipelineEngine:
         if db is not None:
             try:
                 await db.flush()
-                # 2nd Phase: Insert pending IngestionItemModel and TitleGenreModel now that parent tables are flushed
+                # 2nd Phase: Insert pending QuarantineRecordModel, IngestionItemModel and TitleGenreModel now that parent tables are flushed
+                pending_quarantines = run_context.get("pending_quarantines", [])
+                for q_orm in pending_quarantines:
+                    db.add(q_orm)
+
                 pending_items = run_context.get("pending_items", [])
                 for item_orm in pending_items:
                     db.add(item_orm)
@@ -387,9 +398,16 @@ class IngestionPipelineEngine:
             except Exception as e:
                 logger.error(f"Error during batch database flush: {e}", exc_info=True)
                 error_count += 1
+                if not config.allow_seed_fallback:
+                    raise
 
         completed_at = datetime.now(timezone.utc)
-        final_status = "COMPLETED" if error_count == 0 else ("PARTIAL" if records_valid > 0 else "FAILED")
+        if error_count == 0:
+            final_status = "COMPLETED"
+        elif records_created > 0 or records_updated > 0 or (records_valid > 0 and error_count < records_seen):
+            final_status = "PARTIAL"
+        else:
+            final_status = "FAILED"
 
         # Update Ingestion Run ORM status
         if db is not None and run_orm:
@@ -454,12 +472,13 @@ class IngestionPipelineEngine:
                 return ("AUTO_MATCH", "018f6f60-7a00-7000-8000-000000000001", 1.000, "RULE_EXACT_EXTERNAL_ID")
             return ("NO_MATCH", None, 0.000, "RULE_NO_MATCH")
 
-        # Level 1: Exact External ID match (checked against preloaded cache first)
-        if run_context and "external_id_map" in run_context:
+        # Level 1: Exact External ID match (checked against preloaded cache first if available)
+        if run_context and run_context.get("external_id_map") is not None:
             cached_title_id = run_context["external_id_map"].get(str(external_id))
             if cached_title_id:
                 return ("AUTO_MATCH", cached_title_id, 1.000, "RULE_LEVEL1_EXACT_EXTERNAL_ID")
         else:
+            # Cache missing or preload failed: query PostgreSQL directly
             try:
                 stmt = select(TitleExternalIdModel).where(
                     TitleExternalIdModel.provider_name == provider_name,
@@ -468,23 +487,16 @@ class IngestionPipelineEngine:
                 res = await db.execute(stmt)
                 ext_mappings = res.scalars().all()
                 if len(ext_mappings) == 1:
-                    return ("AUTO_MATCH", str(ext_mappings[0].title_id), 1.000, "RULE_LEVEL1_EXACT_EXTERNAL_ID")
+                    matched_id = str(ext_mappings[0].title_id)
+                    if run_context and "external_id_map" in run_context and run_context["external_id_map"] is not None:
+                        run_context["external_id_map"][str(external_id)] = matched_id
+                    return ("AUTO_MATCH", matched_id, 1.000, "RULE_LEVEL1_EXACT_EXTERNAL_ID")
                 elif len(ext_mappings) > 1:
                     return ("REQUIRES_REVIEW", None, 0.500, "RULE_LEVEL1_EXTERNAL_ID_COLLISION")
             except Exception as e:
-                logger.debug(f"TitleExternalId lookup skipped: {e}")
-
-        # Level 2-4: the real identity resolver is the decision authority here
-        # (P0 fix, Day 1-7 remediation, Batch 4). Previously this branch did a
-        # raw canonical_title.lower() dict lookup that bypassed
-        # quality/identity_resolution.py entirely — Level 3 multi-signal
-        # matching, Level 4 probabilistic matching, and multilingual
-        # transliteration matching were all dead code. Now every non-external-
-        # ID match is decided by identity_resolver.resolve_identity.
-        # Fast-path Level 1 match if already indexed in run_context
-        if run_context and "external_id_map" in run_context and str(external_id) in run_context["external_id_map"]:
-            matched_id = run_context["external_id_map"][str(external_id)]
-            return ("AUTO_MATCH", matched_id, 1.000, "RULE-LEVEL1-EXACT-EXTERNAL-ID")
+                logger.error(f"TitleExternalId lookup error for {provider_name}:{external_id}: {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
 
         match_payload = dict(normalized)
         match_payload["provider_name"] = provider_name
@@ -492,7 +504,7 @@ class IngestionPipelineEngine:
 
         catalog_snapshot = run_context.get("catalog_snapshot") if run_context else None
 
-        if catalog_snapshot is not None:
+        if catalog_snapshot:
             # Preloaded whole-catalog path (see run_context init comment).
             match_state, matched_id, score, rule = identity_resolver.resolve_identity(
                 match_payload, catalog_snapshot
@@ -504,12 +516,10 @@ class IngestionPipelineEngine:
         else:
             # Large-catalog fallback: fetch a narrow same-title candidate set
             # via SQL (exact ILIKE on canonical/original title), then still
-            # defer the actual decision to identity_resolver. Weaker
-            # multilingual candidate recall than the snapshot path (a
-            # different-script title won't ILIKE-match), documented above.
+            # defer the actual decision to identity_resolver.
             try:
                 cand_title = normalized.get("canonical_title_proposal") or normalized.get("original_title")
-                if cand_title:
+                if cand_title and db is not None:
                     stmt = select(TitleModel).where(
                         (TitleModel.canonical_title.ilike(cand_title)) |
                         (TitleModel.original_title.ilike(cand_title))
@@ -517,6 +527,15 @@ class IngestionPipelineEngine:
                     res = await db.execute(stmt)
                     titles = res.scalars().all()
                     if titles:
+                        t_ids = [t.title_id for t in titles]
+                        ext_stmt = select(TitleExternalIdModel).where(TitleExternalIdModel.title_id.in_(t_ids))
+                        ext_res = await db.execute(ext_stmt)
+                        ext_by_title = {}
+                        for ext_row in ext_res.scalars().all():
+                            if ext_row.title_id not in ext_by_title:
+                                ext_by_title[ext_row.title_id] = {}
+                            ext_by_title[ext_row.title_id][ext_row.provider_name] = ext_row.external_id
+
                         candidate_list = [
                             {
                                 "id": str(t.title_id),
@@ -525,7 +544,7 @@ class IngestionPipelineEngine:
                                 "original_title": t.original_title,
                                 "production_year": t.production_year,
                                 "content_type": t.content_type_id,
-                                "external_ids": {},
+                                "external_ids": ext_by_title.get(t.title_id, {}),
                             }
                             for t in titles
                         ]
@@ -656,7 +675,9 @@ class IngestionPipelineEngine:
                         )
                         db.add(conf_orm)
                     except Exception as e:
-                        logger.warning(f"MetadataConflictModel insertion skipped: {e}")
+                        logger.error(f"MetadataConflictModel persistence failed for {field_name}: {e}", exc_info=True)
+                        if not config.allow_seed_fallback:
+                            raise
 
             if db is not None:
                 try:
@@ -673,7 +694,9 @@ class IngestionPipelineEngine:
                     )
                     db.add(prov_orm)
                 except Exception as e:
-                    logger.warning(f"FieldProvenanceModel insertion skipped: {e}")
+                    logger.error(f"FieldProvenanceModel persistence failed for {field_name}: {e}", exc_info=True)
+                    if not config.allow_seed_fallback:
+                        raise
 
         return has_conflict
 
@@ -696,33 +719,139 @@ class IngestionPipelineEngine:
             return (False, False)
 
         if match_status in ("AUTO_MATCH", "MATCH_EXACT") and matched_title_id:
-            # If mapping is already in run_context, skip redundant DB check
-            if run_context and "external_id_map" in run_context and str(external_id) in run_context["external_id_map"]:
-                return (False, False)
+            updated_anything = False
+            title_uuid = uuid.UUID(matched_title_id)
 
             # Ensure external ID mapping exists
             try:
                 stmt = select(TitleExternalIdModel).where(
-                    TitleExternalIdModel.title_id == uuid.UUID(matched_title_id),
-                    TitleExternalIdModel.provider_name == provider_name
+                    TitleExternalIdModel.title_id == title_uuid,
+                    TitleExternalIdModel.provider_name == provider_name,
+                    TitleExternalIdModel.external_id == str(external_id)
                 )
                 res = await db.execute(stmt)
                 existing_map = res.scalar_one_or_none()
                 if not existing_map:
                     new_map = TitleExternalIdModel(
                         mapping_id=uuid.uuid4(),
-                        title_id=uuid.UUID(matched_title_id),
+                        title_id=title_uuid,
                         provider_name=provider_name,
                         external_id=str(external_id)
                     )
                     db.add(new_map)
-                    if run_context and "external_id_map" in run_context:
-                        run_context["external_id_map"][str(external_id)] = str(matched_title_id)
-                    return (False, True)
-                elif run_context and "external_id_map" in run_context:
+                    updated_anything = True
+                
+                if run_context and "external_id_map" in run_context and run_context["external_id_map"] is not None:
                     run_context["external_id_map"][str(external_id)] = str(matched_title_id)
+
+                # If seasons/episodes are provided in refresh payload, update/insert hierarchy idempotently
+                seasons_payload = normalized.get("seasons")
+                episodes_payload = normalized.get("episodes")
+                if seasons_payload or episodes_payload:
+                    s_stmt = select(SeasonModel).where(SeasonModel.title_id == title_uuid)
+                    s_res = await db.execute(s_stmt)
+                    existing_seasons = {s.season_number: s for s in s_res.scalars().all()}
+
+                    if seasons_payload and isinstance(seasons_payload, list):
+                        for s_data in seasons_payload:
+                            s_num = int(s_data.get("season_number", 1))
+                            s_name = s_data.get("season_name") or f"Season {s_num}"
+                            s_overview = s_data.get("overview")
+                            
+                            season_orm = existing_seasons.get(s_num)
+                            if not season_orm:
+                                season_orm = SeasonModel(
+                                    season_id=uuid.uuid4(),
+                                    title_id=title_uuid,
+                                    season_number=s_num,
+                                    season_name=s_name,
+                                    overview=s_overview
+                                )
+                                db.add(season_orm)
+                                existing_seasons[s_num] = season_orm
+                                updated_anything = True
+
+                            ep_stmt = select(EpisodeModel).where(EpisodeModel.season_id == season_orm.season_id)
+                            ep_res = await db.execute(ep_stmt)
+                            existing_episodes = {ep.episode_number: ep for ep in ep_res.scalars().all()}
+
+                            ep_list = s_data.get("episodes", [])
+                            if isinstance(ep_list, list):
+                                for ep_data in ep_list:
+                                    ep_num = int(ep_data.get("episode_number", 1))
+                                    ep_name = ep_data.get("episode_name") or f"Episode {ep_num}"
+                                    ep_air = ep_data.get("air_date")
+                                    ep_runtime = ep_data.get("runtime_minutes") or normalized.get("runtime_minutes")
+                                    ep_overview = ep_data.get("overview")
+                                    air_date_obj = datetime.strptime(ep_air, "%Y-%m-%d").date() if isinstance(ep_air, str) and len(ep_air) == 10 else None
+
+                                    if ep_num not in existing_episodes:
+                                        new_ep = EpisodeModel(
+                                            episode_id=uuid.uuid4(),
+                                            season_id=season_orm.season_id,
+                                            episode_number=ep_num,
+                                            episode_name=ep_name,
+                                            air_date=air_date_obj,
+                                            runtime_minutes=ep_runtime,
+                                            overview=ep_overview
+                                        )
+                                        db.add(new_ep)
+                                        existing_episodes[ep_num] = new_ep
+                                        updated_anything = True
+                                    else:
+                                        curr_ep = existing_episodes[ep_num]
+                                        if not curr_ep.air_date and air_date_obj:
+                                            curr_ep.air_date = air_date_obj
+                                            updated_anything = True
+                                        if not curr_ep.overview and ep_overview:
+                                            curr_ep.overview = ep_overview
+                                            updated_anything = True
+
+                    elif episodes_payload and isinstance(episodes_payload, list):
+                        season_orm = existing_seasons.get(1)
+                        if not season_orm:
+                            season_orm = SeasonModel(
+                                season_id=uuid.uuid4(),
+                                title_id=title_uuid,
+                                season_number=1,
+                                season_name="Season 1",
+                                overview=normalized.get("synopsis")
+                            )
+                            db.add(season_orm)
+                            existing_seasons[1] = season_orm
+                            updated_anything = True
+
+                        ep_stmt = select(EpisodeModel).where(EpisodeModel.season_id == season_orm.season_id)
+                        ep_res = await db.execute(ep_stmt)
+                        existing_episodes = {ep.episode_number: ep for ep in ep_res.scalars().all()}
+
+                        for ep_data in episodes_payload:
+                            ep_num = int(ep_data.get("episode_number", 1))
+                            ep_name = ep_data.get("episode_name") or f"Episode {ep_num}"
+                            ep_air = ep_data.get("air_date")
+                            ep_runtime = ep_data.get("runtime_minutes") or normalized.get("runtime_minutes")
+                            ep_overview = ep_data.get("overview")
+                            air_date_obj = datetime.strptime(ep_air, "%Y-%m-%d").date() if isinstance(ep_air, str) and len(ep_air) == 10 else None
+
+                            if ep_num not in existing_episodes:
+                                new_ep = EpisodeModel(
+                                    episode_id=uuid.uuid4(),
+                                    season_id=season_orm.season_id,
+                                    episode_number=ep_num,
+                                    episode_name=ep_name,
+                                    air_date=air_date_obj,
+                                    runtime_minutes=ep_runtime,
+                                    overview=ep_overview
+                                )
+                                db.add(new_ep)
+                                existing_episodes[ep_num] = new_ep
+                                updated_anything = True
+
+                return (False, updated_anything)
             except Exception as e:
-                logger.error(f"Error updating TitleExternalIdModel mapping: {e}")
+                logger.error(f"Error updating matched Title '{matched_title_id}': {e}", exc_info=True)
+                if not config.allow_seed_fallback:
+                    raise
             return (False, False)
 
         # Controlled Apply for NEW canonical records (NO_MATCH)
@@ -769,6 +898,14 @@ class IngestionPipelineEngine:
 
                 # Generate next display ID using sequence counter
                 if run_context and "seq_counters" in run_context:
+                    if prefix not in run_context["seq_counters"]:
+                        try:
+                            count_stmt = select(func.count()).select_from(TitleModel).where(TitleModel.display_id.like(f"{prefix}%"))
+                            max_num = (await db.execute(count_stmt)).scalar_one()
+                            run_context["seq_counters"][prefix] = max_num
+                        except Exception:
+                            run_context["seq_counters"][prefix] = 0
+
                     while True:
                         curr = run_context["seq_counters"].get(prefix, 0) + 1
                         run_context["seq_counters"][prefix] = curr
@@ -780,19 +917,11 @@ class IngestionPipelineEngine:
                         else:
                             break
                 else:
-                    stmt = (
-                        select(TitleModel.display_id)
-                        .where(TitleModel.display_id.like(f"{prefix}%"))
-                        .order_by(func.length(TitleModel.display_id).desc(), TitleModel.display_id.desc())
-                        .limit(500)
-                    )
-                    res = await db.execute(stmt)
-                    ids = res.scalars().all()
-                    max_num = 0
-                    for d_id in ids:
-                        parts = d_id.split("-")
-                        if len(parts) >= 2 and parts[-1].isdigit():
-                            max_num = max(max_num, int(parts[-1]))
+                    try:
+                        count_stmt = select(func.count()).select_from(TitleModel).where(TitleModel.display_id.like(f"{prefix}%"))
+                        max_num = (await db.execute(count_stmt)).scalar_one()
+                    except Exception:
+                        max_num = 0
                     display_id = f"{prefix}{max_num + 1:06d}"
 
                 new_title_id = uuid.uuid4()
