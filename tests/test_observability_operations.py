@@ -105,7 +105,9 @@ class TestObservabilityAndOperations(unittest.TestCase):
         self.assertIn(res_ready.status_code, [200, 503])
         data = res_ready.json()
         self.assertIn("status", data)
-        self.assertIn("dependencies", data)
+        # W13 sanitized the readiness payload to "checks" (no internal topology
+        # exposure); this test predated that change and asserted the old key.
+        self.assertIn("checks", data)
 
 if __name__ == "__main__":
     unittest.main()

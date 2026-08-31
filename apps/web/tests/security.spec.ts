@@ -12,7 +12,8 @@ test.describe('W11 Web Security & CSRF Gateway Tests', () => {
     // Must be rejected with 403 Forbidden
     expect(response.status()).toBe(403);
     const body = await response.json();
-    expect(body.error).toContain('CSRF protection');
+    // BFF error envelope is { error: { code, message } }, not a bare string.
+    expect(body.error.message).toContain('CSRF verification failed');
   });
 
   test('BFF Proxy rejects state-changing requests without Origin or Referer', async ({ request }) => {

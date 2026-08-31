@@ -142,7 +142,7 @@ async function runMediaImageRenderingSuite() {
     }, baseUrl);
 
     const inceptionData = await page.evaluate(async (url) => {
-      const res = await fetch(`${url}/api/proxy/v1/titles/MOV-000007`);
+      const res = await fetch(`${url}/api/proxy/v1/titles/MOV-000002`);
       return await res.json();
     }, baseUrl);
 

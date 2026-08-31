@@ -43,7 +43,7 @@ export async function getCatalogPage(
   searchParams.append("limit", limit.toString());
   searchParams.append("offset", offset.toString());
 
-  const endpoint = `/titles?${searchParams.toString()}`;
+  const endpoint = `/v1/catalog?${searchParams.toString()}`;
   return await apiFetch<CatalogPageResponse>(endpoint);
 }
 
@@ -51,6 +51,6 @@ export async function getCatalogPage(
  * Fetches the genre taxonomy list from the backend.
  */
 export async function getGenres(): Promise<GenreSummary[]> {
-  return await apiFetch<GenreSummary[]>("/genres");
+  return await apiFetch<GenreSummary[]>("/v1/genres");
 }
 
