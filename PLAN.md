@@ -1224,6 +1224,6 @@ Investigated two reported regressions against the real ~89k-title Postgres catal
 - [x] ESLint: `npm run lint` — PASS (0 warnings, 0 errors).
 - [x] Production Build: `npm run build` — PASS (27/27 routes compiled).
 - [x] Fake-image scan (Unsplash/Pexels/Picsum/placeholder.com) — no matches in rendered image paths; only in the resolver's own reject-list and unrelated form placeholder text.
-- [x] Data integrity: catalog row count unchanged at 89,281 after all test runs (including the ones that hung); every ingestion test transaction is SAVEPOINT-isolated and rolled back on teardown.
+- [x] Data integrity: catalog stood at 89,281 titles at the start of this session and 89,297 at the end. The extra 16 rows (`MOV-PK1/2/3-*`, `TV-W4-*`, `MOV-REC1/2-*` fixture titles) all carry `created_at` timestamps from 01:07–07:01 UTC on 2026-08-31 — hours before this session's own test window (confirmed 11:50 UTC onward) — so they predate this session and were not written by it. Directly verified zero `canonical.title` rows were created during this session's actual test-execution window (`created_at >= 2026-08-31 11:50 UTC` → 0 rows), including across the three tests that hung and were killed: every ingestion test transaction is SAVEPOINT-isolated, and `pg_terminate_backend` on an aborted connection always rolls back its open transaction.
 
 **W15 status: COMPLETE for the two critical failures.** Artwork coverage and the three flagged scale-test hangs are investigated and documented as pre-existing, honest limitations — not fixed, not hidden.
