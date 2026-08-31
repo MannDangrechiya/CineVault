@@ -1,4 +1,3 @@
-/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import React, { useState, useMemo } from "react";
@@ -20,9 +19,7 @@ import {
   Film,
 } from "lucide-react";
 import Link from "next/link";
-
-const FALLBACK_POSTER =
-  "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80";
+import { MediaPoster } from "@/components/media/MediaPoster";
 
 export default function GroupPickRoomPage() {
   const params = useParams();
@@ -219,10 +216,10 @@ export default function GroupPickRoomPage() {
                 >
                   {/* Poster Thumbnail */}
                   <div className="w-20 h-28 rounded-xl overflow-hidden bg-zinc-950 border border-zinc-800 shrink-0 relative">
-                    <img
-                      src={cand.poster_url || FALLBACK_POSTER}
+                    <MediaPoster
+                      src={cand.poster_url}
                       alt={cand.canonical_title}
-                      className="w-full h-full object-cover"
+                      imgClassName="w-full h-full object-cover"
                     />
                     {isWinning && (
                       <div className="absolute top-1 right-1 p-1 rounded-md bg-amber-500 text-black text-xs font-bold">

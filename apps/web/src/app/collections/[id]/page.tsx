@@ -6,8 +6,9 @@ import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { LoadingState, ErrorState } from "@/components/ui/States";
-import { ArrowLeft, Film, Tv, Trash2, Lock, Globe, Layers } from "lucide-react";
+import { ArrowLeft, Lock, Globe, Layers, Film, Trash2 } from "lucide-react";
 import { getCollectionDetail, removeCollectionItem } from "@/lib/api/collections";
+import { MediaPoster } from "@/components/media/MediaPoster";
 
 export default function CollectionDetailPage() {
   const params = useParams();
@@ -127,18 +128,12 @@ export default function CollectionDetailPage() {
                 >
                   <Link href={detailUrl} className="block">
                     <div className="relative aspect-[2/3] w-full bg-zinc-950 rounded-xl overflow-hidden mb-2.5">
-                      {item.poster_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={item.poster_url}
-                          alt={item.canonical_title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-700">
-                          {isMovie ? <Film className="w-8 h-8" /> : <Tv className="w-8 h-8" />}
-                        </div>
-                      )}
+                      <MediaPoster
+                        src={item.poster_url}
+                        alt={item.canonical_title}
+                        contentType={item.content_type}
+                        imgClassName="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
                     </div>
                     <h4 className="text-xs font-bold text-zinc-100 group-hover:text-violet-400 transition-colors line-clamp-1">
                       {item.canonical_title}

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { getHistory, deleteHistoryItem } from "@/lib/api/personal";
 import { EmptyState, ErrorState } from "@/components/ui/States";
+import { MediaPoster } from "@/components/media/MediaPoster";
 
 function HistorySkeleton() {
   return (
@@ -191,18 +192,13 @@ export default function HistoryPage() {
                       href={detailUrl}
                       className="w-12 h-16 rounded-xl bg-zinc-950 overflow-hidden shrink-0 block border border-zinc-800"
                     >
-                      {item.poster_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={item.poster_url}
-                          alt={item.canonical_title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-700">
-                          {isMovie ? <Film className="w-5 h-5" /> : <Tv className="w-5 h-5" />}
-                        </div>
-                      )}
+                      <MediaPoster
+                        src={item.poster_url}
+                        alt={item.canonical_title}
+                        contentType={item.content_type}
+                        showTitleFallback={false}
+                        imgClassName="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
                     </Link>
 
                     <div className="space-y-1">

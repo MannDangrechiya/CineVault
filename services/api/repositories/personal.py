@@ -57,6 +57,7 @@ from ..schemas.personal import (
     LibraryItemResponse,
     LibraryPageResponse,
 )
+from ..media_resolver import resolve_poster_url
 from ..personal.export_service import (
     build_json_export, build_csv_zip_export, build_excel_export, build_markdown_export
 )
@@ -74,6 +75,11 @@ logger = logging.getLogger("cinevault.repositories.personal")
 # In-memory stores used ONLY in local_development when allow_seed_fallback=True
 SEED_WATCH_EVENTS: Dict[str, List[WatchEventResponse]] = {}
 SEED_RATINGS: Dict[str, List[RatingResponse]] = {}
+SEED_NOTES: Dict[str, List[NoteResponse]] = {}
+SEED_REVIEWS: Dict[str, List[ReviewResponse]] = {}
+SEED_USER_TITLE_STATES: Dict[str, Dict[str, UserTitleStateResponse]] = {}
+SEED_LIBRARY: Dict[str, List[LibraryItemResponse]] = {}
+SEED_COLLECTIONS: Dict[str, List[CollectionDetailResponse]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +142,14 @@ def _resolve_idempotency_key(key: Optional[str]) -> uuid.UUID:
         return uuid.uuid4()
 
 
+async def _safe_rollback(db: Optional[AsyncSession]) -> None:
+    if db is not None:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+
+
 # ---------------------------------------------------------------------------
 # Repository
 # ---------------------------------------------------------------------------
@@ -195,7 +209,7 @@ class PersonalRepository:
             except ValueError:
                 raise  # UUID validation error — propagate as 400
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("list_watch_events failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -348,7 +362,7 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("create_watch_event failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -499,12 +513,15 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("get_user_title_state failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
         # Seed fallback
+        user_states = SEED_USER_TITLE_STATES.get(user_id, {})
+        if title_id in user_states:
+            return user_states[title_id]
         return UserTitleStateResponse(
             title_id=title_id,
             derived_status="UNWATCHED",
@@ -587,19 +604,37 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("update_user_title_state failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        return UserTitleStateResponse(
+        # Seed fallback
+        if user_id not in SEED_USER_TITLE_STATES:
+            SEED_USER_TITLE_STATES[user_id] = {}
+        existing = SEED_USER_TITLE_STATES[user_id].get(title_id)
+        fav = (
+            body.is_favorite if "is_favorite" in fields_set
+            else (existing.is_favorite if existing else False)
+        )
+        status_override = (
+            body.manual_status_override if "manual_status_override" in fields_set
+            else (existing.manual_status_override if existing else None)
+        )
+        pref_ed = (
+            body.preferred_edition_id if "preferred_edition_id" in fields_set
+            else (existing.preferred_edition_id if existing else None)
+        )
+        resp = UserTitleStateResponse(
             title_id=title_id,
-            derived_status=body.manual_status_override or "UNWATCHED",
-            manual_status_override=body.manual_status_override,
-            is_favorite=body.is_favorite if body.is_favorite is not None else False,
-            preferred_edition_id=body.preferred_edition_id,
+            derived_status=status_override or "UNWATCHED",
+            manual_status_override=status_override,
+            is_favorite=fav if fav is not None else False,
+            preferred_edition_id=pref_ed,
             updated_at=updated_iso,
         )
+        SEED_USER_TITLE_STATES[user_id][title_id] = resp
+        return resp
 
     async def list_watchlist(
         self,
@@ -648,7 +683,7 @@ class PersonalRepository:
                         canonical_title=(title_map[s.title_id].canonical_title if s.title_id in title_map else "Unknown Title"),
                         production_year=(title_map[s.title_id].production_year if s.title_id in title_map else None),
                         content_type=((title_map[s.title_id].content_type_id if s.title_id in title_map else None) or "MOVIE").upper(),
-                        poster_url=(title_map[s.title_id].poster_url if s.title_id in title_map else None),
+                        poster_url=resolve_poster_url(title_map[s.title_id].poster_url if s.title_id in title_map else None),
                         added_at=s.updated_at.isoformat() if s.updated_at else datetime.now(timezone.utc).isoformat(),
                     )
                     for s in states
@@ -658,12 +693,30 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("list_watchlist failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        return WatchlistPageResponse(items=[], total=0, limit=limit, offset=offset)
+        # Seed fallback
+        from .canonical import SEED_FALLBACK_TITLES
+        user_states = SEED_USER_TITLE_STATES.get(user_id, {})
+        items = []
+        for tid, s in user_states.items():
+            if s.manual_status_override in WATCHLIST_STATUS_VALUES:
+                canonical_info = SEED_FALLBACK_TITLES.get(tid, {})
+                items.append(
+                    WatchlistItemResponse(
+                        id=f"{user_id}:{tid}",
+                        title_id=tid,
+                        canonical_title=canonical_info.get("canonical_title", "Unknown Title"),
+                        production_year=canonical_info.get("production_year", 2024),
+                        content_type=(canonical_info.get("content_type") or "MOVIE").upper(),
+                        poster_url=resolve_poster_url(canonical_info.get("poster_url")),
+                        added_at=s.updated_at,
+                    )
+                )
+        return WatchlistPageResponse(items=items, total=len(items), limit=limit, offset=offset)
 
     async def list_history(
         self,
@@ -759,7 +812,7 @@ class PersonalRepository:
                             canonical_title=(title_map[e.title_id].canonical_title if e.title_id in title_map else "Unknown Title"),
                             production_year=(title_map[e.title_id].production_year if e.title_id in title_map else None),
                             content_type=((title_map[e.title_id].content_type_id if e.title_id in title_map else None) or "MOVIE").upper(),
-                            poster_url=(title_map[e.title_id].poster_url if e.title_id in title_map else None),
+                            poster_url=resolve_poster_url(title_map[e.title_id].poster_url if e.title_id in title_map else None),
                             watched_at=e.watched_at.isoformat() if e.watched_at else datetime.now(timezone.utc).isoformat(),
                             rating_value=(rating_map[e.title_id].rating_value if e.title_id in rating_map else None),
                             device_type=e.device_type,
@@ -776,7 +829,7 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("list_history failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -812,7 +865,7 @@ class PersonalRepository:
                 await db.flush()
                 return True
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("delete_watch_event failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -851,7 +904,7 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("list_collections failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -890,7 +943,7 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("create_collection failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -931,7 +984,7 @@ class PersonalRepository:
                 await db.flush()
                 return True
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("delete_collection failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -984,7 +1037,7 @@ class PersonalRepository:
                         canonical_title=(title_map[it.title_id].canonical_title if it.title_id in title_map else "Unknown Title"),
                         production_year=(title_map[it.title_id].production_year if it.title_id in title_map else None),
                         content_type=((title_map[it.title_id].content_type_id if it.title_id in title_map else None) or "MOVIE").upper(),
-                        poster_url=(title_map[it.title_id].poster_url if it.title_id in title_map else None),
+                        poster_url=resolve_poster_url(title_map[it.title_id].poster_url if it.title_id in title_map else None),
                         notes=it.notes,
                         added_at=it.added_at.isoformat() if it.added_at else datetime.now(timezone.utc).isoformat(),
                     )
@@ -1006,7 +1059,7 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("get_collection_detail failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -1061,7 +1114,7 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("add_collection_item failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -1101,7 +1154,7 @@ class PersonalRepository:
                 await db.commit()
                 return True
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("remove_collection_item failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -1159,7 +1212,7 @@ class PersonalRepository:
                         canonical_title=(title_map[e.title_id].canonical_title if e.title_id in title_map else "Unknown Title"),
                         production_year=(title_map[e.title_id].production_year if e.title_id in title_map else None),
                         content_type=((title_map[e.title_id].content_type_id if e.title_id in title_map else None) or "MOVIE").upper(),
-                        poster_url=(title_map[e.title_id].poster_url if e.title_id in title_map else None),
+                        poster_url=resolve_poster_url(title_map[e.title_id].poster_url if e.title_id in title_map else None),
                         added_at=e.added_at.isoformat() if e.added_at else datetime.now(timezone.utc).isoformat(),
                     )
                     for e in entries
@@ -1169,12 +1222,14 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("list_library failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        return LibraryPageResponse(items=[], total=0, limit=limit, offset=offset)
+        # Seed fallback
+        lib = SEED_LIBRARY.get(user_id, [])
+        return LibraryPageResponse(items=lib, total=len(lib), limit=limit, offset=offset)
 
     async def add_to_library(
         self, db: Optional[AsyncSession], user_id: str, title_id: str
@@ -1210,23 +1265,36 @@ class PersonalRepository:
                     canonical_title=title.canonical_title if title else "Unknown Title",
                     production_year=title.production_year if title else None,
                     content_type=((title.content_type_id if title else None) or "MOVIE").upper(),
-                    poster_url=title.poster_url if title else None,
+                    poster_url=resolve_poster_url(title.poster_url) if title else None,
                     added_at=entry.added_at.isoformat() if entry.added_at else added_iso,
                 )
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("add_to_library failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        return LibraryItemResponse(
+        # Seed fallback
+        from .canonical import SEED_FALLBACK_TITLES
+        if user_id not in SEED_LIBRARY:
+            SEED_LIBRARY[user_id] = []
+        canonical_info = SEED_FALLBACK_TITLES.get(title_id, {})
+        existing = next((it for it in SEED_LIBRARY[user_id] if it.title_id == title_id), None)
+        if existing:
+            return existing
+        item = LibraryItemResponse(
             id=f"{user_id}:{title_id}",
             title_id=title_id,
-            canonical_title="Unknown Title",
+            canonical_title=canonical_info.get("canonical_title", "Unknown Title"),
+            production_year=canonical_info.get("production_year", 2024),
+            content_type=(canonical_info.get("content_type") or "MOVIE").upper(),
+            poster_url=resolve_poster_url(canonical_info.get("poster_url")),
             added_at=added_iso,
         )
+        SEED_LIBRARY[user_id].append(item)
+        return item
 
     async def remove_from_library(
         self, db: Optional[AsyncSession], user_id: str, title_id: str
@@ -1252,12 +1320,17 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("remove_from_library failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
                 return False
 
+        # Seed fallback
+        if user_id in SEED_LIBRARY:
+            orig = len(SEED_LIBRARY[user_id])
+            SEED_LIBRARY[user_id] = [it for it in SEED_LIBRARY[user_id] if it.title_id != title_id and it.id != title_id]
+            return len(SEED_LIBRARY[user_id]) < orig
         return False
 
     async def list_ratings(
@@ -1289,7 +1362,7 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("list_ratings failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -1322,11 +1395,17 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("delete_rating failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
                 return False
+
+        # Seed fallback
+        if user_id in SEED_RATINGS:
+            orig = len(SEED_RATINGS[user_id])
+            SEED_RATINGS[user_id] = [r for r in SEED_RATINGS[user_id] if r.title_id != title_id]
+            return len(SEED_RATINGS[user_id]) < orig
         return False
 
     async def set_rating(
@@ -1369,19 +1448,21 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("set_rating failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
+        # Seed fallback
+        if user_id not in SEED_RATINGS:
+            SEED_RATINGS[user_id] = []
+        SEED_RATINGS[user_id] = [r for r in SEED_RATINGS[user_id] if r.title_id != body.title_id]
         resp = RatingResponse(
             id=str(uuid.uuid4()),
             title_id=body.title_id,
             rating_value=body.rating_value,
             updated_at=rated_iso,
         )
-        if user_id not in SEED_RATINGS:
-            SEED_RATINGS[user_id] = []
         SEED_RATINGS[user_id].append(resp)
         return resp
 
@@ -1414,12 +1495,16 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("list_notes failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        return []
+        # Seed fallback
+        notes = SEED_NOTES.get(user_id, [])
+        if title_id:
+            notes = [n for n in notes if n.title_id == title_id]
+        return notes
 
     async def delete_note(
         self, db: Optional[AsyncSession], user_id: str, note_id: str
@@ -1444,11 +1529,17 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("delete_note failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
                 return False
+
+        # Seed fallback
+        if user_id in SEED_NOTES:
+            orig = len(SEED_NOTES[user_id])
+            SEED_NOTES[user_id] = [n for n in SEED_NOTES[user_id] if n.id != note_id]
+            return len(SEED_NOTES[user_id]) < orig
         return False
 
     async def create_note(
@@ -1478,17 +1569,22 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("create_note failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        return NoteResponse(
+        # Seed fallback
+        if user_id not in SEED_NOTES:
+            SEED_NOTES[user_id] = []
+        resp = NoteResponse(
             id=str(uuid.uuid4()),
             title_id=body.title_id,
             note_text=body.note_text,
             updated_at=created_iso,
         )
+        SEED_NOTES[user_id].append(resp)
+        return resp
 
     async def list_reviews(
         self, db: Optional[AsyncSession], user_id: str, title_id: Optional[str] = None
@@ -1521,12 +1617,16 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("list_reviews failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        return []
+        # Seed fallback
+        reviews = SEED_REVIEWS.get(user_id, [])
+        if title_id:
+            reviews = [r for r in reviews if r.title_id == title_id]
+        return reviews
 
     async def delete_review(
         self, db: Optional[AsyncSession], user_id: str, review_id: str
@@ -1551,11 +1651,17 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("delete_review failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
                 return False
+
+        # Seed fallback
+        if user_id in SEED_REVIEWS:
+            orig = len(SEED_REVIEWS[user_id])
+            SEED_REVIEWS[user_id] = [r for r in SEED_REVIEWS[user_id] if r.id != review_id]
+            return len(SEED_REVIEWS[user_id]) < orig
         return False
 
     async def create_review(
@@ -1589,19 +1695,24 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("create_review failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
 
-        return ReviewResponse(
+        # Seed fallback
+        if user_id not in SEED_REVIEWS:
+            SEED_REVIEWS[user_id] = []
+        resp = ReviewResponse(
             id=str(uuid.uuid4()),
             title_id=body.title_id,
-            review_title=body.review_title,
+            review_title=body.review_title or "",
             review_text=body.review_text,
             is_public=body.is_public,
             created_at=created_iso,
         )
+        SEED_REVIEWS[user_id].append(resp)
+        return resp
 
     async def list_conflicts(
         self, db: Optional[AsyncSession], user_id: str
@@ -1639,7 +1750,7 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("list_conflicts failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -1801,7 +1912,7 @@ class PersonalRepository:
             except ValueError:
                 raise
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("get_user_dashboard_metrics failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise
@@ -1937,7 +2048,7 @@ class PersonalRepository:
         except ValueError:
             raise
         except Exception as exc:
-            await db.rollback()
+            await _safe_rollback(db)
             logger.error("get_user_taste_breakdown failed: %s", exc, exc_info=True)
             if not config.allow_seed_fallback:
                 raise
@@ -2602,7 +2713,7 @@ class PersonalRepository:
 
                 await db.commit()
             except Exception as exc:
-                await db.rollback()
+                await _safe_rollback(db)
                 logger.error("apply_user_import failed: %s", exc, exc_info=True)
                 if not config.allow_seed_fallback:
                     raise

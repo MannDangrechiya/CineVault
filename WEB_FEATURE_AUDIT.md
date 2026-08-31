@@ -1,4 +1,21 @@
-# Web App Feature Audit — 2026-08-25 / 2026-08-26 / 2026-08-30
+# Web App Feature Audit — 2026-08-25 / 2026-08-26 / 2026-08-30 / 2026-08-31
+
+**2026-08-31 Media & Image Pipeline Completeness Session:** Real Catalog Artwork Pipeline Audit & End-to-End Resolution.
+Eliminated broken image rendering across CineVault web application and established end-to-end media resolution architecture:
+- **Canonical Media Resolver (`services/api/media_resolver.py`)**: Centralized URL normalization layer for relative TMDB paths (`/abc.jpg` -> `https://image.tmdb.org/t/p/w500/abc.jpg`), Amazon CDN, and CineVault storage; strips stock Unsplash URLs; guarantees canonical HTTPS format.
+- **Provider Ingestion Adapters (`services/api/ingestion/adapters.py`)**: Hardened TMDB, TVDB, AniList, and MyAnimeList adapters to extract and normalize `poster_path`, `backdrop_path`, `cover_image`, `banner_image`.
+- **Database Artwork Migration (`db/migrations/V3.8__populate_canonical_showcase_artwork.sql`)**: Seeded verified high-resolution TMDB posters and backdrops for showcase titles in PostgreSQL catalog.
+- **Isomorphic Frontend Normalization & Components (`apps/web/src/lib/media.ts`, `MediaPoster.tsx`, `MediaBackdrop.tsx`)**:
+  - Unified 2:3 aspect ratio poster component with error fallback and honest cinematic SVG placeholder.
+  - 16:9 hero backdrop component with gradient scrim overlay.
+  - Configured Next.js image domain whitelist (`apps/web/next.config.ts`) for `image.tmdb.org`, `m.media-amazon.com`, `cdn.cinevault.org`, `cdn.myanimelist.net`.
+- **Dedicated Search Page (`apps/web/src/app/search/page.tsx`)**: Full search experience with debounced query execution, content type filtering ("ALL", "MOVIE", "TV_SERIES"), quick tags, and `TitleCard` grid.
+- **Consumer Pages Refactored**: `movies/[id]`, `series/[id]`, `TitleCard`, `collections`, `history`, `library`, `watchlist`, `social`, `oracle`, `pick/[slug]`.
+- **Verification Suites**:
+  - `tests/test_media_url_resolution.py`: 10 passed / 0 failed in 0.001s.
+  - `apps/web/e2e/test_media_image_rendering.js`: 16 passed / 0 failed (catalog posters, movie hero backdrop, series hero backdrop, wrong-poster isolation, search cards, 0 unsplash leak, 375px mobile viewport).
+  - TypeScript: 0 errors (`npx tsc --noEmit`).
+  - Next.js Production Build: PASS (`npx next build`, 26/26 static/dynamic routes compiled).
 
 **2026-08-30 W12 close-out session:** Web Product Completeness & Real-World Launch Readiness.
 Made CineVault OS web application complete, coherent, polished, and genuinely usable end-to-end with zero mock data:

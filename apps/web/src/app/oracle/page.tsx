@@ -25,6 +25,7 @@ import {
   FriendshipItem,
 } from "@/lib/api/ai";
 import { toggleWatchlistState } from "@/lib/api/personal";
+import { MediaPoster } from "@/components/media/MediaPoster";
 
 interface ChatMessage {
   id: string;
@@ -254,9 +255,6 @@ export default function OraclePage() {
                               {msg.assistantResponse.matched_titles.map((title, idx) => {
                                 const titleId = title.id || title.title_id || `rec-${idx}`;
                                 const isAdded = addedWatchlistIds[titleId];
-                                const poster =
-                                  title.poster_url ||
-                                  "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=400&q=80";
 
                                 return (
                                   <div
@@ -264,11 +262,12 @@ export default function OraclePage() {
                                     className="p-2.5 rounded-xl bg-zinc-900/90 border border-zinc-800 flex gap-3 group hover:border-violet-500/40 transition-all"
                                   >
                                     <div className="w-12 h-16 rounded-lg bg-zinc-950 overflow-hidden shrink-0">
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img
-                                        src={poster}
+                                      <MediaPoster
+                                        src={title.poster_url}
                                         alt={title.canonical_title}
-                                        className="w-full h-full object-cover"
+                                        contentType="MOVIE"
+                                        showTitleFallback={false}
+                                        imgClassName="w-full h-full object-cover"
                                       />
                                     </div>
 
@@ -425,12 +424,10 @@ export default function OraclePage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                   {friendships.map((f: FriendshipItem) => {
                     const isSelected = selectedFriendIds.includes(f.friend_id);
-                    const avatar =
-                      f.avatar_url ||
-                      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80";
                     // Best-effort display name only resolves for the fixed local-dev
                     // accounts (no user-profile table exists) -- fall back honestly.
                     const displayName = f.friend_name || "Unknown Member";
+                    const initial = displayName.charAt(0).toUpperCase() || "U";
 
                     return (
                       <button
@@ -444,12 +441,18 @@ export default function OraclePage() {
                         }`}
                       >
                         <div className="flex items-center gap-3">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={avatar}
-                            alt={displayName}
-                            className="w-10 h-10 rounded-full object-cover border border-zinc-700"
-                          />
+                          {f.avatar_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={f.avatar_url}
+                              alt={displayName}
+                              className="w-10 h-10 rounded-full object-cover border border-zinc-700"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-violet-950/60 border border-violet-800/50 flex items-center justify-center text-xs font-bold text-violet-300">
+                              {initial}
+                            </div>
+                          )}
                           <div>
                             <p className="text-xs font-bold text-zinc-100">{displayName}</p>
                             <p className="text-[10px] text-zinc-400">

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 from .licensing import licensing_gate
 from ..config import config
+from ..media_resolver import resolve_poster_url, resolve_backdrop_url
 
 logger = logging.getLogger("cinevault.ingestion.adapters")
 
@@ -446,6 +447,7 @@ class TvdbProviderAdapter(BaseProviderAdapter):
             elif len(rc) == 2:
                 clean_country = rc.upper()
 
+        raw_poster = raw_payload.get("image") or raw_payload.get("poster_url") or raw_payload.get("poster")
         return {
             "provider_name": "TVDB",
             "external_id": str(raw_payload.get("id")),
@@ -457,6 +459,8 @@ class TvdbProviderAdapter(BaseProviderAdapter):
             "origin_country": clean_country,
             "genres": [g["name"] for g in raw_payload.get("genres", []) if isinstance(g, dict) and g.get("name")] if isinstance(raw_payload.get("genres"), list) else [],
             "synopsis": raw_payload.get("overview"),
+            "poster_url": resolve_poster_url(raw_poster) if raw_poster else None,
+            "backdrop_url": None,
             "seasons": raw_payload.get("seasons"),
             "episodes": raw_payload.get("episodes") if isinstance(raw_payload.get("episodes"), list) else None,
         }
@@ -654,6 +658,9 @@ class TmdbProviderAdapter(BaseProviderAdapter):
         elif isinstance(origin_countries, str) and origin_countries:
             origin_country = origin_countries[:2].upper()
 
+        raw_poster = raw_payload.get("poster_path") or raw_payload.get("poster_url")
+        raw_backdrop = raw_payload.get("backdrop_path") or raw_payload.get("backdrop_url")
+
         return {
             "provider_name": "TMDB",
             "external_id": str(raw_payload.get("id")),
@@ -665,6 +672,8 @@ class TmdbProviderAdapter(BaseProviderAdapter):
             "origin_country": origin_country,
             "genres": [g["name"] for g in raw_payload.get("genres", []) if isinstance(g, dict) and g.get("name")] if isinstance(raw_payload.get("genres"), list) else [],
             "synopsis": raw_payload.get("overview"),
+            "poster_url": resolve_poster_url(raw_poster) if raw_poster else None,
+            "backdrop_url": resolve_backdrop_url(raw_backdrop) if raw_backdrop else None,
             "seasons": raw_payload.get("seasons"),
             "episodes": raw_payload.get("episodes") if isinstance(raw_payload.get("episodes"), list) else None,
         }
@@ -707,6 +716,8 @@ class AniListProviderAdapter(BaseProviderAdapter):
         titles = raw_payload.get("title", {})
         start_date = raw_payload.get("startDate", {})
         prod_year = start_date.get("year") if isinstance(start_date, dict) else None
+        cover = raw_payload.get("coverImage", {})
+        raw_poster = cover.get("large") or cover.get("medium") if isinstance(cover, dict) else raw_payload.get("bannerImage")
 
         return {
             "provider_name": "ANILIST",
@@ -718,7 +729,9 @@ class AniListProviderAdapter(BaseProviderAdapter):
             "runtime_minutes": raw_payload.get("duration"),
             "origin_country": raw_payload.get("countryOfOrigin") or "JP",
             "genres": raw_payload.get("genres", []),
-            "synopsis": raw_payload.get("description")
+            "synopsis": raw_payload.get("description"),
+            "poster_url": resolve_poster_url(raw_poster) if raw_poster else None,
+            "backdrop_url": resolve_backdrop_url(raw_payload.get("bannerImage")) if raw_payload.get("bannerImage") else None,
         }
 
 
@@ -751,6 +764,8 @@ class MyAnimeListProviderAdapter(BaseProviderAdapter):
         start_date = raw_payload.get("start_date") or ""
         prod_year = int(start_date[:4]) if len(start_date) >= 4 and start_date[:4].isdigit() else None
         alt_titles = raw_payload.get("alternative_titles", {})
+        main_pic = raw_payload.get("main_picture", {})
+        raw_poster = main_pic.get("large") or main_pic.get("medium") if isinstance(main_pic, dict) else None
 
         return {
             "provider_name": "MYANIMELIST",
@@ -761,7 +776,9 @@ class MyAnimeListProviderAdapter(BaseProviderAdapter):
             "production_year": prod_year,
             "origin_country": "JP",
             "genres": [g["name"] for g in raw_payload.get("genres", [])] if isinstance(raw_payload.get("genres"), list) else [],
-            "synopsis": raw_payload.get("synopsis")
+            "synopsis": raw_payload.get("synopsis"),
+            "poster_url": resolve_poster_url(raw_poster) if raw_poster else None,
+            "backdrop_url": None,
         }
 
 

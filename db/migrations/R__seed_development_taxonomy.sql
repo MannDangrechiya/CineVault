@@ -50,10 +50,14 @@ INSERT INTO canonical.platform (platform_id, name, code) VALUES
 ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name;
 
 -- 6. Synthetic Test Titles (DEVELOPMENT ONLY SEED)
-INSERT INTO canonical.title (title_id, display_id, content_type_id, canonical_title, original_title, production_year, tagline, synopsis, status_flag) VALUES
-('10000000-0000-7000-8000-000000000001', 'MOV-000001', 'movie', 'Parasite', 'Gisaengchung', 2019, 'Act like you own the place.', 'Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.', 'ACTIVE'),
-('10000000-0000-7000-8000-000000000002', 'MOV-000002', 'movie', 'Inception', 'Inception', 2010, 'Your mind is the scene of the crime.', 'A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.', 'ACTIVE')
-ON CONFLICT (display_id) DO UPDATE SET canonical_title = EXCLUDED.canonical_title;
+INSERT INTO canonical.title (title_id, display_id, content_type_id, canonical_title, original_title, production_year, tagline, synopsis, status_flag, poster_url, backdrop_url, poster_sync_status) VALUES
+('10000000-0000-7000-8000-000000000001', 'MOV-000001', 'movie', 'Parasite', 'Gisaengchung', 2019, 'Act like you own the place.', 'Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.', 'ACTIVE', 'https://image.tmdb.org/t/p/w500/7IiTTgloJzvGI1TAYGlC2z2zOZB.jpg', 'https://image.tmdb.org/t/p/w1280/hiKmpZMGZOSXAAtWwhZIz6wXxpy.jpg', 'SYNCED'),
+('10000000-0000-7000-8000-000000000002', 'MOV-000002', 'movie', 'Inception', 'Inception', 2010, 'Your mind is the scene of the crime.', 'A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.', 'ACTIVE', 'https://image.tmdb.org/t/p/w500/oYuLEW92A1s3pX76M9T20Xx.jpg', 'https://image.tmdb.org/t/p/w1280/s3TBrRGB1iav7ySaNx3z7k2P.jpg', 'SYNCED')
+ON CONFLICT (display_id) DO UPDATE SET 
+    canonical_title = EXCLUDED.canonical_title,
+    poster_url = EXCLUDED.poster_url,
+    backdrop_url = EXCLUDED.backdrop_url,
+    poster_sync_status = EXCLUDED.poster_sync_status;
 
 -- 7. Synthetic Primary Editions
 INSERT INTO canonical.edition (edition_id, title_id, edition_name, is_primary, runtime_minutes, aspect_ratio, sound_mix) VALUES

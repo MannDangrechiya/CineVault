@@ -4,6 +4,31 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc14] - 2026-08-31 (W14 — Media & Image Pipeline Completeness)
+
+### Added
+- **Canonical Media Resolver (`services/api/media_resolver.py`)**:
+  - Unified normalization layer (`normalize_media_url`, `resolve_poster_url`, `resolve_backdrop_url`) resolving relative TMDB paths (`/abc.jpg` -> `https://image.tmdb.org/t/p/w500/abc.jpg`), Amazon CDN, and CineVault storage.
+  - Automatically filters placeholder/stock images (Unsplash) and enforces HTTPS canonical format.
+- **Provider Ingestion Media Normalization (`services/api/ingestion/adapters.py`)**:
+  - TMDB, TVDB, AniList, and MyAnimeList adapters now extract and expand raw relative paths into fully qualified image URLs.
+- **Showcase Artwork Database Migration (`db/migrations/V3.8__populate_canonical_showcase_artwork.sql`)**:
+  - Populated verified TMDB poster and backdrop paths across showcase canonical movies and series in PostgreSQL.
+- **Frontend Media Architecture (`apps/web/src/lib/media.ts`, `components/media/`)**:
+  - `MediaPoster`: Standardized 2:3 aspect ratio poster component with automatic error recovery and honest cinematic SVG placeholder (zero fake artwork, zero stock photos).
+  - `MediaBackdrop`: Standardized 16:9 hero backdrop component with gradient scrim overlay.
+- **Dedicated Search Route (`apps/web/src/app/search/page.tsx`)**:
+  - Full-featured search interface with debounced queries, content type toggles ("ALL", "MOVIE", "TV_SERIES"), popular quick search tags, and responsive `TitleCard` grid.
+- **Media Resolution Unit & E2E Test Suites**:
+  - `tests/test_media_url_resolution.py`: 10 unit tests covering URL normalization, TMDB path expansion, stock image rejection, and provider adapters.
+  - `apps/web/e2e/test_media_image_rendering.js`: 16 browser tests verifying poster decoding (`naturalWidth > 0`), hero backdrops, poster isolation, dedicated search, and 375px mobile responsiveness.
+
+### Changed
+- **Next.js Image Whitelist (`apps/web/next.config.ts`)**:
+  - Configured `remotePatterns` for `image.tmdb.org`, `m.media-amazon.com`, `cdn.cinevault.org`, `cdn.myanimelist.net`.
+- **Consumer Pages Refactored**:
+  - Replaced ad-hoc `<img>` elements with `MediaPoster` and `MediaBackdrop` across `movies/[id]`, `series/[id]`, `TitleCard`, `collections`, `history`, `library`, `watchlist`, `social`, `oracle`, `pick/[slug]`.
+
 ## [1.0.0-rc13] - 2026-08-30 (W13 — Web Production Release & Deployment Readiness)
 
 ### Added

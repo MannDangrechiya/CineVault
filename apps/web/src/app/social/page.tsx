@@ -50,9 +50,7 @@ import { getCatalogPage } from "@/lib/api/titles";
 import type { TitleSummary } from "@/lib/api/types";
 import { useDebounce } from "@/lib/use-debounce";
 import { LoadingState } from "@/components/ui/States";
-
-const FALLBACK_POSTER =
-  "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80";
+import { MediaPoster } from "@/components/media/MediaPoster";
 
 function getTrustTier(trustScore: number) {
   if (trustScore >= 76) return { label: "Oracle", badgeClass: "text-amber-400 bg-amber-500/10 border-amber-500/30", barClass: "bg-amber-400" };
@@ -990,11 +988,10 @@ export default function SocialRecommendationsPage() {
                       href={`/movies/${rec.title_id}`}
                       className="shrink-0 w-16 sm:w-20 aspect-[2/3] rounded-lg overflow-hidden bg-zinc-900 block group/poster"
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={rec.poster_url || FALLBACK_POSTER}
+                      <MediaPoster
+                        src={rec.poster_url}
                         alt={movieTitle}
-                        className="w-full h-full object-cover group-hover/poster:scale-105 transition-transform duration-300"
+                        imgClassName="w-full h-full object-cover group-hover/poster:scale-105 transition-transform duration-300"
                       />
                     </Link>
 

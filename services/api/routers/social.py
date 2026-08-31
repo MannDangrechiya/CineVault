@@ -51,6 +51,7 @@ from ..schemas.social import (
     UserTasteProfileResponse,
     TasteProfileComputeRequest,
 )
+from ..media_resolver import resolve_poster_url
 from ..auth.dependencies import require_authenticated_user, get_optional_claims
 from ..auth.jwt_validator import SecurityTokenClaims
 from ..auth.user_directory import resolve_display_names
@@ -220,7 +221,7 @@ async def list_user_recommendations(
             EnrichedRecommendationResponse(
                 **r.model_dump(),
                 canonical_title=title.canonical_title if title else None,
-                poster_url=title.poster_url if title else None,
+                poster_url=resolve_poster_url(title.poster_url) if title else None,
                 production_year=title.production_year if title else None,
                 sender_name=sender_name,
                 sender_username=sender_username,

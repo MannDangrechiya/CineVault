@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { getWatchlist, removeFromWatchlist } from "@/lib/api/personal";
 import { LoadingState } from "@/components/ui/States";
+import { MediaPoster } from "@/components/media/MediaPoster";
 
 export default function WatchlistPage() {
   const [filter, setFilter] = useState<"ALL" | "MOVIE" | "TV_SERIES">("ALL");
@@ -149,21 +150,15 @@ export default function WatchlistPage() {
                       href={detailUrl}
                       className="relative aspect-[2/3] w-full bg-zinc-950 rounded-xl overflow-hidden block mb-3"
                     >
-                      {item.posterUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={item.posterUrl}
-                          alt={item.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-700">
-                          {isMovie ? <Film className="w-8 h-8" /> : <Tv className="w-8 h-8" />}
-                        </div>
-                      )}
+                      <MediaPoster
+                        src={item.posterUrl}
+                        alt={item.title}
+                        contentType={item.type}
+                        imgClassName="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
 
                       {/* Floating Badge */}
-                      <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                      <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-zinc-950/80 backdrop-blur-md text-zinc-300 border border-zinc-800">
                           {isMovie ? <Film className="w-2.5 h-2.5" /> : <Tv className="w-2.5 h-2.5" />}
                           {isMovie ? "Movie" : "Series"}

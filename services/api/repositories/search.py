@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..config import config
 from ..schemas.search import SearchResultItem, SearchResponse
 from ..models.canonical import TitleModel
+from ..media_resolver import resolve_poster_url
 
 logger = logging.getLogger("cinevault.repositories.search")
 
@@ -76,7 +77,7 @@ class SearchRepository:
                                     display_id=exact_match.display_id,
                                     canonical_title=exact_match.canonical_title,
                                     original_title=exact_match.original_title,
-                                    poster_url=exact_match.poster_url,
+                                    poster_url=resolve_poster_url(exact_match.poster_url),
                                     entity_type="TITLE",
                                     content_type=exact_match.content_type_id,
                                     production_year=exact_match.production_year,
@@ -155,7 +156,7 @@ class SearchRepository:
                                 display_id=r.display_id,
                                 canonical_title=r.canonical_title,
                                 original_title=r.original_title,
-                                poster_url=r.poster_url,
+                                poster_url=resolve_poster_url(r.poster_url),
                                 entity_type="TITLE",
                                 content_type=r.content_type_id,
                                 production_year=r.production_year,

@@ -29,6 +29,7 @@ from ..schemas.titles import (
     MetadataChangeHistoryRecord, GenreSummary, CatalogPageResponse
 )
 from ..auth.audit import audit_logger
+from ..media_resolver import resolve_poster_url, resolve_backdrop_url
 
 logger = logging.getLogger("cinevault.repositories.canonical")
 
@@ -311,8 +312,8 @@ class CanonicalRepository:
                         production_year=t.production_year,
                         origin_country=countries[0] if countries else None,
                         has_licensed_artwork=bool(t.poster_url),
-                        poster_url=t.poster_url,
-                        backdrop_url=t.backdrop_url,
+                        poster_url=resolve_poster_url(t.poster_url),
+                        backdrop_url=resolve_backdrop_url(t.backdrop_url),
                     ))
                 return summaries
             except Exception as e:
@@ -434,8 +435,8 @@ class CanonicalRepository:
                         production_year=t.production_year,
                         origin_country=None,
                         has_licensed_artwork=bool(t.poster_url),
-                        poster_url=t.poster_url,
-                        backdrop_url=t.backdrop_url,
+                        poster_url=resolve_poster_url(t.poster_url),
+                        backdrop_url=resolve_backdrop_url(t.backdrop_url),
                     )
                     for t in db_titles
                 ]
@@ -717,8 +718,8 @@ class CanonicalRepository:
                         awards=award_summaries,
                         festival_participations=fest_summaries,
                         has_licensed_artwork=bool(title_orm.poster_url),
-                        poster_url=title_orm.poster_url,
-                        backdrop_url=title_orm.backdrop_url,
+                        poster_url=resolve_poster_url(title_orm.poster_url),
+                        backdrop_url=resolve_backdrop_url(title_orm.backdrop_url),
                         primary_edition=primary_ed,
                         editions=edition_summaries,
                         seasons=season_summaries,
@@ -732,6 +733,9 @@ class CanonicalRepository:
         # Fallback to seed records
         if title_id in SEED_FALLBACK_TITLES:
             return TitleDetail(**SEED_FALLBACK_TITLES[title_id])
+        for item in SEED_FALLBACK_TITLES.values():
+            if item.get("display_id") == title_id:
+                return TitleDetail(**item)
         return None
 
     async def lookup_title(
@@ -787,12 +791,22 @@ class CanonicalRepository:
                     raise
 
         # Fallback to seed lookup rules
-        if display_id == "MOV-000001" or (provider == "TMDB" and external_id == "496243"):
+        if display_id:
+            for item in SEED_FALLBACK_TITLES.values():
+                if item.get("display_id") == display_id:
+                    return TitleLookupResponse(
+                        id=item["id"],
+                        display_id=item["display_id"],
+                        canonical_title=item["canonical_title"],
+                        lookup_method="DISPLAY_ID",
+                        matched_external_id=None
+                    )
+        if provider == "TMDB" and external_id == "496243":
             return TitleLookupResponse(
                 id="018f2e4a-7b31-7000-8000-123456789abc",
                 display_id="MOV-000001",
                 canonical_title="Parasite",
-                lookup_method="DISPLAY_ID" if display_id else "PROVIDER_EXTERNAL_MAPPING",
+                lookup_method="PROVIDER_EXTERNAL_MAPPING",
                 matched_external_id=external_id
             )
         return None

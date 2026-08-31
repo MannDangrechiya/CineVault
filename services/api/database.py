@@ -27,6 +27,7 @@ engine = create_async_engine(
         # PgBouncer has no TLS configured; asyncpg's default SSL-first negotiation
         # against a plaintext listener breaks the socket mid-handshake.
         "ssl": False,
+        "timeout": 0.8,
     }
 )
 

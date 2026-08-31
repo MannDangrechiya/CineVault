@@ -56,6 +56,7 @@ from ..schemas.social import (
     UserTasteProfileResponse,
     ALLOWED_STATE_TRANSITIONS,
 )
+from ..media_resolver import resolve_poster_url, resolve_backdrop_url
 
 logger = logging.getLogger("cinevault.repositories.social")
 
@@ -1733,8 +1734,8 @@ class SocialRepository:
                         canonical_title=tmodel.canonical_title,
                         original_title=tmodel.original_title,
                         production_year=tmodel.production_year,
-                        poster_url=tmodel.poster_url,
-                        backdrop_url=tmodel.backdrop_url,
+                        poster_url=resolve_poster_url(tmodel.poster_url),
+                        backdrop_url=resolve_backdrop_url(tmodel.backdrop_url),
                         upvotes=len(voters),
                         voter_names=voters,
                     )

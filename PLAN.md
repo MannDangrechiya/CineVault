@@ -9,7 +9,18 @@ Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 ---
 
-## Part 1 — Current Fixes (Stabilization)
+## Part 1 — Current Fixes (Stabilization & Media Completeness)
+
+### 1.0 Media & Image Completeness Pipeline (W14 Release RC Gate)
+- [x] End-to-end media pipeline trace & centralized normalization (`services/api/media_resolver.py`).
+- [x] Provider ingestion adapters updated with relative TMDB path expansion (`services/api/ingestion/adapters.py`).
+- [x] Canonical showcase artwork migration (`db/migrations/V3.8__populate_canonical_showcase_artwork.sql`).
+- [x] Next.js remotePatterns whitelist configured in `apps/web/next.config.ts`.
+- [x] Isomorphic media normalizer and components (`MediaPoster`, `MediaBackdrop`) with honest cinematic placeholders.
+- [x] Dedicated `/search` page with debounced query execution and `TitleCard` grid.
+- [x] Unit test suite (`tests/test_media_url_resolution.py`, 10/10 passed).
+- [x] E2E browser image rendering test (`apps/web/e2e/test_media_image_rendering.js`, 16/16 passed).
+- [x] Frontend quality gates passed (`npx tsc --noEmit` 0 errors, `npx next build` 26/26 routes).
 
 ### 1.1 Docker / Postgres dev environment
 - [x] Get Docker Desktop staying up (was crash-looping — resolved by reboot,

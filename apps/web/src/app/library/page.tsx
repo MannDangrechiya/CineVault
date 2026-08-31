@@ -4,9 +4,10 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/ui/PageContainer";
-import { Plus, Film as FilmIcon, Tv as TvIcon, Trash2, ArrowRight } from "lucide-react";
 import { getLibrary, removeFromLibrary } from "@/lib/api/personal";
 import { LoadingState } from "@/components/ui/States";
+import { Plus, Film as FilmIcon, ArrowRight, Trash2 } from "lucide-react";
+import { MediaPoster } from "@/components/media/MediaPoster";
 
 export default function LibraryPage() {
   const [tab, setTab] = useState<"ALL" | "MOVIE" | "TV_SERIES">("ALL");
@@ -142,23 +143,13 @@ export default function LibraryPage() {
                 >
                   <Link href={detailUrl} className="block">
                     <div className="relative aspect-[2/3] w-full bg-zinc-950 rounded-xl overflow-hidden mb-2.5">
-                      {item.poster_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={item.poster_url}
-                          alt={item.canonical_title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-zinc-900 to-zinc-950 text-zinc-700">
-                          {isMovie ? (
-                            <FilmIcon className="w-8 h-8" />
-                          ) : (
-                            <TvIcon className="w-8 h-8" />
-                          )}
-                        </div>
-                      )}
-                      <div className="absolute top-2 left-2 right-2 flex items-center justify-between">
+                      <MediaPoster
+                        src={item.poster_url}
+                        alt={item.canonical_title}
+                        contentType={item.content_type}
+                        imgClassName="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                      <div className="absolute top-2 left-2 right-2 flex items-center justify-between pointer-events-none">
                         <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-zinc-950/80 backdrop-blur-md text-zinc-300 border border-zinc-800">
                           {isMovie ? "Movie" : "Series"}
                         </span>

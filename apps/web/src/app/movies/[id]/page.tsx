@@ -28,6 +28,8 @@ import {
   Plus,
 } from "lucide-react";
 import { getTitleById } from "@/lib/api/titles";
+import { MediaPoster } from "@/components/media/MediaPoster";
+import { MediaBackdrop } from "@/components/media/MediaBackdrop";
 import {
   toggleWatchlistState,
   sendRecommendation,
@@ -334,18 +336,12 @@ export default function MovieDetailPage() {
 
       {/* TOP 60VH HERO BANNER */}
       <div className="relative w-full h-[60vh] min-h-[460px] overflow-hidden bg-zinc-950">
-        {displayBackdrop ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={displayBackdrop}
-            alt={displayTitle}
-            className="w-full h-full object-cover object-center scale-105 filter brightness-[0.75] contrast-[1.05]"
-          />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-zinc-900 via-zinc-950 to-black flex items-center justify-center">
-            <Film className="w-16 h-16 text-zinc-800" />
-          </div>
-        )}
+        <MediaBackdrop
+          src={displayBackdrop}
+          alt={displayTitle}
+          contentType="MOVIE"
+          imgClassName="w-full h-full object-cover object-center scale-105 filter brightness-[0.75] contrast-[1.05]"
+        />
 
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/80 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/90 via-zinc-950/40 to-transparent" />
@@ -353,14 +349,12 @@ export default function MovieDetailPage() {
         <div className="absolute bottom-0 left-0 right-0 max-w-7xl mx-auto px-6 sm:px-10 pb-8 flex flex-col md:flex-row items-end gap-8 z-20">
           {/* Floating Poster */}
           <div className="hidden sm:block shrink-0 w-44 md:w-52 aspect-[2/3] rounded-2xl overflow-hidden bg-zinc-900 shadow-2xl shadow-violet-950/40 ring-1 ring-white/10 group">
-            {displayPoster ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={displayPoster} alt={displayTitle} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gradient-to-b from-zinc-900 to-zinc-950">
-                <Film className="w-10 h-10 text-zinc-700" />
-              </div>
-            )}
+            <MediaPoster
+              src={displayPoster}
+              alt={displayTitle}
+              contentType="MOVIE"
+              imgClassName="w-full h-full object-cover"
+            />
           </div>
 
           {/* Title & Primary Actions */}

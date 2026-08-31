@@ -12,6 +12,7 @@ import {
   X,
   Lock,
   Globe,
+  Layers,
 } from "lucide-react";
 import {
   getCollections,
@@ -19,6 +20,7 @@ import {
   deleteCollection,
 } from "@/lib/api/collections";
 import { EmptyState, ErrorState } from "@/components/ui/States";
+import { MediaBackdrop } from "@/components/media/MediaBackdrop";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 
 function CollectionsSkeleton() {
@@ -111,9 +113,7 @@ export default function CollectionsPage() {
       name: name.trim(),
       description: description.trim() || undefined,
       tags: tags.length > 0 ? tags : ["Curated"],
-      banner_url:
-        bannerUrl.trim() ||
-        "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=1200&q=80",
+      banner_url: bannerUrl.trim() || undefined,
       is_private: isPrivate,
     });
   };
@@ -152,9 +152,6 @@ export default function CollectionsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {collections.map((col) => {
-              const banner =
-                col.banner_url ||
-                "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=1200&q=80";
               const isDeleting =
                 deleteMutation.isPending && deleteMutation.variables === col.id;
 
@@ -168,13 +165,18 @@ export default function CollectionsPage() {
                   <div>
                     {/* Banner Artwork */}
                     <div className="relative h-44 w-full bg-zinc-950 overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={banner}
-                        alt={col.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent" />
+                      {col.banner_url ? (
+                        <MediaBackdrop
+                          src={col.banner_url}
+                          alt={col.name}
+                          imgClassName="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-violet-950/40 via-zinc-900 to-zinc-950 flex items-center justify-center">
+                          <Layers className="w-10 h-10 text-violet-500/30" />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent pointer-events-none" />
 
                       {/* Header Badges */}
                       <div className="absolute top-3 left-3 right-3 flex items-center justify-between">
