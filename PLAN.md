@@ -1194,3 +1194,36 @@ verified and production-ready.
 - [x] Production Smoke: `node apps/web/e2e/test_w13_production_smoke.js` (15/15 PASSED against standalone server).
 
 **W13 status: COMPLETE.** CineVault Web is fully verified for production release, self-hosted deployment, and disaster recovery.
+
+### W15 — Media Isolation + Catalog Endpoint Repair `[x]` COMPLETE (2026-08-31)
+
+Investigated two reported regressions against the real ~89k-title Postgres catalog; both root-caused to non-media bugs.
+
+#### Media Isolation
+- [x] Reproduced the reported Parasite/Inception poster isolation failure first, before any code changes.
+- [x] Traced PostgreSQL → repository → FastAPI → Next.js proxy → browser for both titles; found `MOV-000007` (used by the test as "Inception") does not exist — real Inception is `MOV-000002`. Fixed the test fixture, not the pipeline.
+- [x] `string | null` media contract (`services/api/media_resolver.py`, `apps/web/src/lib/media.ts`) verified already correct and consistent end-to-end; no `undefined` values leak past the API.
+
+#### Catalog Endpoint / Dashboard Timeout
+- [x] Root-caused via direct FastAPI route probing: `apps/web/src/lib/api/titles.ts` called `/v1/titles`/`/genres` instead of the actual `/v1/catalog`/`/v1/genres` (offset-paginated `CatalogPageResponse`) endpoints — breaking every catalog list page and, with it, the `/dashboard` production-smoke `networkidle` wait. Not an artwork-coverage or long-lived-connection issue (confirmed no polling/WS/SSE on `/dashboard`).
+- [x] Fixed the endpoint; rebuilt and restarted the standalone production server; `test_w13_production_smoke.js` passes 15/15 twice with the original 20s timeout untouched.
+
+#### Artwork Coverage Investigation
+- [x] Confirmed against the live database: 12/89,281 titles have posters/backdrops (0.01%). Not fabricated, not backfilled. Catalog is dominated by Day 7/Phase 2 synthetic large-scale-ingestion fixtures never run through artwork enrichment.
+
+#### Known Limitations (documented, not fixed)
+- [ ] `test_stage_1000_performance_and_metrics`, `test_stage_5000_large_scale_distribution` (`tests/test_day7_large_scale_catalog_expansion.py`), `test_provenance_and_audit_retention` (`tests/test_phase2_real_catalog_ingestion.py`) hang at current catalog scale — root-caused to GIN trigram index SELECT/INSERT lock contention in the ingestion pipeline's large-catalog identity-match fallback. Pre-existing Day 7/Phase 2 architecture; fixing requires an ingestion transaction/locking redesign, out of scope here.
+- [ ] Accessibility: `apps/web/tests/a11y.spec.ts` reports 9 pre-existing color-contrast (WCAG AA) violations (zinc-500-on-dark text) across `/`, `/dashboard`, `/search`, `/collections`, `/clubs`, `/social`, `/history`, `/friends`, `/import`. Unrelated to this session's changes; not fixed (would require a design pass, out of scope).
+
+#### Verification Suites
+- [x] `node apps/web/e2e/test_media_image_rendering.js` — 14/14 PASSED (was 5 passed / 1 failed before fix).
+- [x] `node apps/web/e2e/test_w13_production_smoke.js` — 15/15 PASSED, twice.
+- [x] `python -m pytest tests/test_observability_operations.py` — 6/6 PASSED (was 5/6).
+- [x] `npx playwright test tests/security.spec.ts` — 3/3 PASSED (was 2/3).
+- [x] TypeScript: `npx tsc --noEmit` — PASS (0 errors).
+- [x] ESLint: `npm run lint` — PASS (0 warnings, 0 errors).
+- [x] Production Build: `npm run build` — PASS (27/27 routes compiled).
+- [x] Fake-image scan (Unsplash/Pexels/Picsum/placeholder.com) — no matches in rendered image paths; only in the resolver's own reject-list and unrelated form placeholder text.
+- [x] Data integrity: catalog row count unchanged at 89,281 after all test runs (including the ones that hung); every ingestion test transaction is SAVEPOINT-isolated and rolled back on teardown.
+
+**W15 status: COMPLETE for the two critical failures.** Artwork coverage and the three flagged scale-test hangs are investigated and documented as pre-existing, honest limitations — not fixed, not hidden.
