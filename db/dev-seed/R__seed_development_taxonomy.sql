@@ -1,5 +1,14 @@
 -- CineVault OS — Flyway Repeatable Migration: Synthetic Development Seed Taxonomy
--- ENVIRONMENT BOUNDARY: DEVELOPMENT ONLY. NEVER EXUTE OR LOAD IN PRODUCTION.
+-- ENVIRONMENT BOUNDARY: DEVELOPMENT ONLY. NEVER EXECUTE OR LOAD IN PRODUCTION.
+--
+-- Isolation mechanism (2026-09-01, R1 release-blocker fix): this file lives in
+-- db/dev-seed/, a directory that is NOT part of db/migrations/ and is NOT
+-- mounted or referenced by infra/docker/docker-compose.prod.yml's flyway
+-- service in any way. Only infra/docker/docker-compose.yml (local dev) adds
+-- db/dev-seed as a second Flyway -locations entry. The production Flyway
+-- container physically cannot see this file. Do not move this file back into
+-- db/migrations/, and do not add db/dev-seed as a location in any prod/staging
+-- compose file, CI job, or Flyway config.
 
 -- 1. Content Types
 INSERT INTO canonical.content_type (content_type_id, type_name, description) VALUES

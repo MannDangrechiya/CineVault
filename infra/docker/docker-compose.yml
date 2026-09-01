@@ -32,12 +32,18 @@ services:
       retries: 5
 
   # 1b. Migration Engine: Flyway Community Edition
+  # Local dev only: loads db/migrations (versioned, shared with prod) PLUS
+  # db/dev-seed (repeatable synthetic seed data, dev-only — see
+  # db/dev-seed/R__seed_development_taxonomy.sql). docker-compose.prod.yml
+  # deliberately does NOT mount db/dev-seed, so the seed migration never runs
+  # in production. Do not add a db/dev-seed mount/location to any prod config.
   flyway:
     image: flyway/flyway:10-alpine
     container_name: cinevault-local-flyway
-    command: -url=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-cinevault} -user=${POSTGRES_USER:-cinevault_dev} -password=${POSTGRES_PASSWORD:-dev_postgres_password_change_me} -connectRetries=10 migrate
+    command: -url=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-cinevault} -user=${POSTGRES_USER:-cinevault_dev} -password=${POSTGRES_PASSWORD:-dev_postgres_password_change_me} -connectRetries=10 -locations=filesystem:/flyway/sql,filesystem:/flyway/dev-seed migrate
     volumes:
       - ../../db/migrations:/flyway/sql:ro
+      - ../../db/dev-seed:/flyway/dev-seed:ro
     depends_on:
       postgres:
         condition: service_healthy
