@@ -25,8 +25,17 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
         <Header />
 
         {/* Page Main Content Container */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
-          {children}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto flex flex-col">
+          <div className="flex-1">
+            {children}
+          </div>
+          
+          {/* Credits Footer */}
+          <footer className="w-full text-center py-8 mt-12 border-t border-white/5 text-sm text-zinc-500">
+            <p>
+              Designed and built by <span className="text-zinc-300 font-medium">Mann Dangrechiya</span>
+            </p>
+          </footer>
         </main>
       </div>
 

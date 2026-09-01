@@ -6,7 +6,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .licensing import licensing_gate
@@ -84,27 +84,14 @@ class IngestionPipelineEngine:
             "cached_content_types": set(),
             "genre_lookup": {},
             "external_id_map": {},
-            # P0 fix (Day 1-7 remediation, Batch 4): catalog_snapshot replaces
-            # the old title_map. title_map was a canonical_title.lower() /
-            # original_title.lower() -> (title_id, year) dict, matched by raw
-            # string equality — it bypassed quality/identity_resolution.py
-            # entirely (Level 3/4 multi-signal and multilingual matching were
-            # dead code). catalog_snapshot is a list of lightweight dicts fed
-            # directly into identity_resolver.resolve_identity, which is now
-            # the actual decision authority for every non-external-ID match.
-            #
-            # Scaling note: this preloads up to CATALOG_SNAPSHOT_LIMIT titles
-            # into memory once per run so identity resolution doesn't require
-            # a DB round-trip per item. Beyond that limit it is intentionally
-            # left unset (None) and _match_canonical_title falls back to a
-            # narrower per-item SQL candidate lookup — correct, but with
-            # weaker multilingual candidate recall at very large catalog
-            # sizes. A phonetic-indexed candidate search is future work, not
-            # attempted here.
-            "catalog_snapshot": None,
-            "pending_genres": []
+            "candidates": [],
+            "candidates_by_id": {},
+            "catalog_snapshot": [],
+            "catalog_snapshot_by_id": {},
+            "pending_genres": [],
+            "pending_quarantines": [],
+            "pending_items": []
         }
-        CATALOG_SNAPSHOT_LIMIT = int(os.getenv("CATALOG_SNAPSHOT_LIMIT", "5000"))
 
         if db is not None:
             run_orm = IngestionRunModel(
@@ -141,82 +128,164 @@ class IngestionPipelineEngine:
                 run_context["external_id_map"] = {str(r[0]): str(r[1]) for r in ext_res.all()}
             except Exception as e:
                 logger.warning(f"Failed to preload external ID mappings for '{provider_name}': {e}")
-                run_context["external_id_map"] = None
-
-            # Preload a catalog snapshot for the real identity resolver (see
-            # note on run_context["catalog_snapshot"] above).
-            try:
-                count_res = await db.execute(select(func.count()).select_from(TitleModel))
-                total_titles = count_res.scalar_one()
-                if total_titles <= CATALOG_SNAPSHOT_LIMIT:
-                    t_res = await db.execute(
-                        select(
-                            TitleModel.title_id, TitleModel.display_id,
-                            TitleModel.canonical_title, TitleModel.original_title,
-                            TitleModel.production_year, TitleModel.content_type_id,
-                            EditionModel.runtime_minutes
-                        )
-                        .outerjoin(EditionModel, (EditionModel.title_id == TitleModel.title_id) & (EditionModel.is_primary == True))
-                    )
-                    snapshot_items = []
-                    snapshot_by_id = {}
-                    for t in t_res.all():
-                        c_title = t[2]
-                        o_title = t[3]
-                        norm_c = normalize_for_matching(c_title)
-                        norm_o = normalize_for_matching(o_title)
-                        if t[1]:
-                            run_context["used_display_ids"].add(t[1])
-                        item_dict = {
-                            "id": str(t[0]),
-                            "title_id": str(t[0]),
-                            "display_id": t[1],
-                            "canonical_title": c_title,
-                            "original_title": o_title,
-                            "production_year": t[4],
-                            "content_type": t[5],
-                            "content_type_id": t[5],
-                            "runtime_minutes": t[6],
-                            "external_ids": {},
-                            "_norm_canonical_title": norm_c,
-                            "_norm_original_title": norm_o,
-                            "_words_title": set(norm_c.split()) if norm_c else set(),
-                        }
-                        snapshot_items.append(item_dict)
-                        snapshot_by_id[str(t[0])] = item_dict
-                    run_context["catalog_snapshot"] = snapshot_items
-                    run_context["catalog_snapshot_by_id"] = snapshot_by_id
-                else:
-                    run_context["catalog_snapshot"] = None
-                    run_context["catalog_snapshot_by_id"] = {}
-                    logger.warning(
-                        f"Catalog has {total_titles} titles (> {CATALOG_SNAPSHOT_LIMIT}); "
-                        "skipping full-catalog identity resolution preload, falling back "
-                        "to narrower per-item candidate lookup."
-                    )
-            except Exception:
-                run_context["catalog_snapshot"] = None
-
-
+                run_context["external_id_map"] = {}
 
         adapter = get_provider_adapter(provider_name)
         candidate_results = []
+
+        # 1. Fetch & normalize raw payloads upfront to extract candidate title proposals
+        prepared_items = []
+        needed_title_strings = set()
+        matched_title_ids = set()
 
         for item in trigger_req.items:
             ext_type = item.external_entity_type or "MOVIE"
             ext_id = item.external_entity_id
 
+            if item.raw_payload:
+                raw_payload = item.raw_payload
+            else:
+                raw_payload = await adapter.fetch_raw_payload(ext_type, ext_id)
+
+            checksum = compute_payload_checksum(raw_payload)
+            normalized = adapter.normalize_payload(raw_payload)
+            if normalized.get("canonical_title_proposal"):
+                normalized["canonical_title_proposal"] = normalize_title_text(normalized["canonical_title_proposal"])
+            if normalized.get("original_title"):
+                normalized["original_title"] = normalize_title_text(normalized["original_title"])
+
+            prepared_items.append({
+                "item": item,
+                "ext_type": ext_type,
+                "ext_id": ext_id,
+                "raw_payload": raw_payload,
+                "checksum": checksum,
+                "normalized": normalized
+            })
+
+            # Check if external_id is already mapped or needs candidate lookup
+            mapped_t_id = run_context.get("external_id_map", {}).get(str(ext_id)) if run_context.get("external_id_map") else None
+            if mapped_t_id:
+                try:
+                    matched_title_ids.add(uuid.UUID(str(mapped_t_id)))
+                except Exception:
+                    pass
+            else:
+                c_prop = normalized.get("canonical_title_proposal")
+                o_prop = normalized.get("original_title")
+                if c_prop:
+                    needed_title_strings.add(c_prop.lower().strip())
+                if o_prop:
+                    needed_title_strings.add(o_prop.lower().strip())
+
+        # 2. Batched Candidate Preload: Execute a single batched query to fetch candidate titles + editions + external IDs
+        if db is not None:
+            # 2a. Preload title/edition metadata for known mapped title IDs (for instant conflict checking)
+            if matched_title_ids:
+                try:
+                    m_sql = """
+                    SELECT t.title_id, t.display_id, t.canonical_title, t.original_title, 
+                           t.production_year, t.content_type_id, e.runtime_minutes
+                    FROM canonical.title t
+                    LEFT JOIN canonical.edition e ON (e.title_id = t.title_id AND e.is_primary = true)
+                    WHERE t.title_id = ANY(:t_ids);
+                    """
+                    m_rows = (await db.execute(text(m_sql), {"t_ids": list(matched_title_ids)})).fetchall()
+                    for r in m_rows:
+                        t_id_str = str(r[0])
+                        if t_id_str not in run_context["candidates_by_id"]:
+                            c_title = r[2]
+                            o_title = r[3]
+                            norm_c = normalize_for_matching(c_title)
+                            norm_o = normalize_for_matching(o_title)
+                            c_dict = {
+                                "id": t_id_str,
+                                "title_id": t_id_str,
+                                "display_id": r[1],
+                                "canonical_title": c_title,
+                                "original_title": o_title,
+                                "production_year": r[4],
+                                "content_type": r[5],
+                                "content_type_id": r[5],
+                                "runtime_minutes": r[6],
+                                "external_ids": {},
+                                "_norm_canonical_title": norm_c,
+                                "_norm_original_title": norm_o,
+                                "_words_title": set(norm_c.split()) if norm_c else set(),
+                            }
+                            run_context["candidates"].append(c_dict)
+                            run_context["candidates_by_id"][t_id_str] = c_dict
+                except Exception as m_err:
+                    logger.warning(f"Batched mapped title preload encountered error: {m_err}")
+
+            # 2b. Preload candidate titles for unmapped items
+            if needed_title_strings:
+                try:
+                    titles_list = list(needed_title_strings)
+                    cand_sql = """
+                    SELECT t.title_id, t.display_id, t.canonical_title, t.original_title, 
+                           t.production_year, t.content_type_id, e.runtime_minutes
+                    FROM canonical.title t
+                    LEFT JOIN canonical.edition e ON (e.title_id = t.title_id AND e.is_primary = true)
+                    WHERE lower(t.canonical_title) = ANY(:titles) OR lower(t.original_title) = ANY(:titles)
+                    LIMIT 500;
+                    """
+                    cand_rows = (await db.execute(text(cand_sql), {"titles": titles_list})).fetchall()
+                    if cand_rows:
+                        cand_title_ids = [r[0] for r in cand_rows]
+                        ext_res = await db.execute(
+                            select(TitleExternalIdModel).where(TitleExternalIdModel.title_id.in_(cand_title_ids))
+                        )
+                        ext_by_title: Dict[uuid.UUID, Dict[str, str]] = {}
+                        for ext_row in ext_res.scalars().all():
+                            if ext_row.title_id not in ext_by_title:
+                                ext_by_title[ext_row.title_id] = {}
+                            ext_by_title[ext_row.title_id][ext_row.provider_name] = ext_row.external_id
+
+                        for r in cand_rows:
+                            t_id_str = str(r[0])
+                            if t_id_str not in run_context["candidates_by_id"]:
+                                c_title = r[2]
+                                o_title = r[3]
+                                norm_c = normalize_for_matching(c_title)
+                                norm_o = normalize_for_matching(o_title)
+                                if r[1]:
+                                    run_context["used_display_ids"].add(r[1])
+                                c_dict = {
+                                    "id": t_id_str,
+                                    "title_id": t_id_str,
+                                    "display_id": r[1],
+                                    "canonical_title": c_title,
+                                    "original_title": o_title,
+                                    "production_year": r[4],
+                                    "content_type": r[5],
+                                    "content_type_id": r[5],
+                                    "runtime_minutes": r[6],
+                                    "external_ids": ext_by_title.get(r[0], {}),
+                                    "_norm_canonical_title": norm_c,
+                                    "_norm_original_title": norm_o,
+                                    "_words_title": set(norm_c.split()) if norm_c else set(),
+                                }
+                                run_context["candidates"].append(c_dict)
+                                run_context["candidates_by_id"][t_id_str] = c_dict
+                except Exception as cand_err:
+                    logger.warning(f"Batched candidate preload encountered error: {cand_err}")
+
+        # Set aliases for backwards compatibility
+        run_context["catalog_snapshot"] = run_context["candidates"]
+        run_context["catalog_snapshot_by_id"] = run_context["candidates_by_id"]
+
+        for p_item in prepared_items:
+            item = p_item["item"]
+            ext_type = p_item["ext_type"]
+            ext_id = p_item["ext_id"]
+            raw_payload = p_item["raw_payload"]
+            checksum = p_item["checksum"]
+            normalized = p_item["normalized"]
+
             async def _process_item():
                 nonlocal records_valid, records_rejected, records_created, records_updated
                 nonlocal records_conflicted, needs_review_count, duplicate_count, error_count
-
-                # A. Fetch raw payload if not provided directly
-                if item.raw_payload:
-                    raw_payload = item.raw_payload
-                else:
-                    raw_payload = await adapter.fetch_raw_payload(ext_type, ext_id)
-
-                checksum = compute_payload_checksum(raw_payload)
 
                 # B. Save Raw Payload Capture (CAT-5 Immutability)
                 raw_payload_id = str(uuid.uuid4())
@@ -502,61 +571,15 @@ class IngestionPipelineEngine:
         match_payload["provider_name"] = provider_name
         match_payload["external_id"] = external_id
 
-        catalog_snapshot = run_context.get("catalog_snapshot") if run_context else None
-
-        if catalog_snapshot:
-            # Preloaded whole-catalog path (see run_context init comment).
+        candidate_list = run_context.get("candidates") or run_context.get("catalog_snapshot") or []
+        if candidate_list:
             match_state, matched_id, score, rule = identity_resolver.resolve_identity(
-                match_payload, catalog_snapshot
+                match_payload, candidate_list
             )
             if match_state == MatchState.MATCH_EXACT:
                 return ("AUTO_MATCH", matched_id, score, rule)
             elif match_state in (MatchState.MATCH_AMBIGUOUS, MatchState.REQUIRES_REVIEW):
                 return ("REQUIRES_REVIEW", matched_id, score, rule)
-        else:
-            # Large-catalog fallback: fetch a narrow same-title candidate set
-            # via SQL (exact ILIKE on canonical/original title), then still
-            # defer the actual decision to identity_resolver.
-            try:
-                cand_title = normalized.get("canonical_title_proposal") or normalized.get("original_title")
-                if cand_title and db is not None:
-                    stmt = select(TitleModel).where(
-                        (TitleModel.canonical_title.ilike(cand_title)) |
-                        (TitleModel.original_title.ilike(cand_title))
-                    ).limit(10)
-                    res = await db.execute(stmt)
-                    titles = res.scalars().all()
-                    if titles:
-                        t_ids = [t.title_id for t in titles]
-                        ext_stmt = select(TitleExternalIdModel).where(TitleExternalIdModel.title_id.in_(t_ids))
-                        ext_res = await db.execute(ext_stmt)
-                        ext_by_title = {}
-                        for ext_row in ext_res.scalars().all():
-                            if ext_row.title_id not in ext_by_title:
-                                ext_by_title[ext_row.title_id] = {}
-                            ext_by_title[ext_row.title_id][ext_row.provider_name] = ext_row.external_id
-
-                        candidate_list = [
-                            {
-                                "id": str(t.title_id),
-                                "display_id": t.display_id,
-                                "canonical_title": t.canonical_title,
-                                "original_title": t.original_title,
-                                "production_year": t.production_year,
-                                "content_type": t.content_type_id,
-                                "external_ids": ext_by_title.get(t.title_id, {}),
-                            }
-                            for t in titles
-                        ]
-                        match_state, matched_id, score, rule = identity_resolver.resolve_identity(
-                            match_payload, candidate_list
-                        )
-                        if match_state == MatchState.MATCH_EXACT:
-                            return ("AUTO_MATCH", matched_id, score, rule)
-                        elif match_state in (MatchState.MATCH_AMBIGUOUS, MatchState.REQUIRES_REVIEW):
-                            return ("REQUIRES_REVIEW", matched_id, score, rule)
-            except Exception as e:
-                logger.debug(f"TitleModel catalog identity search skipped: {e}")
 
         return ("NO_MATCH", None, 0.000, "RULE_NO_MATCH")
 
@@ -577,29 +600,27 @@ class IngestionPipelineEngine:
         existing_title: Dict[str, Any] = {}
         existing_runtime: Optional[int] = None
 
-        if matched_title_id and db is not None:
-            if run_context and "catalog_snapshot_by_id" in run_context and run_context["catalog_snapshot_by_id"]:
-                existing_item = run_context["catalog_snapshot_by_id"].get(matched_title_id)
-                if existing_item:
-                    existing_title = {
-                        "canonical_title": existing_item.get("canonical_title"),
-                        "original_title": existing_item.get("original_title"),
-                        "production_year": existing_item.get("production_year"),
-                        "content_type_id": existing_item.get("content_type_id")
-                    }
-                    existing_runtime = existing_item.get("runtime_minutes")
-            elif run_context and "catalog_snapshot" in run_context and run_context["catalog_snapshot"]:
-                existing_item = next((c for c in run_context["catalog_snapshot"] if str(c.get("title_id")) == matched_title_id), None)
-                if existing_item:
-                    existing_title = {
-                        "canonical_title": existing_item.get("canonical_title"),
-                        "original_title": existing_item.get("original_title"),
-                        "production_year": existing_item.get("production_year"),
-                        "content_type_id": existing_item.get("content_type_id")
-                    }
-                    existing_runtime = existing_item.get("runtime_minutes")
+        if matched_title_id:
+            existing_item = None
+            if run_context:
+                if "candidates_by_id" in run_context and run_context["candidates_by_id"]:
+                    existing_item = run_context["candidates_by_id"].get(matched_title_id)
+                elif "catalog_snapshot_by_id" in run_context and run_context["catalog_snapshot_by_id"]:
+                    existing_item = run_context["catalog_snapshot_by_id"].get(matched_title_id)
+                elif "candidates" in run_context and run_context["candidates"]:
+                    existing_item = next((c for c in run_context["candidates"] if str(c.get("title_id")) == matched_title_id), None)
+                elif "catalog_snapshot" in run_context and run_context["catalog_snapshot"]:
+                    existing_item = next((c for c in run_context["catalog_snapshot"] if str(c.get("title_id")) == matched_title_id), None)
 
-            if not existing_title:
+            if existing_item:
+                existing_title = {
+                    "canonical_title": existing_item.get("canonical_title"),
+                    "original_title": existing_item.get("original_title"),
+                    "production_year": existing_item.get("production_year"),
+                    "content_type_id": existing_item.get("content_type_id")
+                }
+                existing_runtime = existing_item.get("runtime_minutes")
+            elif db is not None:
                 try:
                     stmt = select(TitleModel).where(TitleModel.title_id == uuid.UUID(matched_title_id))
                     res = await db.execute(stmt)
@@ -722,27 +743,33 @@ class IngestionPipelineEngine:
             updated_anything = False
             title_uuid = uuid.UUID(matched_title_id)
 
-            # Ensure external ID mapping exists
             try:
-                stmt = select(TitleExternalIdModel).where(
-                    TitleExternalIdModel.title_id == title_uuid,
-                    TitleExternalIdModel.provider_name == provider_name,
-                    TitleExternalIdModel.external_id == str(external_id)
-                )
-                res = await db.execute(stmt)
-                existing_map = res.scalar_one_or_none()
-                if not existing_map:
-                    new_map = TitleExternalIdModel(
-                        mapping_id=uuid.uuid4(),
-                        title_id=title_uuid,
-                        provider_name=provider_name,
-                        external_id=str(external_id)
-                    )
-                    db.add(new_map)
-                    updated_anything = True
-                
+                # Ensure external ID mapping exists
+                is_mapped = False
                 if run_context and "external_id_map" in run_context and run_context["external_id_map"] is not None:
-                    run_context["external_id_map"][str(external_id)] = str(matched_title_id)
+                    if run_context["external_id_map"].get(str(external_id)) == str(matched_title_id):
+                        is_mapped = True
+
+                if not is_mapped:
+                    stmt = select(TitleExternalIdModel).where(
+                        TitleExternalIdModel.title_id == title_uuid,
+                        TitleExternalIdModel.provider_name == provider_name,
+                        TitleExternalIdModel.external_id == str(external_id)
+                    )
+                    res = await db.execute(stmt)
+                    existing_map = res.scalar_one_or_none()
+                    if not existing_map:
+                        new_map = TitleExternalIdModel(
+                            mapping_id=uuid.uuid4(),
+                            title_id=title_uuid,
+                            provider_name=provider_name,
+                            external_id=str(external_id)
+                        )
+                        db.add(new_map)
+                        updated_anything = True
+                    
+                    if run_context and "external_id_map" in run_context and run_context["external_id_map"] is not None:
+                        run_context["external_id_map"][str(external_id)] = str(matched_title_id)
 
                 # If seasons/episodes are provided in refresh payload, update/insert hierarchy idempotently
                 seasons_payload = normalized.get("seasons")
@@ -1054,13 +1081,13 @@ class IngestionPipelineEngine:
                 if run_context is not None and "external_id_map" in run_context and external_id:
                     run_context["external_id_map"][str(external_id)] = str(new_title_id)
 
-                # Keep the in-memory catalog snapshot current so later items
+                # Keep the in-memory candidate buffer current so later items
                 # in the SAME batch can be matched (via identity_resolver,
                 # not a raw string dict) against titles this batch already
                 # created — without this, two items for the same new title
                 # within one batch would both resolve NO_MATCH and both get
                 # inserted as duplicates.
-                if run_context is not None and run_context.get("catalog_snapshot") is not None:
+                if run_context is not None:
                     norm_c = normalize_for_matching(canonical_title)
                     norm_o = normalize_for_matching(original_title)
                     new_item_dict = {
@@ -1071,12 +1098,19 @@ class IngestionPipelineEngine:
                         "original_title": original_title,
                         "production_year": prod_year,
                         "content_type": c_type_id,
+                        "content_type_id": c_type_id,
+                        "runtime_minutes": runtime_min,
                         "external_ids": {provider_name: str(external_id)},
                         "_norm_canonical_title": norm_c,
                         "_norm_original_title": norm_o,
                         "_words_title": set(norm_c.split()) if norm_c else set(),
                     }
-                    run_context["catalog_snapshot"].append(new_item_dict)
+                    if "candidates" in run_context and run_context["candidates"] is not None:
+                        run_context["candidates"].append(new_item_dict)
+                    if "candidates_by_id" in run_context and run_context["candidates_by_id"] is not None:
+                        run_context["candidates_by_id"][str(new_title_id)] = new_item_dict
+                    if "catalog_snapshot" in run_context and run_context["catalog_snapshot"] is not None:
+                        run_context["catalog_snapshot"].append(new_item_dict)
                     if "catalog_snapshot_by_id" in run_context and run_context["catalog_snapshot_by_id"] is not None:
                         run_context["catalog_snapshot_by_id"][str(new_title_id)] = new_item_dict
 

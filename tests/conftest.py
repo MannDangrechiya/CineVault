@@ -2,6 +2,10 @@ import os
 import sys
 from pathlib import Path
 
+if sys.platform == "win32":
+    import asyncio
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 # Ensure project root is on sys.path for pytest
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
