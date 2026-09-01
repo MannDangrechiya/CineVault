@@ -13,6 +13,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}
     volumes:
       - ../../packages/config/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/01-init-schemas.sql:ro
+      - ../../packages/config/postgres/init-keycloak-db.sql:/docker-entrypoint-initdb.d/02-init-keycloak-db.sql:ro
       - postgres-prod-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-cinevault_admin} -d $${POSTGRES_DB:-cinevault}"]
@@ -84,19 +85,166 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # 6. Core REST API: FastAPI Production Backend
+  # 6. Identity: Keycloak Server (OIDC) — Production
+  # Behind Caddy, which terminates TLS and proxies to this container over
+  # plain HTTP on the internal Docker network (KC_PROXY=edge tells Keycloak
+  # to trust Caddy's X-Forwarded-* headers for the real scheme/host). Not
+  # auto-imported with a realm — see packages/config/keycloak/README.md for
+  # the one-time production realm setup step. KEYCLOAK_HOSTNAME, ADMIN_PASSWORD
+  # have no fallback default here: an unset value fails the stack closed
+  # (Keycloak/Caddy refuse to start with an empty hostname) rather than
+  # silently booting against "localhost", which was the exact bug class W18
+  # fixed for the web BFF — production must always name an explicit host.
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.0
+    container_name: cinevault-prod-keycloak
+    command: start
+    environment:
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set to your production auth domain, e.g. auth.cinevault.yourdomain.com}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY: edge
+      KC_HEALTH_ENABLED: "true"
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      # Reuses the app's Postgres role for now (same instance, own database)
+      # rather than provisioning a separate least-privilege `keycloak` role —
+      # a reasonable follow-up hardening step, not a regression versus the
+      # rest of this file's current access model.
+      KC_DB_USERNAME: ${POSTGRES_USER:-cinevault_admin}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set to a strong, unique password}
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 7. Object Storage: MinIO (self-hosted S3-compatible storage for canonical
+  # artwork — chosen over AWS S3 to stay free-first/self-hostable, matching
+  # docs/deployment.md's stated design goal). Not exposed on host ports
+  # directly: reachable internally at http://minio:9000, and for public
+  # browser reads via Caddy's CDN_HOSTNAME site below.
+  minio:
+    image: minio/minio:RELEASE.2024-03-21T23-13-43Z
+    container_name: cinevault-prod-minio
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID must be set to a strong, unique access key}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY must be set to a strong, unique secret key}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-prod-data:/data
+    healthcheck:
+      # No curl/wget in this image (verified) — same bash /dev/tcp approach
+      # as the keycloak healthcheck above, reading the HTTP status line into
+      # a bash variable since grep isn't in this image either (verified).
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /minio/health/live HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r status <&3 && [[ \"$$status\" == *' 200 '* ]]"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  # 7b. One-time, idempotent artwork bucket bootstrap: creates the bucket and
+  # sets it to anonymous-download (public GET only — no listing, no write) so
+  # browsers can load poster/backdrop URLs directly from CDN_HOSTNAME without
+  # per-request S3 credentials. Same one-shot restart:"no" pattern as flyway
+  # above; fastapi-backend waits on this completing successfully.
+  minio-init:
+    image: minio/mc:latest
+    container_name: cinevault-prod-minio-init
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY_ID" "$$S3_SECRET_ACCESS_KEY" &&
+        mc mb --ignore-existing "local/$$S3_ARTWORK_BUCKET" &&
+        mc anonymous set download "local/$$S3_ARTWORK_BUCKET"
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID must be set to a strong, unique access key}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY must be set to a strong, unique secret key}
+      S3_ARTWORK_BUCKET: ${S3_ARTWORK_BUCKET:-cinevault-artwork}
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+
+  # 8. Core REST API: FastAPI Production Backend
   fastapi-backend:
     container_name: cinevault-prod-backend
     build:
       context: ../..
       dockerfile: services/api/Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cinevault_admin}:${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}@pgbouncer:6432/${POSTGRES_DB:-cinevault}
-      REDIS_URL: redis://valkey:6379/0
-      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-cinevault_app}:${RABBITMQ_PASS:-change_me_super_secure_rabbitmq_pass}@rabbitmq:5672//
-      CELERY_RESULT_BACKEND: redis://valkey:6379/1
+      # P0 fix: services/api/config.py never reads DATABASE_URL, REDIS_URL,
+      # CELERY_BROKER_URL, or CELERY_RESULT_BACKEND (confirmed: zero
+      # references anywhere in services/api) — those 4 vars used to be the
+      # entire environment block here and did nothing. It reads the
+      # individual PGBOUNCER_*/POSTGRES_*/VALKEY_*/RABBITMQ_* vars below
+      # instead, none of which were being forwarded, so this container would
+      # always fall back to config.py's local_development defaults and then
+      # crash-loop on the insecure-default validator (ENVIRONMENT=production
+      # below). Fixed by forwarding what the app actually reads.
       ENVIRONMENT: production
       PORT: 8000
+      LOG_LEVEL: warning
+      DOCS_ENABLED: "false"
+      ALLOW_SEED_FALLBACK: "false"
+
+      # Database (PgBouncer -> Postgres)
+      PGBOUNCER_HOST: pgbouncer
+      PGBOUNCER_PORT: 6432
+      POSTGRES_DB: ${POSTGRES_DB:-cinevault}
+      POSTGRES_USER: ${POSTGRES_USER:-cinevault_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set to a strong, unique password}
+
+      # Cache
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+
+      # Queue — container env var name (RABBITMQ_PASSWORD) intentionally
+      # differs from the compose-interpolation var (RABBITMQ_PASS) below: the
+      # latter is what the `rabbitmq` service's own credentials are set from
+      # (see its RABBITMQ_DEFAULT_PASS above), the former is the name
+      # services/api/config.py actually reads.
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_USER:-cinevault_app}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASS:?RABBITMQ_PASS must be set to a strong, unique password}
+      RABBITMQ_VHOST: /
+
+      # Local-dev HS256 login fallback secret — disabled outside
+      # local_development, but APIConfig still refuses to boot if this is
+      # left at its insecure placeholder, so a real value is still required.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set to a random 64+ character string}
+
+      # S3/CDN artwork storage — self-hosted MinIO (service 7/7b above).
+      # S3_ENDPOINT_URL stays internal (http://minio:9000, path-style,
+      # boto3-compatible); CDN_BASE_URL is the public read path browsers
+      # actually load images from, proxied by Caddy's CDN_HOSTNAME site to
+      # that same MinIO — see storage.py's build_public_url, which appends
+      # the object key directly onto CDN_BASE_URL with no bucket segment in
+      # between, so CDN_BASE_URL must itself end in "/<bucket>".
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ARTWORK_BUCKET: ${S3_ARTWORK_BUCKET:-cinevault-artwork}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID must be set to a strong, unique access key}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY must be set to a strong, unique secret key}
+      S3_REGION: us-east-1
+      CDN_BASE_URL: https://${CDN_HOSTNAME:?CDN_HOSTNAME must be set to your production artwork CDN domain, e.g. cdn.cinevault.yourdomain.com}/${S3_ARTWORK_BUCKET:-cinevault-artwork}
+
+      # OIDC: backend validates tokens against the SAME public HTTPS issuer
+      # browsers and the web server use (see nextjs-web below) rather than an
+      # internal-only hostname, so the `iss` claim Keycloak stamps into every
+      # token always matches what this service expects — no issuer mismatch.
+      KEYCLOAK_ISSUER: https://${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set}/realms/${KEYCLOAK_REALM:-cinevault}
+      KEYCLOAK_AUDIENCE: ${KEYCLOAK_CLIENT_ID:-cinevault-public-client}
+      JWKS_URI: https://${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set}/realms/${KEYCLOAK_REALM:-cinevault}/protocol/openid-connect/certs
+      CORS_ALLOWED_ORIGINS: https://${SITE_ADDRESS:?SITE_ADDRESS must be set to your production app domain, e.g. cinevault.yourdomain.com}
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,19 +254,29 @@ services:
         condition: service_healthy
       flyway:
         condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
-  # 7. Background AI Daemon: Celery Worker
+  # 9. Background AI Daemon: Celery Worker
   ai-worker:
     container_name: cinevault-prod-ai-worker
     build:
       context: ../..
       dockerfile: services/ai_worker/Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cinevault_admin}:${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}@pgbouncer:6432/${POSTGRES_DB:-cinevault}
-      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-cinevault_app}:${RABBITMQ_PASS:-change_me_super_secure_rabbitmq_pass}@rabbitmq:5672//
+      # services/ai_worker/worker.py only reads CELERY_BROKER_URL and
+      # CELERY_RESULT_BACKEND (confirmed) — it has no database connection
+      # code at all today (its embedding generation is in-memory/synthetic;
+      # nothing here persists results to Postgres yet). DATABASE_URL and
+      # ENVIRONMENT were previously set but read by nothing in this service;
+      # removed rather than left as misleading dead config. If/when this
+      # worker gains real DB access, wire the same PGBOUNCER_*/POSTGRES_*
+      # vars fastapi-backend uses above, not a DATABASE_URL string.
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-cinevault_app}:${RABBITMQ_PASS:?RABBITMQ_PASS must be set to a strong, unique password}@rabbitmq:5672//
       CELERY_RESULT_BACKEND: redis://valkey:6379/1
-      ENVIRONMENT: production
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,7 +286,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # 8. Web Frontend: Next.js 15 Standalone Runner
+  # 10. Web Frontend: Next.js 15 Standalone Runner
   nextjs-web:
     container_name: cinevault-prod-web
     build:
@@ -139,14 +297,38 @@ services:
       API_BASE_URL: http://fastapi-backend:8000
       NEXT_PUBLIC_API_BASE_URL: ""
       PORT: 3000
+      # Used by the OIDC callback route to build the post-login redirect —
+      # unset, it falls back to http://localhost:3000 (apps/web/src/app/api/
+      # auth/callback/route.ts:16), which was silently wrong in a real deploy.
+      NEXT_PUBLIC_APP_URL: https://${SITE_ADDRESS:?SITE_ADDRESS must be set}
+      # Same public-issuer rationale as fastapi-backend above: KEYCLOAK_HOST
+      # is used server-side (token exchange) and NEXT_PUBLIC_KEYCLOAK_URL is
+      # sent to the browser for the login redirect — both must be the real
+      # public HTTPS auth domain, never an internal-only hostname.
+      KEYCLOAK_HOST: https://${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set}
+      NEXT_PUBLIC_KEYCLOAK_URL: https://${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-cinevault}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-cinevault-public-client}
     depends_on:
-      - fastapi-backend
+      fastapi-backend:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
     restart: unless-stopped
 
-  # 9. Edge Gateway: Caddy Reverse Proxy (Ports 80 & 443)
+  # 11. Edge Gateway: Caddy Reverse Proxy (Ports 80 & 443)
+  # SITE_ADDRESS/KEYCLOAK_HOSTNAME drive the Caddyfile's site addresses (see
+  # infra/docker/Caddyfile) — Caddy provisions/renews Let's Encrypt certs
+  # automatically for each and redirects HTTP->HTTPS by default once a real
+  # domain (not a bare port) is the site address.
   caddy:
     image: caddy:2-alpine
     container_name: cinevault-prod-caddy
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS must be set to your production app domain, e.g. cinevault.yourdomain.com}
+      KEYCLOAK_HOSTNAME: ${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set to your production auth domain, e.g. auth.cinevault.yourdomain.com}
+      CDN_HOSTNAME: ${CDN_HOSTNAME:?CDN_HOSTNAME must be set to your production artwork CDN domain, e.g. cdn.cinevault.yourdomain.com}
+      ACME_EMAIL: ${ACME_EMAIL:-}
     ports:
       - "80:80"
       - "443:443"
@@ -156,7 +338,9 @@ services:
       - caddy-prod-config:/config
     depends_on:
       - fastapi-backend
+      - minio
       - nextjs-web
+      - keycloak
     restart: unless-stopped
 
 volumes:
@@ -166,6 +350,8 @@ volumes:
     name: cinevault-prod-valkey-data
   rabbitmq-prod-data:
     name: cinevault-prod-rabbitmq-data
+  minio-prod-data:
+    name: cinevault-prod-minio-data
   caddy-prod-data:
     name: cinevault-prod-caddy-data
   caddy-prod-config:

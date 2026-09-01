@@ -7,22 +7,22 @@ CineVault OS is designed to be free-first, open-source friendly, self-hostable, 
 ```text
 Client Browser / Mobile Web
             │
-            ▼ (Ports 80 / 443)
+            ▼ (Ports 80 / 443, two HTTPS sites: SITE_ADDRESS + KEYCLOAK_HOSTNAME)
 ┌─────────────────────────────────────────────────────────────┐
-│ Caddy v2 Edge Reverse Proxy (Automatic TLS, Compression,   │
-│ Security Headers: CSP, HSTS, X-Frame-Options, Nosniff)     │
-└──────────────┬──────────────────────────────┬───────────────┘
-               │                              │
-        /v1/*, /ai/*, /health*          /* (Next.js App)
-               │                              │
-               ▼                              ▼
-┌─────────────────────────────┐ ┌─────────────────────────────┐
-│ FastAPI REST API Gateway    │ │ Next.js 15 Web Frontend     │
-│ (4 Uvicorn Workers, Non-root│ │ (Standalone Node.js Server, │
-│ Python 3.12 Slim Container) │ │ BFF API Proxy, HttpOnly)    │
-└──────────────┬──────────────┘ └─────────────────────────────┘
-               │
-               ▼ (Port 6432)
+│ Caddy v2 Edge Reverse Proxy (Automatic TLS per-site,        │
+│ Security Headers: HSTS, X-Frame-Options, Nosniff — no CSP yet)│
+└──────────────┬──────────────────────┬────────────────────┬───┘
+               │                      │                    │
+        /v1/*, /ai/*, /health*   /* (Next.js App)    KEYCLOAK_HOSTNAME
+               │                      │                    │
+               ▼                      ▼                    ▼
+┌─────────────────────────────┐ ┌─────────────────────────────┐ ┌───────────────────┐
+│ FastAPI REST API Gateway    │ │ Next.js 15 Web Frontend     │ │ Keycloak 24 (OIDC) │
+│ (4 Uvicorn Workers, Non-root│ │ (Standalone Node.js Server, │ │ own `keycloak` DB, │
+│ Python 3.12 Slim Container) │ │ BFF API Proxy, HttpOnly)    │ │ KC_PROXY=edge      │
+└──────────────┬──────────────┘ └─────────────────────────────┘ └─────────┬──────────┘
+               │                                                          │
+               ▼ (Port 6432)                                              ▼ (Port 5432)
 ┌─────────────────────────────┐
 │ PgBouncer Connection Pooler │
 │ (Transaction Pooling Mode)  │
@@ -67,7 +67,22 @@ Edit `.env.prod` and supply strong passwords for:
 - `POSTGRES_PASSWORD`
 - `RABBITMQ_PASS`
 - `JWT_SECRET_KEY` (64+ random characters)
-- `CORS_ALLOWED_ORIGINS` (e.g. `https://cinevault.example.com` or `http://localhost`)
+
+And the following, **required** as of the Keycloak/TLS/storage wiring below — `docker compose up` refuses to start without them, naming exactly which one is missing (see §4):
+```env
+SITE_ADDRESS=cinevault.yourdomain.com
+KEYCLOAK_HOSTNAME=auth.cinevault.yourdomain.com
+KEYCLOAK_REALM=cinevault
+KEYCLOAK_CLIENT_ID=cinevault-public-client
+KEYCLOAK_ADMIN_USER=admin
+KEYCLOAK_ADMIN_PASSWORD=<GENERATE_STRONG_PASSWORD_HERE>
+ACME_EMAIL=you@yourdomain.com
+CDN_HOSTNAME=cdn.cinevault.yourdomain.com
+S3_ACCESS_KEY_ID=<GENERATE_STRONG_ACCESS_KEY_HERE>
+S3_SECRET_ACCESS_KEY=<GENERATE_STRONG_SECRET_KEY_HERE>
+S3_ARTWORK_BUCKET=cinevault-artwork
+```
+`CORS_ALLOWED_ORIGINS` and `CDN_BASE_URL` are no longer set by hand — `docker-compose.prod.yml` derives both from `SITE_ADDRESS`/`CDN_HOSTNAME` automatically. `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` double as both the self-hosted MinIO service's root credentials and the app's S3 client credentials — generate them the same way you'd generate any other strong password, they aren't tied to a real AWS account.
 
 ### Step 3: Launch Production Stack
 On Linux / macOS:
@@ -99,46 +114,23 @@ Access the web application at `http://localhost` (or configured domain).
 
 ---
 
-## 4. HTTPS & Domain Configuration (Caddy)
+## 4. HTTPS, Domain & Keycloak Configuration
 
-Caddy automatically obtains and renews TLS certificates via Let's Encrypt / ZeroSSL with zero manual configuration.
+Caddy automatically obtains and renews TLS certificates via Let's Encrypt with zero manual Caddyfile editing — `infra/docker/Caddyfile` reads `SITE_ADDRESS` (the app) and `KEYCLOAK_HOSTNAME` (the identity provider) from the environment and serves each as its own HTTPS site, each with its own certificate. **Both DNS records must already point at this host before you start the stack**, or Let's Encrypt's HTTP-01 challenge will fail.
 
-1. Open `infra/docker/Caddyfile`.
-2. Replace `:80` on line 10 with your fully qualified domain name:
-```caddy
-cinevault.yourdomain.com {
-    encode zstd gzip
-    
-    header {
-        X-Content-Type-Options nosniff
-        X-Frame-Options DENY
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        Referrer-Policy strict-origin-when-cross-origin
-        Permissions-Policy "camera=(), microphone=(), geolocation=()"
-        -Server
-    }
+1. Point **three** DNS A/AAAA records at this host: your app domain (`SITE_ADDRESS`, e.g. `cinevault.yourdomain.com`), an auth subdomain (`KEYCLOAK_HOSTNAME`, e.g. `auth.cinevault.yourdomain.com`), and an artwork CDN subdomain (`CDN_HOSTNAME`, e.g. `cdn.cinevault.yourdomain.com`). Caddy provisions a separate Let's Encrypt certificate per hostname.
+2. Set `SITE_ADDRESS`, `KEYCLOAK_HOSTNAME`, `CDN_HOSTNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`, and the other vars from §2 in `.env.prod`. `docker compose up` will refuse to start (with a clear error naming the missing variable) if any required one is unset — this is deliberate: it fails closed instead of silently falling back to plain HTTP or an ambiguous `localhost` issuer.
+3. Bring the stack up:
+   ```bash
+   docker compose -f infra/docker/docker-compose.prod.yml --env-file .env.prod up -d --build
+   ```
+   Caddy serves plain HTTP on `:80` only to redirect to HTTPS on `:443` and to complete the ACME challenge — it does not serve the app over HTTP. The `minio-init` job runs once at startup to create the artwork bucket and set it to anonymous-download (public reads only, no listing/writes) — `fastapi-backend` waits for it to finish before starting.
+4. **One-time production realm setup**: the `keycloak` service starts with no realm imported (a real production realm needs real, randomly-generated client secrets, which shouldn't be baked into a committed file or an image-build step). Follow `packages/config/keycloak/README.md` to render `packages/config/keycloak/cinevault-realm-prod.template.json` with your real `SITE_ADDRESS` and import it via the Admin Console at `https://<KEYCLOAK_HOSTNAME>/admin/`. Until this step is done, login will fail with an OIDC discovery error — this is expected on a fresh deployment.
+5. To change a domain later, update `.env.prod` and re-run `docker compose up -d caddy keycloak fastapi-backend nextjs-web` — Caddy will provision new certificates for the new hostnames automatically.
 
-    handle /v1/* {
-        reverse_proxy fastapi-backend:8000
-    }
-    handle /ai/* {
-        reverse_proxy fastapi-backend:8000
-    }
-    handle /social/* {
-        reverse_proxy fastapi-backend:8000
-    }
-    handle /health* {
-        reverse_proxy fastapi-backend:8000
-    }
-    handle /* {
-        reverse_proxy nextjs-web:3000
-    }
-}
-```
-3. Restart Caddy:
-```bash
-docker compose -f infra/docker/docker-compose.prod.yml restart caddy
-```
+Not yet added at the Caddy layer: a Content-Security-Policy header (tracked as follow-up work — see the comment in `infra/docker/Caddyfile`). HSTS, X-Frame-Options, and the other hardened headers are already present on all three sites.
+
+**Backing up MinIO**: `scripts/backup_postgres.sh`/`restore_postgres.sh` only cover Postgres. The artwork bucket lives in the `cinevault-prod-minio-data` Docker volume — back it up separately (e.g. `docker run --rm -v cinevault-prod-minio-data:/data -v $(pwd)/backups:/backup alpine tar czf /backup/minio-data.tar.gz -C /data .`) if artwork durability matters to you beyond what's re-derivable from the ingestion pipeline.
 
 ---
 
