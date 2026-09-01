@@ -10,7 +10,7 @@ async function runSocialMultiplayerTests() {
     logs: [],
   };
 
-  const browser = await chromium.launch({ headless: true, channel: 'chrome' });
+  const browser = await chromium.launch({ headless: true });
 
   // Create two distinct browser contexts for multi-user simulation
   const contextDev = await browser.newContext();
@@ -29,13 +29,12 @@ async function runSocialMultiplayerTests() {
   pageCurator.on('console', handleConsole('Curator'));
 
   async function loginUser(page, userBtnText) {
-    await page.goto('http://localhost:3000/login', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(1000);
+    await page.goto('http://localhost:3000/login', { waitUntil: 'networkidle' });
     const btn = page.locator(`button:has-text("${userBtnText}")`);
     await btn.waitFor({ state: 'visible', timeout: 15000 });
     await btn.click();
-    await page.waitForURL('**/dashboard', { timeout: 20000, waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('header', { timeout: 20000 });
+    await page.waitForURL('**/dashboard', { timeout: 35000, waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('header', { timeout: 35000 });
   }
 
   try {
@@ -262,14 +261,14 @@ async function runSocialMultiplayerTests() {
     await titleSearchInput.fill('Inception');
     await pageDev.waitForTimeout(600);
     await pageDev.waitForSelector('div.fixed.z-50 div.max-h-40 button:has-text("Inception")', { timeout: 10000 });
-    await pageDev.locator('div.fixed.z-50 div.max-h-40 button:has-text("Inception")').click();
+    await pageDev.locator('div.fixed.z-50 div.max-h-40 button:has-text("Inception")').first().click();
     await pageDev.waitForTimeout(500);
 
     // Nominate Title 2: Parasite
     await titleSearchInput.fill('Parasite');
     await pageDev.waitForTimeout(600);
     await pageDev.waitForSelector('div.fixed.z-50 div.max-h-40 button:has-text("Parasite")', { timeout: 10000 });
-    await pageDev.locator('div.fixed.z-50 div.max-h-40 button:has-text("Parasite")').click();
+    await pageDev.locator('div.fixed.z-50 div.max-h-40 button:has-text("Parasite")').first().click();
     await pageDev.waitForTimeout(500);
 
     // Wait until button is enabled

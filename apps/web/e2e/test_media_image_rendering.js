@@ -80,7 +80,7 @@ async function runMediaImageRenderingSuite() {
     // 3. Catalog Poster Rendering (Series)
     // ------------------------------------------------------------------------
     console.log('--- 3. Catalog Series Poster Rendering ---');
-    await page.goto(`${baseUrl}/series`, { waitUntil: 'networkidle', timeout: 25000 });
+    await page.goto(`${baseUrl}/series`, { waitUntil: 'domcontentloaded', timeout: 25000 });
     await page.waitForSelector('main', { timeout: 10000 });
     await page.waitForSelector('a[href^="/series/"]', { timeout: 15000 }).catch(() => null);
 
@@ -93,7 +93,7 @@ async function runMediaImageRenderingSuite() {
     // ------------------------------------------------------------------------
     console.log('--- 4. Movie Detail Page Hero Backdrop & Poster ---');
     await page.goto(`${baseUrl}/movies/MOV-000001`, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: 25000,
     });
     await page.waitForSelector('main', { timeout: 10000 });
@@ -115,7 +115,7 @@ async function runMediaImageRenderingSuite() {
     // ------------------------------------------------------------------------
     console.log('--- 5. Series Detail Page Hero Backdrop & Poster ---');
     await page.goto(`${baseUrl}/series/TV-000001`, {
-      waitUntil: 'networkidle',
+      waitUntil: 'domcontentloaded',
       timeout: 25000,
     });
     await page.waitForSelector('main', { timeout: 10000 });
