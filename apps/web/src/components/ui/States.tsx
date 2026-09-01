@@ -21,7 +21,7 @@ export const LoadingState: React.FC<{ message?: string }> = ({
         <Loader2 className="w-8 h-8 text-violet-400 animate-spin relative z-10" />
       </div>
       <p className="text-sm font-semibold text-zinc-200">{message}</p>
-      <p className="text-xs text-zinc-500 mt-1">Connecting to CineVault OS backend...</p>
+      <p className="text-xs text-zinc-400 mt-1">Connecting to CineVault OS backend...</p>
     </div>
   );
 };
@@ -35,7 +35,7 @@ export const EmptyState: React.FC<StateProps> = ({
   return (
     <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl bg-zinc-900/30 border border-zinc-900 backdrop-blur-md min-h-[280px]">
       <div className="w-12 h-12 rounded-2xl bg-zinc-900 flex items-center justify-center mb-4 border border-zinc-800">
-        <Inbox className="w-6 h-6 text-zinc-500" />
+        <Inbox className="w-6 h-6 text-zinc-400" />
       </div>
       <h3 className="text-base font-bold text-zinc-100 mb-1">{title}</h3>
       <p className="text-xs sm:text-sm text-zinc-400 max-w-md mb-6 leading-relaxed">{description}</p>

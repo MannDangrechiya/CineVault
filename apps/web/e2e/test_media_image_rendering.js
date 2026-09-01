@@ -20,14 +20,15 @@ async function runMediaImageRenderingSuite() {
 
   try {
     // ------------------------------------------------------------------------
-    // 1. Authentication (Dev User Session)
+    // 1. Authenticate with dev user session
     // ------------------------------------------------------------------------
     console.log('--- 1. Authenticate Session ---');
-    await page.goto(`${baseUrl}/login`, { waitUntil: 'networkidle', timeout: 25000 });
+    await page.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    await page.waitForTimeout(1000);
     const devLoginBtn = page.locator('button:has-text("Sign In as Dev User")');
     if (await devLoginBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
       await devLoginBtn.click();
-      await page.waitForURL('**/dashboard', { timeout: 15000 });
+      await page.waitForURL('**/dashboard', { timeout: 20000, waitUntil: 'domcontentloaded' });
       console.log('  -> Logged in successfully as Dev User');
       results.passed.push('authentication_successful');
     }
@@ -36,8 +37,8 @@ async function runMediaImageRenderingSuite() {
     // 2. Catalog Poster Rendering (Movies)
     // ------------------------------------------------------------------------
     console.log('--- 2. Catalog Movies Poster Rendering ---');
-    await page.goto(`${baseUrl}/movies`, { waitUntil: 'networkidle', timeout: 25000 });
-    await page.waitForSelector('main', { timeout: 10000 });
+    await page.goto(`${baseUrl}/movies`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    await page.waitForSelector('main', { timeout: 15000 });
     await page.waitForSelector('a[href^="/movies/"]', { timeout: 15000 }).catch(() => null);
 
     const movieCards = await page.locator('a[href^="/movies/"]').all();
@@ -166,8 +167,8 @@ async function runMediaImageRenderingSuite() {
     // 7. Dedicated Search Results Media Rendering
     // ------------------------------------------------------------------------
     console.log('--- 7. Search Results Media Rendering ---');
-    await page.goto(`${baseUrl}/search?q=Parasite`, { waitUntil: 'networkidle', timeout: 25000 });
-    await page.waitForSelector('main', { timeout: 10000 });
+    await page.goto(`${baseUrl}/search?q=Parasite`, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    await page.waitForSelector('main', { timeout: 15000 });
 
     const searchCards = await page.locator('a[href*="/movies/"], a[href*="/series/"]').all();
     console.log(`  -> Found ${searchCards.length} search result cards`);
@@ -178,19 +179,23 @@ async function runMediaImageRenderingSuite() {
     // ------------------------------------------------------------------------
     console.log('--- 8. Personal Pages Media Audit ---');
     // Watchlist
-    await page.goto(`${baseUrl}/watchlist`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.goto(`${baseUrl}/watchlist`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForSelector('main', { timeout: 15000 });
     results.passed.push('watchlist_media_rendered');
 
     // Library
-    await page.goto(`${baseUrl}/library`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.goto(`${baseUrl}/library`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForSelector('main', { timeout: 15000 });
     results.passed.push('library_media_rendered');
 
     // History
-    await page.goto(`${baseUrl}/history`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.goto(`${baseUrl}/history`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForSelector('main', { timeout: 15000 });
     results.passed.push('history_media_rendered');
 
     // Collections
-    await page.goto(`${baseUrl}/collections`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.goto(`${baseUrl}/collections`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForSelector('main', { timeout: 15000 });
     const unsplashImages = await page.locator('img[src*="unsplash.com"]').count();
     console.log(`  -> Collections page Unsplash images count: ${unsplashImages}`);
     if (unsplashImages === 0) {
@@ -198,7 +203,8 @@ async function runMediaImageRenderingSuite() {
     }
 
     // Social Recommendations
-    await page.goto(`${baseUrl}/social`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.goto(`${baseUrl}/social`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForSelector('main', { timeout: 15000 });
     const socialUnsplash = await page.locator('img[src*="unsplash.com"]').count();
     console.log(`  -> Social page Unsplash images count: ${socialUnsplash}`);
     if (socialUnsplash === 0) {
@@ -206,7 +212,8 @@ async function runMediaImageRenderingSuite() {
     }
 
     // Oracle AI Chat
-    await page.goto(`${baseUrl}/oracle`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.goto(`${baseUrl}/oracle`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForSelector('main', { timeout: 15000 });
     const oracleUnsplash = await page.locator('img[src*="unsplash.com"]').count();
     console.log(`  -> Oracle page Unsplash images count: ${oracleUnsplash}`);
     if (oracleUnsplash === 0) {
@@ -218,7 +225,8 @@ async function runMediaImageRenderingSuite() {
     // ------------------------------------------------------------------------
     console.log('--- 9. Mobile Viewport (375px) Responsive Test ---');
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto(`${baseUrl}/movies`, { waitUntil: 'networkidle', timeout: 20000 });
+    await page.goto(`${baseUrl}/movies`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForSelector('main', { timeout: 15000 });
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     const clientWidth = await page.evaluate(() => document.documentElement.clientWidth);

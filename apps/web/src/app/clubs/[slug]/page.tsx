@@ -116,7 +116,7 @@ export default function WatchClubDetailPage() {
               </div>
               <div className="p-3.5 rounded-2xl bg-zinc-950/60 border border-zinc-850 flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Total Watches</p>
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">Total Watches</p>
                   <h5 className="text-lg font-bold text-zinc-100">
                     {(club.taste_profile?.total_watches as number) || 0} Logged
                   </h5>
@@ -125,7 +125,7 @@ export default function WatchClubDetailPage() {
                   <Clapperboard className="w-4 h-4" />
                 </div>
               </div>
-              <p className="text-[11px] text-zinc-500 text-center py-2">
+              <p className="text-[11px] text-zinc-400 text-center py-2">
                 Taste affinity will appear once members start logging watches.
               </p>
             </div>
@@ -151,7 +151,7 @@ export default function WatchClubDetailPage() {
                       </div>
                       <div>
                         <p className="text-xs font-bold text-zinc-200">{m.user_name || "Club Member"}</p>
-                        <p className="text-[10px] text-zinc-500 font-mono">
+                        <p className="text-[10px] text-zinc-400 font-mono">
                           {m.user_username ? `@${m.user_username}` : "Member"}
                         </p>
                       </div>
@@ -175,7 +175,7 @@ export default function WatchClubDetailPage() {
                     Live Club Activity Stream
                   </h4>
                 </div>
-                <span className="text-[10px] text-zinc-500 font-mono">Real-time sync</span>
+                <span className="text-[10px] text-zinc-400 font-mono">Real-time sync</span>
               </div>
 
               {isLoadingFeed ? (
@@ -185,7 +185,7 @@ export default function WatchClubDetailPage() {
               ) : feed.length === 0 ? (
                 <div className="text-center py-10 space-y-2">
                   <p className="text-xs text-zinc-400">No activity logged in this club yet.</p>
-                  <p className="text-[11px] text-zinc-500">
+                  <p className="text-[11px] text-zinc-400">
                     When members log watches, ratings, or reviews, they will appear here in the collective feed.
                   </p>
                 </div>
@@ -211,7 +211,7 @@ export default function WatchClubDetailPage() {
                                 : "posted a review"}
                             </span>
                           </p>
-                          <span className="text-[10px] text-zinc-500 font-mono">
+                          <span className="text-[10px] text-zinc-400 font-mono">
                             {new Date(act.created_at).toLocaleDateString()}
                           </span>
                         </div>
@@ -229,7 +229,7 @@ export default function WatchClubDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 justify-center">
+        <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 justify-center">
           <ShieldCheck className="w-3.5 h-3.5" />
           <span>@{club.club.slug}</span>
         </div>

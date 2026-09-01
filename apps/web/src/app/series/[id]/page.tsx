@@ -366,7 +366,7 @@ export default function SeriesDetailPage() {
   if (isError || !title) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-8 space-y-4">
-        <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500">
+        <div className="w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400">
           <Tv className="w-8 h-8" />
         </div>
         <h1 className="text-2xl font-bold text-zinc-100">Series Not Found</h1>
@@ -441,7 +441,7 @@ export default function SeriesDetailPage() {
 
               {displayCountry && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono text-zinc-400 bg-zinc-900/60 border border-zinc-800">
-                  <Globe className="w-3 h-3 text-zinc-500" />
+                  <Globe className="w-3 h-3 text-zinc-400" />
                   {displayCountry}
                 </span>
               )}
@@ -710,7 +710,7 @@ export default function SeriesDetailPage() {
                   <Tv className="w-4 h-4 text-cyan-400" />
                   <span>Seasons & Episodes</span>
                 </div>
-                <span className="text-xs text-zinc-500 font-mono">
+                <span className="text-xs text-zinc-400 font-mono">
                   {seasonCount} Season{seasonCount !== 1 ? "s" : ""} • {episodeCount} Episodes
                 </span>
               </div>
@@ -846,7 +846,7 @@ export default function SeriesDetailPage() {
                                 {ep.overview}
                               </p>
                             )}
-                            <div className="flex items-center gap-3 text-[10px] text-zinc-500 font-mono">
+                            <div className="flex items-center gap-3 text-[10px] text-zinc-400 font-mono">
                               {ep.air_date && <span>Air: {ep.air_date}</span>}
                               {ep.runtime_minutes && <span>{ep.runtime_minutes} mins</span>}
                             </div>
@@ -886,7 +886,7 @@ export default function SeriesDetailPage() {
                   })}
                 </div>
               ) : (
-                <p className="text-xs text-zinc-500 italic py-2">
+                <p className="text-xs text-zinc-400 italic py-2">
                   No episodes listed for this season.
                 </p>
               )}
@@ -1019,7 +1019,7 @@ export default function SeriesDetailPage() {
                 )}
 
                 {userNotes.length === 0 ? (
-                  <p className="text-xs text-zinc-500 italic py-2">No private notes added yet.</p>
+                  <p className="text-xs text-zinc-400 italic py-2">No private notes added yet.</p>
                 ) : (
                   <div className="space-y-2">
                     {userNotes.map((n) => (
@@ -1029,13 +1029,14 @@ export default function SeriesDetailPage() {
                       >
                         <div className="space-y-1">
                           <p className="text-xs text-zinc-200">{n.note_text}</p>
-                          <p className="text-[10px] text-zinc-500">
+                          <p className="text-[10px] text-zinc-400">
                             {new Date(n.updated_at).toLocaleDateString()}
                           </p>
                         </div>
                         <button
                           onClick={() => deleteNoteMutation.mutate(n.id)}
-                          className="text-zinc-500 hover:text-rose-400 p-1 cursor-pointer"
+                          aria-label="Delete note"
+                          className="text-zinc-400 hover:text-rose-400 p-1 cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1058,26 +1059,27 @@ export default function SeriesDetailPage() {
                       onClick={() => setIsAddingReview(true)}
                       className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 text-xs font-medium hover:bg-cyan-600/30 cursor-pointer"
                     >
-                      <Plus className="w-3.5 h-3.5" /> Write Review
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Write Review</span>
                     </button>
                   )}
                 </div>
 
                 {isAddingReview && (
-                  <div className="p-4 rounded-xl bg-zinc-950 border border-zinc-800 space-y-3">
+                  <div className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-800/80 space-y-3">
                     <input
                       type="text"
                       placeholder="Review Headline / Summary..."
                       value={reviewTitle}
                       onChange={(e) => setReviewTitle(e.target.value)}
-                      className="w-full text-xs p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500"
+                      className="w-full text-xs p-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-cyan-500"
                     />
                     <textarea
                       rows={4}
                       value={reviewText}
                       onChange={(e) => setReviewText(e.target.value)}
                       placeholder="Season analysis, character arcs, storytelling critique..."
-                      className="w-full text-xs p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-cyan-500 resize-none"
+                      className="w-full text-xs p-3 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-cyan-500 resize-none"
                     />
                     <div className="flex items-center justify-between pt-1">
                       <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
@@ -1091,12 +1093,14 @@ export default function SeriesDetailPage() {
                       </label>
                       <div className="flex items-center gap-2">
                         <button
+                          type="button"
                           onClick={() => setIsAddingReview(false)}
                           className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 cursor-pointer"
                         >
                           Cancel
                         </button>
                         <button
+                          type="button"
                           onClick={() =>
                             reviewText.trim() &&
                             reviewMutation.mutate({
@@ -1116,7 +1120,7 @@ export default function SeriesDetailPage() {
                 )}
 
                 {userReviews.length === 0 ? (
-                  <p className="text-xs text-zinc-500 italic py-2">No reviews written yet.</p>
+                  <p className="text-xs text-zinc-400 italic py-2">No reviews written yet.</p>
                 ) : (
                   <div className="space-y-3">
                     {userReviews.map((rev) => (
@@ -1136,14 +1140,15 @@ export default function SeriesDetailPage() {
                             )}
                             <button
                               onClick={() => deleteReviewMutation.mutate(rev.id)}
-                              className="text-zinc-500 hover:text-rose-400 p-1 cursor-pointer"
+                              aria-label="Delete review"
+                              className="text-zinc-400 hover:text-rose-400 p-1 cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
                         <p className="text-xs text-zinc-300 leading-relaxed">{rev.review_text}</p>
-                        <p className="text-[10px] text-zinc-500">
+                        <p className="text-[10px] text-zinc-400">
                           {new Date(rev.created_at).toLocaleDateString()}
                         </p>
                       </div>
@@ -1171,7 +1176,7 @@ export default function SeriesDetailPage() {
                     <p className="text-[11px] text-zinc-400 truncate">
                       {c.character_name ? `as ${c.character_name}` : c.role_name}
                     </p>
-                    <span className="text-[9px] font-mono text-zinc-600 uppercase">
+                    <span className="text-[9px] font-mono text-zinc-400 uppercase">
                       {c.role_category}
                     </span>
                   </div>
@@ -1188,13 +1193,13 @@ export default function SeriesDetailPage() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
               <div>
-                <span className="text-zinc-500 block mb-1">Catalog ID</span>
+                <span className="text-zinc-400 block mb-1">Catalog ID</span>
                 <span className="font-mono text-zinc-300 font-medium">
                   {title.display_id || titleId}
                 </span>
               </div>
               <div>
-                <span className="text-zinc-500 block mb-1">Languages</span>
+                <span className="text-zinc-400 block mb-1">Languages</span>
                 <span className="text-zinc-300 font-medium">
                   {title.languages && title.languages.length > 0
                     ? title.languages.join(", ")
@@ -1202,28 +1207,28 @@ export default function SeriesDetailPage() {
                 </span>
               </div>
               <div>
-                <span className="text-zinc-500 block mb-1">Episodic Structure</span>
+                <span className="text-zinc-400 block mb-1">Episodic Structure</span>
                 <span className="text-zinc-300 font-medium">
                   {seasonCount} Season{seasonCount !== 1 ? "s" : ""}, {episodeCount} Episodes
                 </span>
               </div>
               <div>
-                <span className="text-zinc-500 block mb-1">Audio Mix</span>
+                <span className="text-zinc-400 block mb-1">Audio Mix</span>
                 <span className="text-zinc-300 font-medium">
                   {title.primary_edition?.sound_mix || "Not recorded"}
                 </span>
               </div>
               <div>
-                <span className="text-zinc-500 block mb-1">Color Format</span>
+                <span className="text-zinc-400 block mb-1">Color Format</span>
                 <span className="text-zinc-300 font-medium">
                   {title.primary_edition?.color_format || "Not recorded"}
                 </span>
               </div>
               <div>
-                <span className="text-zinc-500 block mb-1">Artwork Status</span>
+                <span className="text-zinc-400 block mb-1">Artwork Status</span>
                 <span
                   className={
-                    title.has_licensed_artwork ? "text-emerald-400 font-medium" : "text-zinc-500"
+                    title.has_licensed_artwork ? "text-emerald-400 font-medium" : "text-zinc-400"
                   }
                 >
                   {title.has_licensed_artwork ? "Licensed Master" : "Default Poster"}
@@ -1266,7 +1271,7 @@ export default function SeriesDetailPage() {
                     className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-zinc-950 border border-zinc-800"
                   >
                     <span className="font-semibold text-zinc-300">{ext.provider_name}</span>
-                    <span className="font-mono text-zinc-500">{ext.external_id}</span>
+                    <span className="font-mono text-zinc-400">{ext.external_id}</span>
                   </div>
                 ))}
               </div>
@@ -1370,7 +1375,7 @@ export default function SeriesDetailPage() {
                       })}
                     </select>
                   ) : (
-                    <div className="px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-500">
+                    <div className="px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-400">
                       No accepted friends yet. Head to the Social tab to grow your circle!
                     </div>
                   )}
@@ -1385,7 +1390,7 @@ export default function SeriesDetailPage() {
                     value={recommendNote}
                     onChange={(e) => setRecommendNote(e.target.value)}
                     placeholder="e.g. The story gets crazy in season 2..."
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-cyan-500 transition-colors resize-none"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-cyan-500 transition-colors resize-none"
                   />
                 </div>
                 <div className="pt-2 flex items-center justify-end gap-3">
@@ -1439,7 +1444,7 @@ export default function SeriesDetailPage() {
             </div>
 
             {myCollections.length === 0 ? (
-              <p className="text-xs text-zinc-500 text-center py-6">
+              <p className="text-xs text-zinc-400 text-center py-6">
                 You don&apos;t have any collections yet.{" "}
                 <Link href="/collections" className="text-cyan-400 hover:underline">
                   Create one first
@@ -1467,12 +1472,12 @@ export default function SeriesDetailPage() {
                     >
                       <div>
                         <p className="text-xs font-bold text-zinc-100">{c.name}</p>
-                        <p className="text-[10px] text-zinc-500">{c.item_count} titles</p>
+                        <p className="text-[10px] text-zinc-400">{c.item_count} titles</p>
                       </div>
                       {isAdded ? (
                         <Check className="w-4 h-4 text-cyan-400 shrink-0" />
                       ) : (
-                        <FolderPlus className="w-4 h-4 text-zinc-500 shrink-0" />
+                        <FolderPlus className="w-4 h-4 text-zinc-400 shrink-0" />
                       )}
                     </button>
                   );

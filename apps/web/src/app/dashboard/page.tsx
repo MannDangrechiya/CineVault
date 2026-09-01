@@ -146,19 +146,19 @@ function CinemaRecapModal({ onClose }: { onClose: () => void }) {
               <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
                 <span className="text-[11px] text-zinc-400 block">Watched</span>
                 <span className="text-xl font-bold text-zinc-100">{recap.total_titles_watched}</span>
-                <span className="text-[10px] text-zinc-500 block">titles</span>
+                <span className="text-[10px] text-zinc-400 block">titles</span>
               </div>
               <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
                 <span className="text-[11px] text-zinc-400 block">Runtime</span>
                 <span className="text-xl font-bold text-violet-400">
                   {Math.round(recap.total_runtime_minutes / 60)}h
                 </span>
-                <span className="text-[10px] text-zinc-500 block">logged</span>
+                <span className="text-[10px] text-zinc-400 block">logged</span>
               </div>
               <div className="p-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800">
                 <span className="text-[11px] text-zinc-400 block">Longest Streak</span>
                 <span className="text-xl font-bold text-amber-400">{recap.longest_streak_days}d</span>
-                <span className="text-[10px] text-zinc-500 block">consecutive</span>
+                <span className="text-[10px] text-zinc-400 block">consecutive</span>
               </div>
             </div>
 
@@ -192,7 +192,7 @@ function CinemaRecapModal({ onClose }: { onClose: () => void }) {
             {/* Favorite Era & Footer CTA */}
             <div className="pt-2 border-t border-zinc-900 flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="text-left text-xs">
-                <span className="text-zinc-500 block text-[10px]">Favorite Era:</span>
+                <span className="text-zinc-400 block text-[10px]">Favorite Era:</span>
                 <span className="font-semibold text-zinc-300">{recap.favorite_release_era}</span>
               </div>
 
@@ -319,7 +319,7 @@ export default function DashboardPage() {
                 <h3 className="text-2xl font-bold text-zinc-100 mt-1">
                   {totalTitles.toLocaleString()}
                 </h3>
-                <span className="text-[11px] text-zinc-500 flex items-center gap-1 mt-1">
+                <span className="text-[11px] text-zinc-400 flex items-center gap-1 mt-1">
                   <TrendingUp className="w-3 h-3" /> In your personal library
                 </span>
               </div>
@@ -437,7 +437,7 @@ export default function DashboardPage() {
                           : ""}
                       </p>
                       {item.explanation?.explanation_text && (
-                        <p className="text-[11px] text-zinc-500 italic line-clamp-1">
+                        <p className="text-[11px] text-zinc-400 italic line-clamp-1">
                           &ldquo;{item.explanation.explanation_text}&rdquo;
                         </p>
                       )}
@@ -450,7 +450,8 @@ export default function DashboardPage() {
                       </span>
                       <Link
                         href={`/movies/${item.title_id}`}
-                        className="text-zinc-500 hover:text-violet-400 p-1"
+                        aria-label={`View ${item.canonical_title}`}
+                        className="text-zinc-400 hover:text-violet-400 p-1"
                       >
                         <ArrowRight className="w-3.5 h-3.5" />
                       </Link>
@@ -484,7 +485,7 @@ export default function DashboardPage() {
                     <Film className="w-4 h-4 text-violet-400" />
                     <span>Browse Movie Catalog</span>
                   </div>
-                  <ArrowRight className="w-3.5 h-3.5 text-zinc-500" />
+                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
                 </Link>
 
                 <Link
@@ -495,7 +496,7 @@ export default function DashboardPage() {
                     <Share2 className="w-4 h-4 text-emerald-400" />
                     <span>Social Recommendations</span>
                   </div>
-                  <ArrowRight className="w-3.5 h-3.5 text-zinc-500" />
+                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
                 </Link>
 
                 <Link
@@ -506,7 +507,7 @@ export default function DashboardPage() {
                     <Bookmark className="w-4 h-4 text-amber-400" />
                     <span>Manage Watchlist</span>
                   </div>
-                  <ArrowRight className="w-3.5 h-3.5 text-zinc-500" />
+                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
                 </Link>
 
                 <Link
@@ -517,7 +518,7 @@ export default function DashboardPage() {
                     <History className="w-4 h-4 text-cyan-400" />
                     <span>View Watch History</span>
                   </div>
-                  <ArrowRight className="w-3.5 h-3.5 text-zinc-500" />
+                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
                 </Link>
 
                 <Link
@@ -528,7 +529,7 @@ export default function DashboardPage() {
                     <Layers className="w-4 h-4 text-pink-400" />
                     <span>Curated Collections</span>
                   </div>
-                  <ArrowRight className="w-3.5 h-3.5 text-zinc-500" />
+                  <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
                 </Link>
               </div>
             </div>
@@ -551,7 +552,7 @@ export default function DashboardPage() {
 
             <div className="space-y-3.5">
               {topGenres.length === 0 && (
-                <p className="text-xs text-zinc-500">No genre data yet — watch a few titles first.</p>
+                <p className="text-xs text-zinc-400">No genre data yet — watch a few titles first.</p>
               )}
               {topGenres.map((g, index) => {
                 const colors = [
@@ -602,7 +603,7 @@ export default function DashboardPage() {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {topDirectors.length === 0 && (
-                    <p className="text-xs text-zinc-500">No director data yet.</p>
+                    <p className="text-xs text-zinc-400">No director data yet.</p>
                   )}
                   {topDirectors.map((d) => (
                     <span
@@ -625,7 +626,7 @@ export default function DashboardPage() {
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {topActors.length === 0 && (
-                    <p className="text-xs text-zinc-500">No cast data yet.</p>
+                    <p className="text-xs text-zinc-400">No cast data yet.</p>
                   )}
                   {topActors.map((a) => (
                     <span
@@ -658,7 +659,7 @@ export default function DashboardPage() {
 
             <div className="flex items-end justify-between gap-2 h-44 pt-6">
               {monthlyTrend.length === 0 && (
-                <p className="text-xs text-zinc-500 m-auto">No watch activity logged yet.</p>
+                <p className="text-xs text-zinc-400 m-auto">No watch activity logged yet.</p>
               )}
               {monthlyTrend.map((m) => {
                 const heightPercent = Math.max(
@@ -719,7 +720,7 @@ export default function DashboardPage() {
                     className={`w-10 h-10 rounded-xl flex items-center justify-center text-base shrink-0 shadow-md ${
                       b.is_earned
                         ? "bg-gradient-to-tr from-amber-600 to-yellow-400 text-black font-extrabold"
-                        : "bg-zinc-800 text-zinc-500"
+                        : "bg-zinc-800 text-zinc-400"
                     }`}
                   >
                     {b.is_earned ? "🏆" : "🔒"}
@@ -740,7 +741,7 @@ export default function DashboardPage() {
                       {b.description}
                     </p>
                     {b.is_earned && b.earned_at && (
-                      <p className="text-[10px] text-zinc-500">
+                      <p className="text-[10px] text-zinc-400">
                         Unlocked {new Date(b.earned_at).toLocaleDateString()}
                       </p>
                     )}

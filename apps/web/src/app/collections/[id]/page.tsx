@@ -98,7 +98,7 @@ export default function CollectionDetailPage() {
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl bg-zinc-900/30 border border-zinc-900 backdrop-blur-md min-h-[240px]">
             <div className="w-12 h-12 rounded-2xl bg-zinc-900 flex items-center justify-center mb-4 border border-zinc-800">
-              <Layers className="w-6 h-6 text-zinc-500" />
+              <Layers className="w-6 h-6 text-zinc-400" />
             </div>
             <h3 className="text-base font-bold text-zinc-100 mb-1">No Titles Yet</h3>
             <p className="text-xs sm:text-sm text-zinc-400 max-w-md mb-6 leading-relaxed">
@@ -138,19 +138,20 @@ export default function CollectionDetailPage() {
                     <h4 className="text-xs font-bold text-zinc-100 group-hover:text-violet-400 transition-colors line-clamp-1">
                       {item.canonical_title}
                     </h4>
-                    <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-1">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-400 mt-1">
                       <span>{item.production_year ?? "—"}</span>
                     </div>
                   </Link>
                   {item.notes && (
-                    <p className="text-[10px] text-zinc-500 italic mt-1.5 line-clamp-2">{item.notes}</p>
+                    <p className="text-[10px] text-zinc-400 italic mt-1.5 line-clamp-2">{item.notes}</p>
                   )}
                   <div className="flex items-center justify-end pt-2.5 mt-2.5 border-t border-zinc-900/80">
                     <button
                       onClick={() => removeMutation.mutate(item.title_id)}
                       disabled={removeMutation.isPending}
                       title="Remove from Collection"
-                      className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
+                      aria-label="Remove from Collection"
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

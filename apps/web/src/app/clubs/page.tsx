@@ -280,7 +280,7 @@ export default function WatchClubsPage() {
                             <h4 className="text-sm font-bold text-zinc-100 group-hover:text-violet-300 transition-colors">
                               {club.name}
                             </h4>
-                            <p className="text-[10px] text-zinc-500 font-mono">@{club.slug}</p>
+                            <p className="text-[10px] text-zinc-400 font-mono">@{club.slug}</p>
                           </div>
                         </div>
 
@@ -294,7 +294,7 @@ export default function WatchClubsPage() {
                       </p>
                     </div>
 
-                    <div className="pt-3 border-t border-zinc-900 flex items-center justify-between text-xs text-zinc-500">
+                    <div className="pt-3 border-t border-zinc-900 flex items-center justify-between text-xs text-zinc-400">
                       <div className="flex items-center gap-1 text-[11px]">
                         <ShieldCheck className="w-3 h-3 text-violet-400" />
                         <span>Curated by {club.creator_name || "CineVault Member"}</span>
@@ -417,7 +417,7 @@ export default function WatchClubsPage() {
                       <div className="space-y-3">
                         <div className="p-3.5 rounded-2xl bg-zinc-950/60 border border-zinc-850 flex items-center justify-between">
                           <div>
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">Total Watches</p>
+                            <p className="text-[10px] text-zinc-400 uppercase tracking-wider font-semibold">Total Watches</p>
                             <h5 className="text-lg font-bold text-zinc-100">
                               {(selectedClub.taste_profile?.total_watches as number) || 0} Logged
                             </h5>
@@ -433,7 +433,7 @@ export default function WatchClubsPage() {
                             nothing honest to show here until members actually log
                             watches. Matches the "no activity yet" tone of the
                             LIVE CLUB ACTIVITY STREAM panel below. */}
-                        <p className="text-[11px] text-zinc-500 text-center py-2">
+                        <p className="text-[11px] text-zinc-400 text-center py-2">
                           Taste affinity will appear once members start logging watches.
                         </p>
                       </div>
@@ -462,7 +462,7 @@ export default function WatchClubsPage() {
                               </div>
                               <div>
                                 <p className="text-xs font-bold text-zinc-200">{m.user_name || "Club Member"}</p>
-                                <p className="text-[10px] text-zinc-500 font-mono">
+                                <p className="text-[10px] text-zinc-400 font-mono">
                                   {m.user_username ? `@${m.user_username}` : "Member"}
                                 </p>
                               </div>
@@ -486,7 +486,7 @@ export default function WatchClubsPage() {
                             Live Club Activity Stream
                           </h4>
                         </div>
-                        <span className="text-[10px] text-zinc-500 font-mono">Real-time sync</span>
+                        <span className="text-[10px] text-zinc-400 font-mono">Real-time sync</span>
                       </div>
 
                       {isLoadingClubFeed ? (
@@ -496,7 +496,7 @@ export default function WatchClubsPage() {
                       ) : clubFeed.length === 0 ? (
                         <div className="text-center py-10 space-y-2">
                           <p className="text-xs text-zinc-400">No activity logged in this club yet.</p>
-                          <p className="text-[11px] text-zinc-500">
+                          <p className="text-[11px] text-zinc-400">
                             When members log watches, ratings, or reviews, they will appear here in the collective feed.
                           </p>
                         </div>
@@ -522,7 +522,7 @@ export default function WatchClubsPage() {
                                         : "posted a review"}
                                     </span>
                                   </p>
-                                  <span className="text-[10px] text-zinc-500 font-mono">
+                                  <span className="text-[10px] text-zinc-400 font-mono">
                                     {new Date(act.created_at).toLocaleDateString()}
                                   </span>
                                 </div>
@@ -625,7 +625,7 @@ export default function WatchClubsPage() {
                       </div>
 
                       <div className="pt-4 border-t border-zinc-900 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 text-[11px] text-zinc-500">
+                        <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
                           <Users className="w-3.5 h-3.5 text-zinc-400" />
                           <span>{ch.participant_count} Cinephiles</span>
                         </div>

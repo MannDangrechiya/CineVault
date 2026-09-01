@@ -125,7 +125,7 @@ function LoginContent() {
             </div>
             <div className="text-left">
               <div className="text-xs font-bold">Sign In as Dev User</div>
-              <div className="text-[10px] text-violet-200">dev@cinevault.local • Full Access</div>
+              <div className="text-[10px] text-violet-50 font-medium">dev@cinevault.local • Full Access</div>
             </div>
           </div>
           {isLoading ? (
@@ -144,7 +144,7 @@ function LoginContent() {
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             <div className="truncate">
               <div className="font-semibold text-zinc-200 truncate">Curator Profile</div>
-              <div className="text-[10px] text-zinc-500 truncate">curator@cinevault</div>
+              <div className="text-[10px] text-zinc-400 truncate">curator@cinevault</div>
             </div>
           </button>
 
@@ -156,7 +156,7 @@ function LoginContent() {
             <KeyRound className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <div className="truncate">
               <div className="font-semibold text-zinc-200 truncate">System Admin</div>
-              <div className="text-[10px] text-zinc-500 truncate">admin@cinevault</div>
+              <div className="text-[10px] text-zinc-400 truncate">admin@cinevault</div>
             </div>
           </button>
         </div>
@@ -181,7 +181,7 @@ function LoginContent() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@cinevault.local"
-              className="w-full px-3.5 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-violet-500 transition-colors"
+              className="w-full px-3.5 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 transition-colors"
             />
           </div>
 
@@ -195,7 +195,7 @@ function LoginContent() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full px-3.5 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-violet-500 transition-colors"
+              className="w-full px-3.5 py-2 text-xs bg-zinc-950 border border-zinc-800 rounded-xl text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 transition-colors"
             />
           </div>
 
@@ -214,10 +214,10 @@ function LoginContent() {
       <div className="pt-2">
         <button
           onClick={() => setShowAdvanced(!showAdvanced)}
-          className="w-full flex items-center justify-between text-[11px] text-zinc-500 hover:text-zinc-300 py-1 transition-colors"
+          className="w-full flex items-center justify-between text-[11px] text-zinc-400 hover:text-zinc-200 py-1 transition-colors cursor-pointer"
         >
           <span className="flex items-center gap-1.5">
-            <Shield className="w-3.5 h-3.5 text-zinc-500" />
+            <Shield className="w-3.5 h-3.5 text-zinc-400" />
             <span>Enterprise Keycloak OIDC (PKCE S256)</span>
           </span>
           <ChevronDown
@@ -242,7 +242,7 @@ function LoginContent() {
       </div>
 
       {/* Footer Info */}
-      <div className="pt-4 border-t border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-500">
+      <div className="pt-4 border-t border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-400">
         <div className="flex items-center gap-1.5">
           <Shield className="w-3.5 h-3.5 text-emerald-400" />
           <span>Encrypted Session BFF</span>

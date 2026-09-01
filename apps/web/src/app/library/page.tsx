@@ -110,11 +110,11 @@ export default function LibraryPage() {
         {/* Media Grid */}
         {displayed.length === 0 ? (
           <div className="py-16 text-center rounded-2xl bg-zinc-900/20 border border-zinc-900 space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-zinc-600">
+            <div className="w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center mx-auto text-zinc-400">
               <FilmIcon className="w-6 h-6" />
             </div>
             <h3 className="text-sm font-bold text-zinc-200">Your Vault is Empty</h3>
-            <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+            <p className="text-xs text-zinc-400 max-w-sm mx-auto">
               Explore the canonical catalog to add movies and series to your personal media library.
             </p>
             <div className="pt-2">
@@ -159,7 +159,7 @@ export default function LibraryPage() {
                     <h4 className="text-xs font-bold text-zinc-100 group-hover:text-violet-400 transition-colors line-clamp-1">
                       {item.canonical_title}
                     </h4>
-                    <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-1">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-400 mt-1">
                       <span>{item.production_year}</span>
                     </div>
                   </Link>
@@ -176,7 +176,8 @@ export default function LibraryPage() {
                       onClick={() => removeMutation.mutate(item.title_id)}
                       disabled={removeMutation.isPending}
                       title="Remove from Library"
-                      className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
+                      aria-label="Remove from Library"
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

@@ -141,7 +141,7 @@ function CompatibilityModal({
                     </span>
                   ))
                 ) : (
-                  <span className="text-xs text-zinc-500 italic">No common genres watched yet</span>
+                  <span className="text-xs text-zinc-400 italic">No common genres watched yet</span>
                 )}
               </div>
             </div>
@@ -163,7 +163,7 @@ function CompatibilityModal({
                     </span>
                   ))
                 ) : (
-                  <span className="text-xs text-zinc-500 italic">No common directors in watch history</span>
+                  <span className="text-xs text-zinc-400 italic">No common directors in watch history</span>
                 )}
               </div>
             </div>
@@ -189,7 +189,7 @@ function CompatibilityModal({
             )}
           </div>
         ) : (
-          <p className="text-xs text-zinc-500 text-center py-4">Unable to compute compatibility profile.</p>
+          <p className="text-xs text-zinc-400 text-center py-4">Unable to compute compatibility profile.</p>
         )}
       </div>
     </div>
@@ -416,20 +416,20 @@ function CreatePickRoomModal({ onClose }: { onClose: () => void }) {
             Nominate Titles ({selected.length}/12, min 2)
           </label>
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search the catalog..."
-              className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500"
+              className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500"
             />
           </div>
 
           {debouncedQuery.trim().length >= 2 && (
             <div className="max-h-40 overflow-y-auto rounded-xl border border-zinc-800/80 divide-y divide-zinc-900">
               {isSearching ? (
-                <div className="p-3 text-xs text-zinc-500 text-center">Searching...</div>
+                <div className="p-3 text-xs text-zinc-400 text-center">Searching...</div>
               ) : searchResults && searchResults.items.length > 0 ? (
                 searchResults.items.map((t) => {
                   const isSelected = selected.some((c) => c.id === t.id);
@@ -447,12 +447,12 @@ function CreatePickRoomModal({ onClose }: { onClose: () => void }) {
                         {t.canonical_title}
                         {t.production_year ? ` (${t.production_year})` : ""}
                       </span>
-                      {isSelected ? <Check className="w-3.5 h-3.5 shrink-0" /> : <Plus className="w-3.5 h-3.5 shrink-0 text-zinc-500" />}
+                      {isSelected ? <Check className="w-3.5 h-3.5 shrink-0" /> : <Plus className="w-3.5 h-3.5 shrink-0 text-zinc-400" />}
                     </button>
                   );
                 })
               ) : (
-                <div className="p-3 text-xs text-zinc-500 text-center">No matches found</div>
+                <div className="p-3 text-xs text-zinc-400 text-center">No matches found</div>
               )}
             </div>
           )}
@@ -771,9 +771,9 @@ export default function SocialRecommendationsPage() {
               </div>
             ) : !leaderboard || leaderboard.entries.length === 0 ? (
               <div className="p-12 text-center rounded-2xl bg-zinc-900/40 border border-zinc-900 text-zinc-400 space-y-3">
-                <Trophy className="w-8 h-8 text-zinc-600 mx-auto" />
+                <Trophy className="w-8 h-8 text-zinc-500 mx-auto" />
                 <h3 className="text-sm font-semibold text-zinc-200">No Activity Recorded</h3>
-                <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+                <p className="text-xs text-zinc-400 max-w-sm mx-auto">
                   Watch movies and log watch events to climb the circle leaderboard!
                 </p>
               </div>
@@ -824,7 +824,7 @@ export default function SocialRecommendationsPage() {
                               </span>
                             )}
                           </div>
-                          <span className="text-[11px] text-zinc-500">
+                          <span className="text-[11px] text-zinc-400">
                             {entry.username ? `@${entry.username}` : "Member"}
                           </span>
                         </div>
@@ -837,7 +837,7 @@ export default function SocialRecommendationsPage() {
                             <Film className="w-3.5 h-3.5 text-violet-400" />
                             <span>{entry.watch_count}</span>
                           </div>
-                          <span className="text-[10px] text-zinc-500">
+                          <span className="text-[10px] text-zinc-400">
                             {entry.watch_count === 1 ? "title" : "titles"}
                           </span>
                         </div>
@@ -847,7 +847,7 @@ export default function SocialRecommendationsPage() {
                             <Clock className="w-3.5 h-3.5 text-emerald-400" />
                             <span>{entry.watch_hours.toFixed(1)}h</span>
                           </div>
-                          <span className="text-[10px] text-zinc-500">viewing</span>
+                          <span className="text-[10px] text-zinc-400">viewing</span>
                         </div>
                       </div>
                     </div>
@@ -859,9 +859,9 @@ export default function SocialRecommendationsPage() {
         ) : activeTab === "ai" ? (
           friendMatches.length === 0 ? (
             <div className="p-12 text-center rounded-2xl bg-zinc-900/40 border border-zinc-900 text-zinc-400 space-y-3">
-              <Users className="w-8 h-8 text-zinc-600 mx-auto" />
+              <Users className="w-8 h-8 text-zinc-500 mx-auto" />
               <h3 className="text-sm font-semibold text-zinc-200">No Friends Connected Yet</h3>
-              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
                 Add friends to CineVault to see your vector-based taste compatibility scores here.
               </p>
             </div>
@@ -883,7 +883,7 @@ export default function SocialRecommendationsPage() {
                         <p className="text-xs font-bold text-zinc-100 truncate group-hover:text-violet-300 transition-colors">
                           {friend.friend_name || "Unknown Member"}
                         </p>
-                        <p className="text-[10px] text-zinc-500">
+                        <p className="text-[10px] text-zinc-400">
                           {friend.friend_username ? `@${friend.friend_username}` : "Member"}
                         </p>
                       </div>
@@ -918,14 +918,14 @@ export default function SocialRecommendationsPage() {
         ) : filteredItems.length === 0 ? (
           <div className="p-12 text-center rounded-2xl bg-zinc-900/40 border border-zinc-900 text-zinc-400 space-y-3">
             {activeTab === "sent" ? (
-              <Send className="w-8 h-8 text-zinc-600 mx-auto" />
+              <Send className="w-8 h-8 text-zinc-500 mx-auto" />
             ) : (
-              <Inbox className="w-8 h-8 text-zinc-600 mx-auto" />
+              <Inbox className="w-8 h-8 text-zinc-500 mx-auto" />
             )}
             <h3 className="text-sm font-semibold text-zinc-200">
               {activeTab === "sent" ? "No Sent Recommendations Yet" : "Your Inbox Is Empty"}
             </h3>
-            <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+            <p className="text-xs text-zinc-400 max-w-sm mx-auto">
               {activeTab === "sent"
                 ? "Recommendations you dispatch to friends from movie detail pages will be tracked here."
                 : "Recommendations friends send you will show up here."}
@@ -968,7 +968,7 @@ export default function SocialRecommendationsPage() {
                           {isSent ? "To " : ""}
                           {otherPartyName || "Unknown Member"}
                         </h4>
-                        <span className="text-[11px] text-zinc-500">
+                        <span className="text-[11px] text-zinc-400">
                           {new Date(rec.sent_at).toLocaleString()}
                         </span>
                       </div>
@@ -1006,7 +1006,7 @@ export default function SocialRecommendationsPage() {
                         {rec.production_year && (
                           <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-0.5">
                             <span className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3 text-zinc-500" />
+                              <Calendar className="w-3 h-3 text-zinc-400" />
                               {rec.production_year}
                             </span>
                           </div>
@@ -1025,7 +1025,7 @@ export default function SocialRecommendationsPage() {
                       Only the recipient (inbox tab) drives transitions; sent-tab items are read-only. */}
                   <div className="flex items-center justify-between pt-1">
                     {rec.status === "REJECTED" ? (
-                      <div className="flex items-center gap-2 text-xs text-zinc-500">
+                      <div className="flex items-center gap-2 text-xs text-zinc-400">
                         <X className="w-4 h-4" />
                         <span>Recommendation Dismissed</span>
                       </div>
@@ -1084,7 +1084,7 @@ export default function SocialRecommendationsPage() {
                         </button>
                       </div>
                     ) : isSent ? (
-                      <div className="flex items-center gap-2 text-xs text-zinc-500">
+                      <div className="flex items-center gap-2 text-xs text-zinc-400">
                         <Users className="w-4 h-4" />
                         <span>Waiting on {otherPartyName || "your friend"}</span>
                       </div>

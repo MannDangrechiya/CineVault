@@ -54,21 +54,22 @@ export const CatalogFilterBar: React.FC<CatalogFilterBarProps> = ({
       {/* Single-row header: search, sort, advanced filters toggle */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[220px] max-w-xl">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-500">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-zinc-400">
             <Search className="w-4 h-4" />
           </div>
           <input
             id="catalog-search"
             type="text"
+            aria-label={searchPlaceholder || "Search catalog"}
             value={searchValue}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
-            className="w-full pl-10 pr-10 py-2.5 text-sm bg-zinc-900/60 border border-zinc-800/80 rounded-xl text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 transition-all"
+            className="w-full pl-10 pr-10 py-2.5 text-sm bg-zinc-900/60 border border-zinc-800/80 rounded-xl text-zinc-200 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 transition-all"
           />
           {searchValue && (
             <button
               onClick={() => onSearchChange("")}
-              className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
               aria-label="Clear search"
             >
               <X className="w-4 h-4" />

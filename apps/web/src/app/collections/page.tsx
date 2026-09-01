@@ -291,7 +291,7 @@ export default function CollectionsPage() {
                   placeholder="e.g. Neo-Tokyo Cyberpunk Canon"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 transition-colors"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 transition-colors"
                 />
               </div>
 
@@ -304,7 +304,7 @@ export default function CollectionsPage() {
                   placeholder="Brief synopsis or curation theme..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 transition-colors resize-none"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 transition-colors resize-none"
                 />
               </div>
 
@@ -317,7 +317,7 @@ export default function CollectionsPage() {
                   placeholder="Sci-Fi, 70mm, Dystopian"
                   value={tagsInput}
                   onChange={(e) => setTagsInput(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 transition-colors"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 transition-colors"
                 />
               </div>
 
@@ -327,10 +327,10 @@ export default function CollectionsPage() {
                 </label>
                 <input
                   type="url"
-                  placeholder="https://images.unsplash.com/..."
+                  placeholder="https://image.tmdb.org/t/p/original/..."
                   value={bannerUrl}
                   onChange={(e) => setBannerUrl(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-violet-500 transition-colors"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 transition-colors"
                 />
               </div>
 
@@ -341,16 +341,17 @@ export default function CollectionsPage() {
                     <p className="text-xs font-medium text-zinc-200">
                       Private Collection
                     </p>
-                    <p className="text-[10px] text-zinc-500">
+                    <p className="text-[10px] text-zinc-400">
                       Only visible to your account (CAT-2)
                     </p>
                   </div>
                 </div>
                 <input
                   type="checkbox"
+                  aria-label="Private Collection"
                   checked={isPrivate}
                   onChange={(e) => setIsPrivate(e.target.checked)}
-                  className="w-4 h-4 rounded accent-violet-600 bg-zinc-900 border-zinc-700"
+                  className="w-4 h-4 rounded accent-violet-600 bg-zinc-900 border-zinc-700 cursor-pointer"
                 />
               </div>
 

@@ -28,7 +28,7 @@ function FriendRow({ friend }: { friend: FriendshipItem }) {
           <p className="text-xs font-bold text-zinc-100 truncate">
             {friend.friend_name || "Community Member"}
           </p>
-          <p className="text-[10px] text-zinc-500">
+          <p className="text-[10px] text-zinc-400">
             {friend.friend_username ? `@${friend.friend_username}` : "Member"}
           </p>
         </div>
@@ -127,7 +127,7 @@ export default function FriendsPage() {
                       <p className="text-xs font-bold text-zinc-100 truncate">
                         {f.friend_name || "Community Member"} wants to connect
                       </p>
-                      <p className="text-[10px] text-zinc-500">
+                      <p className="text-[10px] text-zinc-400">
                         {f.friend_username ? `@${f.friend_username}` : "Member"}
                       </p>
                     </div>
@@ -176,7 +176,7 @@ export default function FriendsPage() {
                     <p className="text-xs font-bold text-zinc-300 truncate">
                       {f.friend_name || "Community Member"}
                     </p>
-                    <p className="text-[10px] text-zinc-500">Request sent, waiting on them</p>
+                    <p className="text-[10px] text-zinc-400">Request sent, waiting on them</p>
                   </div>
                 </div>
               ))}
@@ -192,9 +192,9 @@ export default function FriendsPage() {
           </h3>
           {accepted.length === 0 ? (
             <div className="p-12 text-center rounded-2xl bg-zinc-900/40 border border-zinc-900 text-zinc-400 space-y-3">
-              <Users className="w-8 h-8 text-zinc-600 mx-auto" />
+              <Users className="w-8 h-8 text-zinc-500 mx-auto" />
               <h3 className="text-sm font-semibold text-zinc-200">No Friends Yet</h3>
-              <p className="text-xs text-zinc-500 max-w-sm mx-auto">
+              <p className="text-xs text-zinc-400 max-w-sm mx-auto">
                 Share your invite link from the Social Hub to build your circle.
               </p>
             </div>

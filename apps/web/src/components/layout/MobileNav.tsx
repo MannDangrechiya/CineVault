@@ -63,6 +63,7 @@ export const MobileNav: React.FC = () => {
             <Link
               key={tab.name}
               href={tab.href}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
                 "flex flex-col items-center justify-center w-14 py-1 rounded-xl transition-colors text-[10px] font-medium gap-0.5",
                 isActive ? "text-violet-400 font-semibold" : "text-zinc-400 hover:text-zinc-200"
@@ -116,7 +117,7 @@ export const MobileNav: React.FC = () => {
               <button
                 onClick={() => setIsOpen(false)}
                 aria-label="Close menu"
-                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 cursor-pointer"
               >
                 <X className="w-5 h-5" aria-hidden="true" />
               </button>
@@ -141,7 +142,7 @@ export const MobileNav: React.FC = () => {
                         : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60"
                     )}
                   >
-                    <Icon className={cn("w-4 h-4", isActive ? "text-violet-400" : "text-zinc-500")} aria-hidden="true" />
+                    <Icon className={cn("w-4 h-4", isActive ? "text-violet-400" : "text-zinc-400")} aria-hidden="true" />
                     <span>{route.name}</span>
                   </Link>
                 );

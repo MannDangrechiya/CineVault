@@ -75,7 +75,7 @@ function SearchContent() {
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search titles, directors, genres, display IDs (e.g. Parasite, MOV-000001)..."
-            className="w-full pl-12 pr-12 py-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all shadow-xl shadow-black/40"
+            className="w-full pl-12 pr-12 py-3.5 rounded-2xl bg-zinc-900/60 border border-zinc-800 text-sm text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all shadow-xl shadow-black/40"
             autoFocus
           />
           {searchInput && (
@@ -139,13 +139,13 @@ function SearchContent() {
 
           {/* Suggested Quick Searches */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-zinc-500 font-medium hidden sm:inline">Popular:</span>
+            <span className="text-[11px] text-zinc-400 font-medium hidden sm:inline">Popular:</span>
             {QUICK_SEARCH_TAGS.slice(0, 5).map((tag) => (
               <button
                 key={tag}
                 type="button"
                 onClick={() => setSearchInput(tag)}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors"
+                className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
               >
                 {tag}
               </button>

@@ -117,7 +117,7 @@ export default function WatchlistPage() {
         {filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-12 text-center rounded-2xl bg-zinc-900/30 border border-zinc-900 backdrop-blur-md min-h-[280px]">
             <div className="w-12 h-12 rounded-2xl bg-zinc-900 flex items-center justify-center mb-4 border border-zinc-800">
-              <Bookmark className="w-6 h-6 text-zinc-500" />
+              <Bookmark className="w-6 h-6 text-zinc-400" />
             </div>
             <h3 className="text-base font-bold text-zinc-100 mb-1">No Titles in Watchlist</h3>
             <p className="text-xs sm:text-sm text-zinc-400 max-w-md mb-6 leading-relaxed">
@@ -174,9 +174,9 @@ export default function WatchlistPage() {
                       {item.title}
                     </Link>
 
-                    <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-1">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-400 mt-1">
                       <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-zinc-600" />
+                        <Calendar className="w-3 h-3 text-zinc-400" />
                         {item.year ?? "—"}
                       </span>
                       <span>{item.addedAt}</span>
@@ -197,7 +197,8 @@ export default function WatchlistPage() {
                       onClick={() => removeItem(item.titleId)}
                       disabled={removeMutation.isPending}
                       title="Remove from Watchlist"
-                      className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
+                      aria-label="Remove from Watchlist"
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-red-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

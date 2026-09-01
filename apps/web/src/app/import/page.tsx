@@ -292,7 +292,7 @@ export default function ImportPage() {
 
                 {/* Sample Presets */}
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-zinc-500 font-medium">Load Template:</span>
+                  <span className="text-[10px] text-zinc-400 font-medium">Load Template:</span>
                   <button
                     onClick={() => {
                       setRawText(SAMPLE_SAMSUNG_NOTES);
@@ -349,7 +349,7 @@ export default function ImportPage() {
                           ? `Selected: ${fileName}`
                           : "Click or drag & drop files here"}
                     </p>
-                    <p className="text-[11px] text-zinc-500 mt-1">
+                    <p className="text-[11px] text-zinc-400 mt-1">
                       Supports Letterboxd/Trakt CSV, Excel (.xlsx), CineVault JSON, plain text/notes, and PDFs
                     </p>
                   </div>
@@ -367,7 +367,7 @@ export default function ImportPage() {
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
                     <span>Paste Document Content or Unstructured Notes:</span>
-                    <span className="text-[10px] text-zinc-500 font-mono">
+                    <span className="text-[10px] text-zinc-400 font-mono">
                       {rawText.split("\n").filter((l) => l.trim().length > 0).length} lines detected
                     </span>
                   </label>
@@ -499,7 +499,7 @@ export default function ImportPage() {
                 <h4 className="text-xs font-bold text-zinc-200 uppercase tracking-wider">
                   Parsed Records Preview ({parsedItems.length})
                 </h4>
-                <span className="text-[11px] text-zinc-500">Click title to disambiguate</span>
+                <span className="text-[11px] text-zinc-400">Click title to disambiguate</span>
               </div>
 
               <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
@@ -538,14 +538,14 @@ export default function ImportPage() {
                               {item.canonical_title}
                             </span>
                             {item.production_year && (
-                              <span className="text-[10px] text-zinc-500">({item.production_year})</span>
+                              <span className="text-[10px] text-zinc-400">({item.production_year})</span>
                             )}
                           </div>
                           <div className="flex items-center gap-2 text-[10px] text-zinc-400">
                             {item.rating_value && (
                               <span className="text-amber-400 font-semibold">★ {item.rating_value}/5</span>
                             )}
-                            {item.notes && <span className="text-zinc-500 truncate max-w-xs">{item.notes}</span>}
+                            {item.notes && <span className="text-zinc-400 truncate max-w-xs">{item.notes}</span>}
                           </div>
                         </div>
                       </div>
@@ -662,15 +662,15 @@ export default function ImportPage() {
               {/* Progress Summary Card */}
               <div className="p-4 rounded-2xl bg-zinc-950/80 border border-zinc-850 grid grid-cols-3 gap-4 text-center">
                 <div>
-                  <p className="text-[10px] text-zinc-500 uppercase">Records Applied</p>
+                  <p className="text-[10px] text-zinc-400 uppercase">Records Applied</p>
                   <p className="text-lg font-bold text-emerald-400">{applyResult.applied_count}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-zinc-500 uppercase">Conflicts Handled</p>
+                  <p className="text-[10px] text-zinc-400 uppercase">Conflicts Handled</p>
                   <p className="text-lg font-bold text-zinc-200">{applyResult.conflicts_resolved}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-zinc-500 uppercase">Strategy</p>
+                  <p className="text-[10px] text-zinc-400 uppercase">Strategy</p>
                   <p className="text-xs font-bold text-violet-400 mt-1">{applyResult.strategy_applied}</p>
                 </div>
               </div>
@@ -747,7 +747,7 @@ export default function ImportPage() {
                             <p className="text-xs font-bold text-zinc-100 group-hover:text-violet-300">
                               {cand.canonical_title} {cand.production_year ? `(${cand.production_year})` : ""}
                             </p>
-                            <p className="text-[10px] text-zinc-500">
+                            <p className="text-[10px] text-zinc-400">
                               {cand.content_type?.toUpperCase()} • {cand.display_id || cand.title_id.slice(0, 8)}
                             </p>
                           </div>

@@ -185,7 +185,7 @@ export default function GroupPickRoomPage() {
               placeholder="e.g. Alex (Guest)"
               value={guestName}
               onChange={(e) => setGuestName(e.target.value)}
-              className="w-full sm:w-64 px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-violet-500"
+              className="w-full sm:w-64 px-3 py-1.5 rounded-xl bg-zinc-950 border border-zinc-800 text-xs text-zinc-200 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500"
             />
           </div>
         )}
@@ -194,7 +194,7 @@ export default function GroupPickRoomPage() {
         <div className="space-y-3">
           <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-2">
             <span>Nominated Titles ({room.candidates.length})</span>
-            <span className="text-[10px] lowercase text-zinc-500 font-normal">
+            <span className="text-[10px] lowercase text-zinc-400 font-normal">
               (click upvote on all you want to watch)
             </span>
           </h3>
@@ -278,7 +278,7 @@ export default function GroupPickRoomPage() {
 
                     {/* Voters list */}
                     {cand.voter_names.length > 0 && (
-                      <div className="pt-2 text-[10px] text-zinc-500 truncate">
+                      <div className="pt-2 text-[10px] text-zinc-400 truncate">
                         Voted by: {cand.voter_names.join(", ")}
                       </div>
                     )}

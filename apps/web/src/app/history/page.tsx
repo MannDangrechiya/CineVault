@@ -215,7 +215,7 @@ export default function HistoryPage() {
                           </span>
                         )}
                         {item.production_year && (
-                          <span className="text-[11px] text-zinc-500">
+                          <span className="text-[11px] text-zinc-400">
                             ({item.production_year})
                           </span>
                         )}
@@ -227,9 +227,9 @@ export default function HistoryPage() {
                         </p>
                       )}
 
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-400">
                         <span className="flex items-center gap-1 text-zinc-400">
-                          <Calendar className="w-3 h-3 text-zinc-500" />
+                          <Calendar className="w-3 h-3 text-zinc-400" />
                           {formatDate(item.watched_at)}
                         </span>
                         {item.device_type && (
@@ -271,7 +271,8 @@ export default function HistoryPage() {
                       onClick={() => deleteMutation.mutate(item.id)}
                       disabled={isDeleting}
                       title="Remove watch event"
-                      className="p-2 rounded-xl text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                      aria-label="Remove watch event"
+                      className="p-2 rounded-xl text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

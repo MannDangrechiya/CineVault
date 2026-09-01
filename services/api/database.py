@@ -39,6 +39,17 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False
 )
 
+def is_db_available() -> bool:
+    """Fast probe of PgBouncer/Postgres connectivity."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.2)
+        result = sock.connect_ex((config.pgbouncer_host, config.pgbouncer_port))
+        sock.close()
+        return result == 0
+    except Exception:
+        return False
+
 async def get_db() -> AsyncGenerator[Optional[AsyncSession], None]:
     """Dependency for providing asynchronous database session per request.
 
@@ -49,24 +60,44 @@ async def get_db() -> AsyncGenerator[Optional[AsyncSession], None]:
     failure raises a real 503 so production/staging outages surface as errors
     instead of silently masquerading as empty or fabricated data.
     """
-    try:
-        async with AsyncSessionLocal() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-    except (socket.error, OSError) as e:
+    if not is_db_available():
         if config.allow_seed_fallback:
-            logger.warning(f"Database connection unavailable, falling back to seed repository: {e}")
+            logger.warning("Database connection unavailable, falling back to seed repository.")
             yield None
+            return
         else:
-            logger.error(f"Database connection unavailable: {e}")
+            logger.error("Database connection unavailable")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Database connection unavailable",
             )
+
+    has_yielded = False
+    try:
+        async with AsyncSessionLocal() as session:
+            has_yielded = True
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+                raise
+    except (socket.error, OSError) as e:
+        if not has_yielded:
+            if config.allow_seed_fallback:
+                logger.warning(f"Database connection unavailable, falling back to seed repository: {e}")
+                yield None
+            else:
+                logger.error(f"Database connection unavailable: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Database connection unavailable",
+                )
+        else:
+            raise
 
 class DatabaseManager:
     """Manages PgBouncer connection pool checks and health status."""

@@ -30,11 +30,11 @@ async function runSocialMultiplayerTests() {
 
   async function loginUser(page, userBtnText) {
     await page.goto('http://localhost:3000/login', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(1000);
     const btn = page.locator(`button:has-text("${userBtnText}")`);
     await btn.waitFor({ state: 'visible', timeout: 15000 });
-    await page.waitForTimeout(1200);
     await btn.click();
-    await page.waitForURL('**/dashboard', { timeout: 25000, waitUntil: 'domcontentloaded' });
+    await page.waitForURL('**/dashboard', { timeout: 20000, waitUntil: 'domcontentloaded' });
     await page.waitForSelector('header', { timeout: 20000 });
   }
 
@@ -167,7 +167,7 @@ async function runSocialMultiplayerTests() {
 
     const clubName = `Cinema Guild ${Date.now().toString().slice(-4)}`;
     console.log(`Dev creating Watch Club "${clubName}"...`);
-    const createClubBtn = pageDev.locator('button:has-text("Create Watch Club")').first();
+    const createClubBtn = pageDev.locator('button:has-text("Create Watch Club"), button:has-text("Create Your First Watch Club")').first();
     await createClubBtn.waitFor({ state: 'visible', timeout: 10000 });
     await createClubBtn.click();
     await pageDev.waitForSelector('input[placeholder="e.g. Midnight Cyberpunk Collective"]', { timeout: 10000 });
@@ -257,12 +257,19 @@ async function runSocialMultiplayerTests() {
 
     // Search and nominate 2 titles from search results
     const titleSearchInput = pageDev.locator('div.fixed.z-50 input[placeholder="Search the catalog..."]');
-    await titleSearchInput.fill('Matrix');
-    await pageDev.waitForSelector('div.fixed.z-50 div.max-h-40 button', { timeout: 10000 });
-    const candidates = pageDev.locator('div.fixed.z-50 div.max-h-40 button');
-    await candidates.nth(0).click();
+    
+    // Nominate Title 1: Inception
+    await titleSearchInput.fill('Inception');
+    await pageDev.waitForTimeout(600);
+    await pageDev.waitForSelector('div.fixed.z-50 div.max-h-40 button:has-text("Inception")', { timeout: 10000 });
+    await pageDev.locator('div.fixed.z-50 div.max-h-40 button:has-text("Inception")').click();
     await pageDev.waitForTimeout(500);
-    await candidates.nth(1).click();
+
+    // Nominate Title 2: Parasite
+    await titleSearchInput.fill('Parasite');
+    await pageDev.waitForTimeout(600);
+    await pageDev.waitForSelector('div.fixed.z-50 div.max-h-40 button:has-text("Parasite")', { timeout: 10000 });
+    await pageDev.locator('div.fixed.z-50 div.max-h-40 button:has-text("Parasite")').click();
     await pageDev.waitForTimeout(500);
 
     // Wait until button is enabled

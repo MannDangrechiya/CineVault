@@ -33,7 +33,7 @@ export const Sidebar: React.FC = () => {
       {/* Main Navigation List */}
       <nav aria-label="Sidebar Navigation" className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         <div className="px-3 mb-2">
-          <span className="text-[10px] font-medium tracking-wider text-zinc-500 uppercase" aria-hidden="true">
+          <span className="text-[10px] font-medium tracking-wider text-zinc-400 uppercase" aria-hidden="true">
             Navigation
           </span>
         </div>
@@ -59,7 +59,7 @@ export const Sidebar: React.FC = () => {
                   aria-hidden="true"
                   className={cn(
                     "w-4 h-4 transition-colors",
-                    isActive ? "text-violet-400" : "text-zinc-500 group-hover:text-zinc-300"
+                    isActive ? "text-violet-400" : "text-zinc-400 group-hover:text-zinc-200"
                   )}
                 />
                 <span>{item.name}</span>
@@ -85,7 +85,7 @@ export const Sidebar: React.FC = () => {
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true" />
           <span className="text-[11px] text-zinc-300">CineVault Engine Active</span>
         </div>
-        <p className="text-[10px] text-zinc-500 mt-1">OLED Cinematic Edition</p>
+        <p className="text-[10px] text-zinc-400 mt-1">OLED Cinematic Edition</p>
       </div>
     </aside>
   );

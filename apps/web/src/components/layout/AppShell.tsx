@@ -31,9 +31,9 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
           </div>
           
           {/* Credits Footer */}
-          <footer className="w-full text-center py-8 mt-12 border-t border-white/5 text-sm text-zinc-500">
+          <footer className="w-full text-center py-8 mt-12 border-t border-white/5 text-sm text-zinc-400">
             <p>
-              Designed and built by <span className="text-zinc-300 font-medium">Mann Dangrechiya</span>
+              Designed and built by <span className="text-zinc-200 font-medium">Mann Dangrechiya</span>
             </p>
           </footer>
         </main>

@@ -86,3 +86,7 @@ roster-backups/
 # E2E Test Outputs
 apps/web/e2e/screenshots/
 apps/web/e2e/results_*.json
+apps/web/playwright-report/
+apps/web/test-results/
+playwright-report/
+test-results/

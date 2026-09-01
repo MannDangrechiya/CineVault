@@ -151,7 +151,7 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <h4 className="text-xs font-semibold text-zinc-200">Active Theme Mode</h4>
-              <p className="text-[11px] text-zinc-500">True OLED Black with violet & emerald accents</p>
+              <p className="text-[11px] text-zinc-400">True OLED Black with violet & emerald accents</p>
             </div>
             <span className="px-3 py-1 text-xs font-semibold text-violet-300 bg-violet-600/15 border border-violet-500/30 rounded-full">
               Cinematic OLED (#09090B)
@@ -168,11 +168,11 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
             <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-900 space-y-1">
-              <span className="text-zinc-500 text-[10px] uppercase">Embedding Dimension</span>
+              <span className="text-zinc-400 text-[10px] uppercase">Embedding Dimension</span>
               <p className="text-zinc-200 font-mono font-bold">384-dim (all-MiniLM-L6-v2)</p>
             </div>
             <div className="p-4 rounded-xl bg-zinc-950/60 border border-zinc-900 space-y-1">
-              <span className="text-zinc-500 text-[10px] uppercase">Vector Similarity Index</span>
+              <span className="text-zinc-400 text-[10px] uppercase">Vector Similarity Index</span>
               <p className="text-emerald-400 font-mono font-bold">pgvector Cosine Distance</p>
             </div>
           </div>

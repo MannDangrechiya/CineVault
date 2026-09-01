@@ -104,7 +104,7 @@ export default function InvitePreviewPage() {
                     </span>
                   ))
                 ) : (
-                  <span className="text-[11px] text-zinc-500">General Cinema</span>
+                  <span className="text-[11px] text-zinc-400">General Cinema</span>
                 )}
               </div>
             </div>
@@ -122,7 +122,7 @@ export default function InvitePreviewPage() {
                     </p>
                   ))
                 ) : (
-                  <span className="text-[11px] text-zinc-500">Catalog explorer</span>
+                  <span className="text-[11px] text-zinc-400">Catalog explorer</span>
                 )}
               </div>
             </div>

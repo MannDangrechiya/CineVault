@@ -210,7 +210,7 @@ export default function OraclePage() {
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
                           {msg.sender === "user" ? "You" : "CineVault Oracle"}
                         </span>
-                        <span className="text-[10px] text-zinc-500">{msg.timestamp}</span>
+                        <span className="text-[10px] text-zinc-400">{msg.timestamp}</span>
                       </div>
 
                       <p className="text-xs sm:text-sm leading-relaxed whitespace-pre-wrap">
@@ -418,7 +418,7 @@ export default function OraclePage() {
               <div className="space-y-3">
                 <label className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
                   <span>Select Friends to Include ({selectedFriendIds.length} selected)</span>
-                  <span className="text-[11px] text-zinc-500">Accepted friendships required</span>
+                  <span className="text-[11px] text-zinc-400">Accepted friendships required</span>
                 </label>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
