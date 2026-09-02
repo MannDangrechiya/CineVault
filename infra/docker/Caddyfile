@@ -48,6 +48,12 @@
     # scripts, external image hosts like TMDB/CDN_BASE_URL) before shipping,
     # or it will break the app it's supposed to protect. Tracked as separate
     # follow-up work, not silently dropped.
+    #
+    # R1 hardening pass: the CDN hostname is no longer hardcoded anywhere in
+    # apps/web (see next.config.ts / lib/media.ts) — when a CSP is added, its
+    # img-src should reference {$CDN_HOSTNAME}, the same Caddy env-var
+    # templating already used for the site blocks below, not a literal
+    # domain. That unblocks the CSP work started here, it does not finish it.
 
     # 1. API & Backend Service Routes -> FastAPI
     handle /v1/* {
@@ -86,6 +92,36 @@
         }
     }
 
+    # R1 hardening pass: services/api/routers/{jobs,performance,observability}.py
+    # only check that an X-Service-Identity header is present and non-empty —
+    # that is NOT cryptographic authentication, it's trivially spoofable by
+    # anyone on the public internet setting the same header themselves.
+    # Nothing outside this Docker network legitimately calls these three
+    # route groups (verified: no caller anywhere in the repo reaches them
+    # over HTTP). A future internal caller can reach fastapi-backend:8000
+    # directly over the internal network without going through this public
+    # proxy at all, so blocking them here costs nothing. Placed before the
+    # general /internal/* handler below since Caddy's `handle` matches in
+    # file order. Real service-to-service auth for these three routers is
+    # tracked as follow-up work — this only closes the public-edge exposure.
+    handle /internal/v1/jobs/* {
+        respond 404
+    }
+
+    handle /internal/v1/performance/* {
+        respond 404
+    }
+
+    handle /internal/v1/observability/* {
+        respond 404
+    }
+
+    # Everything else under /internal/* (ingestion, reconciliation,
+    # control-room curation, AI proposal review, artwork upload) requires a
+    # real Keycloak-issued JWT with Curator/SystemAdmin role (see
+    # services/api/auth/dependencies.py's require_curator/require_system_admin)
+    # — safe to keep public; the mobile app's Control Room screens depend on
+    # reaching these routes through this domain.
     handle /internal/* {
         reverse_proxy fastapi-backend:8000 {
             header_up Host {host}
@@ -99,10 +135,22 @@
         reverse_proxy fastapi-backend:8000
     }
 
+    # R1 hardening pass: /metrics (services/api/routers/metrics.py) is
+    # Prometheus text-format output with zero authentication, and unlike the
+    # dev stack, this production Compose file ships no Prometheus scraper
+    # that would need it reachable here — nothing legitimate consumes this
+    # publicly today. Blocked at the edge; an internal scraper, if one is
+    # added later, can reach fastapi-backend:8000/metrics directly over the
+    # Docker network without needing this public route reopened.
     handle /metrics* {
-        reverse_proxy fastapi-backend:8000
+        respond 404
     }
 
+    # /docs, /redoc, and /openapi.json are already gated by DOCS_ENABLED
+    # (docker-compose.prod.yml sets it to "false" in production, and
+    # services/api/main.py registers no route at all for these paths when
+    # it's false) — FastAPI itself 404s here in production, so no additional
+    # edge-level block is needed on top of that app-level control.
     handle /docs* {
         reverse_proxy fastapi-backend:8000
     }

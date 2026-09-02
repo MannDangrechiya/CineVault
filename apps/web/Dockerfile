@@ -25,6 +25,27 @@ ENV NODE_ENV=production
 # CI/local `npm run build` path since that never sets it.
 ENV BUILD_STANDALONE=true
 
+# CDN_HOSTNAME must be known at BUILD time, not just container-runtime start.
+# Verified against the actual built image (R1 hardening pass): Next.js
+# resolves next.config.ts's `images.remotePatterns` during `next build` and
+# freezes the result into .next/required-server-files.json — the standalone
+# server.js loads that frozen JSON at boot, it does not re-read
+# process.env.CDN_HOSTNAME at that point. (Confirmed by building once with
+# CDN_HOSTNAME unset, then starting that image with a *different*
+# CDN_HOSTNAME at `docker run` time: the image optimizer still enforced the
+# build-time value, not the runtime one.) NEXT_PUBLIC_CDN_HOSTNAME is
+# separately required because it's inlined into the client JS bundle
+# (apps/web/src/lib/media.ts) — same build-time constraint, different
+# mechanism. Both are set from the one ARG below; passed from
+# docker-compose.prod.yml's `build.args`, which reads the same CDN_HOSTNAME
+# the rest of the stack uses. Optional: unset, `next build` still succeeds
+# (see next.config.ts's unroutable placeholder fallback) — it just means
+# production would silently reject real CDN images, which is caught instead
+# by CDN_HOSTNAME being a required (":?") build arg in docker-compose.prod.yml.
+ARG CDN_HOSTNAME
+ENV CDN_HOSTNAME=${CDN_HOSTNAME}
+ENV NEXT_PUBLIC_CDN_HOSTNAME=${CDN_HOSTNAME}
+
 RUN npm run build
 
 # Stage 3: Production Runner

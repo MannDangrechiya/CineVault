@@ -4,6 +4,16 @@
 export const TMDB_POSTER_BASE = "https://image.tmdb.org/t/p/w500";
 export const TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";
 
+// This module is imported by "use client" components (MediaPoster/
+// MediaBackdrop), so only a NEXT_PUBLIC_-prefixed var is visible here — it's
+// inlined into the client bundle at build time, unlike next.config.ts's
+// server-only CDN_HOSTNAME which the standalone server re-reads at runtime
+// start. See apps/web/Dockerfile (build ARG) and docker-compose.prod.yml
+// (nextjs-web build.args) for how the real value reaches this build. Left
+// undefined, the HTTP->HTTPS upgrade below simply never matches a CDN host —
+// a safe no-op, not a hardcoded domain.
+const CDN_HOSTNAME = process.env.NEXT_PUBLIC_CDN_HOSTNAME;
+
 export type MediaType = "poster" | "backdrop" | "avatar";
 
 /**
@@ -47,7 +57,7 @@ export function resolveMediaUrl(
         parsed.protocol === "http:" &&
         (parsed.hostname === "image.tmdb.org" ||
           parsed.hostname === "m.media-amazon.com" ||
-          parsed.hostname === "cdn.cinevault.org")
+          (!!CDN_HOSTNAME && parsed.hostname === CDN_HOSTNAME))
       ) {
         return `https://${parsed.host}${parsed.pathname}${parsed.search}`;
       }

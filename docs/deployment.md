@@ -81,8 +81,9 @@ CDN_HOSTNAME=cdn.cinevault.yourdomain.com
 S3_ACCESS_KEY_ID=<GENERATE_STRONG_ACCESS_KEY_HERE>
 S3_SECRET_ACCESS_KEY=<GENERATE_STRONG_SECRET_KEY_HERE>
 S3_ARTWORK_BUCKET=cinevault-artwork
+SESSION_SECRET=<GENERATE_64_CHAR_RANDOM_STRING_HERE>
 ```
-`CORS_ALLOWED_ORIGINS` and `CDN_BASE_URL` are no longer set by hand — `docker-compose.prod.yml` derives both from `SITE_ADDRESS`/`CDN_HOSTNAME` automatically. `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` double as both the self-hosted MinIO service's root credentials and the app's S3 client credentials — generate them the same way you'd generate any other strong password, they aren't tied to a real AWS account.
+`CORS_ALLOWED_ORIGINS` and `CDN_BASE_URL` are no longer set by hand — `docker-compose.prod.yml` derives both from `SITE_ADDRESS`/`CDN_HOSTNAME` automatically. `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` double as both the self-hosted MinIO service's root credentials and the app's S3 client credentials — generate them the same way you'd generate any other strong password, they aren't tied to a real AWS account. `SESSION_SECRET` signs/encrypts the Next.js BFF session cookie (`apps/web/src/lib/auth/session.ts`) — generate it the same way as `JWT_SECRET_KEY` (e.g. `openssl rand -base64 48`); the web container now refuses to boot without it (`apps/web/src/instrumentation.ts`). `CDN_HOSTNAME` also now reaches the web image twice: once as a build-time arg (`NEXT_PUBLIC_CDN_HOSTNAME`, inlined into the client bundle — see `apps/web/Dockerfile`) and once as a container-runtime env var (read by `next.config.ts` when the standalone server starts) — both are derived automatically from the same `CDN_HOSTNAME` in `docker-compose.prod.yml`, nothing extra to set by hand.
 
 ### Step 3: Launch Production Stack
 On Linux / macOS:

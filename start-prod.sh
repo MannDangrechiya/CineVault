@@ -77,7 +77,12 @@ echo -e "${GREEN}      CineVault OS Production Deployment Active!     ${NC}"
 echo -e "${GREEN}======================================================${NC}"
 echo -e "  🌐 Web Application:       http://localhost"
 echo -e "  🚀 Core REST API:         http://localhost/v1"
-echo -e "  📚 OpenAPI Documentation: http://localhost/docs"
-echo -e "  🐰 RabbitMQ Management:   http://localhost:15672"
-echo -e "  🐘 PgBouncer Pooler:      localhost:6432"
+echo -e "  📚 OpenAPI Documentation: http://localhost/docs (only if DOCS_ENABLED=true)"
+# R1 hardening pass: removed the RabbitMQ Management (15672) and PgBouncer
+# (6432) lines that used to print here — neither port is actually published
+# by docker-compose.prod.yml (RabbitMQ mgmt never was; PgBouncer's host
+# mapping was removed as part of this pass, see that file's pgbouncer
+# service comment). Both services remain reachable from other containers on
+# the internal Docker network; this banner only advertises what's actually
+# reachable from the host/browser.
 echo -e "${GREEN}======================================================${NC}"

@@ -4,8 +4,19 @@
 from typing import Optional
 from urllib.parse import urlparse
 
+from .config import config
+
 TMDB_POSTER_BASE_URL = "https://image.tmdb.org/t/p/w500"
 TMDB_BACKDROP_BASE_URL = "https://image.tmdb.org/t/p/w1280"
+
+# R1 hardening pass: this used to hardcode "cdn.cinevault.org" below, which
+# only ever matched CineVault's own placeholder domain and never a real
+# deployment's actual CDN host. Derived instead from CDN_BASE_URL (config.py),
+# which docker-compose.prod.yml already sets from CDN_HOSTNAME — same fix
+# pattern as apps/web's next.config.ts / lib/media.ts. Empty in the unlikely
+# case CDN_BASE_URL has no host, which just means this upgrade never matches
+# (safe no-op, not an error).
+_CDN_HOSTNAME = urlparse(config.cdn_base_url).netloc
 
 
 def normalize_media_url(
@@ -46,7 +57,7 @@ def normalize_media_url(
                 return None
             
             # Upgrade insecure HTTP for known secure CDNs
-            if parsed.scheme == "http" and parsed.netloc in ("image.tmdb.org", "m.media-amazon.com", "cdn.cinevault.org"):
+            if parsed.scheme == "http" and parsed.netloc in ("image.tmdb.org", "m.media-amazon.com", _CDN_HOSTNAME):
                 clean_url = "https://" + clean_url[7:]
             return clean_url
         except Exception:

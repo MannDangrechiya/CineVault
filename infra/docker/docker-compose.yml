@@ -3,6 +3,17 @@
 
 version: '3.8'
 
+# R1 hardening pass: pairs with docker-compose.prod.yml's `name:
+# cinevault-prod` — see that file's comment for why this matters (dev/prod
+# share this directory and, without an explicit name, would derive the same
+# default project/network name). This codifies what was already true
+# operationally: the currently-running dev stack is already the
+# `cinevault-dev` project (confirmed via `docker compose ls` before this
+# change), so this addition does not rename, recreate, or restart anything
+# — it just makes that name permanent instead of relying on `-p cinevault-dev`
+# being typed by hand every time.
+name: cinevault-dev
+
 services:
   # 1. Database: PostgreSQL 16 with pgvector
   postgres:
