@@ -17,6 +17,13 @@ COPY apps/web ./
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# next.config.ts only emits the standalone server (.next/standalone) when this
+# is "true" (see apps/web/next.config.ts) — added so plain `npm run build`
+# (CI/local) stays non-standalone, but never set here, so this image's build
+# always produced a `.next` directory with no `standalone/` subfolder for the
+# runner stage's COPY below to find. Production-build-only: harmless for the
+# CI/local `npm run build` path since that never sets it.
+ENV BUILD_STANDALONE=true
 
 RUN npm run build
 
