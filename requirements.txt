@@ -52,3 +52,15 @@ python-multipart==0.0.32
 # Text-layer extraction for the PDF import endpoint. Was previously only an
 # incidental transitive dependency and never pinned directly.
 pypdf==6.14.2
+# services/api/personal/export_service.py does `import openpyxl` directly
+# for the XLSX export format — missing from this file even on master, same
+# class of gap as redis above but far more severe: main.py imports every
+# router unconditionally at module load (routers/personal.py ->
+# repositories/personal.py -> export_service.py), so a container built from
+# requirements.txt alone would fail to import the app at all and never
+# start — confirmed live: booting the real built image against real
+# Postgres/Valkey/RabbitMQ raised ModuleNotFoundError: No module named
+# 'openpyxl' before the app could even construct. Only worked in this dev
+# environment because it's installed here as a transitive dependency of
+# something else in the shared venv.
+openpyxl==3.1.5
