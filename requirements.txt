@@ -1,37 +1,54 @@
-fastapi>=0.100.0
+# Pinned to exact versions (not >=) as of 2026-09-01 — R1 fix. requirements.txt
+# was previously entirely open-ended (fastapi>=0.100.0 etc.), meaning the same
+# Dockerfile could resolve different dependency versions on different build
+# dates with no way to reproduce a past build. Pinned to whatever this
+# project's dev environment actually has installed and verified working
+# (backend boots, health checks pass, test suite passes) rather than guessed.
+# To upgrade a package: bump its pin here, reinstall, re-run the test suite,
+# then commit — don't hand-edit a version without verifying it still works.
+fastapi==0.141.1
 # [standard] pulls in watchfiles (reliable file-watching reload backend) +
 # httptools/websockets. Without it, --reload silently falls back to Python's
 # polling-based StatReload, which is the root cause of the "Reloading..." but
 # never-actually-reloads flakiness seen on this machine — see
 # WEB_FEATURE_AUDIT.md "uvicorn --reload has been flaky" note.
-uvicorn[standard]>=0.22.0
-pydantic>=2.0.0
-sqlalchemy>=2.0.0
-asyncpg>=0.28.0
-httpx>=0.24.0
-pytest>=7.0.0
-openai>=1.0.0
-google-genai>=2.0.0
-pyyaml>=6.0
+uvicorn[standard]==0.52.1
+pydantic==2.13.4
+sqlalchemy==2.0.51
+asyncpg==0.31.0
+# services/api/valkey.py (and, as of the R1 rate-limiter rewrite,
+# rate_limiter.py) does `import redis` directly — this was missing from
+# this file even on master. Not caught locally because this dev environment
+# already has it installed as ai_worker's transitive dependency (shared
+# venv), but a real Docker build from THIS file alone would silently import
+# nothing, set REDIS_AVAILABLE=False, and every Valkey-backed feature
+# (caching, idempotency checks, and now distributed rate limiting) would
+# silently degrade to unavailable/per-process fallback in production.
+redis==8.1.0
+httpx==0.28.1
+pytest==9.1.1
+openai==2.53.0
+google-genai==2.17.0
+pyyaml==6.0.3
 # Loads the root .env file into the process environment (services/api/config.py)
 # — was previously only present as an incidental transitive dependency of
 # other packages and never actually invoked anywhere.
-python-dotenv>=1.0.0
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-boto3>=1.34.0
+python-dotenv==1.2.1
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
+boto3==1.43.67
 # Deterministic, offline transliteration for multilingual identity matching
 # (Day 1-7 remediation, Batch 4). No network calls, pure Python.
-Unidecode>=1.3.0
-pgvector>=0.2.0
+Unidecode==1.4.0
+pgvector==0.5.0
 # Self-hosted 384-dim sentence embeddings (all-MiniLM-L6-v2) for the taste-
 # profile vector — replaces the local-Ollama dependency, no external API,
 # no network call after the first model download.
-sentence-transformers>=2.7.0
+sentence-transformers==6.0.0
 # Required by FastAPI's UploadFile/File(...) dependency (personal.py's PDF
 # import endpoint) — without it, the app fails to even import, not just to
 # handle uploads.
-python-multipart>=0.0.9
+python-multipart==0.0.32
 # Text-layer extraction for the PDF import endpoint. Was previously only an
 # incidental transitive dependency and never pinned directly.
-pypdf>=4.0.0
+pypdf==6.14.2
