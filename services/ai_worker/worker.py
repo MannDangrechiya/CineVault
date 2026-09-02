@@ -44,6 +44,25 @@ celery_app.conf.update(
     task_time_limit=300,  # 5 minutes max per task
     task_soft_time_limit=240,
     broker_connection_retry_on_startup=True,
+    # R1 fix: rabbitmq:4-management-alpine (this project's broker image, in
+    # both dev and prod compose) deprecated the legacy "transient_nonexcl_
+    # queues" feature that Celery's pidbox (remote control: revoke/ping/
+    # shutdown broadcasts) and mingle (peer-discovery "hello" on startup,
+    # which internally also goes through pidbox) both declare on connect.
+    # Confirmed live: without this, the worker crash-loops immediately
+    # (RestartFreqExceeded) against a real RabbitMQ 4.x broker — this was
+    # never caught before because docker-compose.prod.yml's ai-worker
+    # service had never actually been run end-to-end until this
+    # investigation. Disabling remote control here (combined with
+    # --without-mingle --without-gossip --without-heartbeat on the worker
+    # command in the Dockerfile) avoids the broken queue declaration
+    # entirely. Trade-off: this worker no longer responds to
+    # `celery inspect`/`celery control` broadcasts (ping, revoke, etc.) —
+    # acceptable for this single-worker deployment; if broadcast control is
+    # needed later, it requires either a RabbitMQ config change (re-permit
+    # the deprecated feature — not recommended, it's being removed) or a
+    # kombu/celery upgrade that stops using this legacy declaration.
+    worker_enable_remote_control=False,
 )
 
 
