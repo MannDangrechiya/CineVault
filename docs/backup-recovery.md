@@ -138,7 +138,7 @@ Expected output:
 ---
 
 ## 5. Forward-Only Migration Rollback Strategy
-Flyway migrations in CineVault are strictly **forward-only** (e.g. `V1.0` through `V3.7`).
+Flyway migrations in CineVault are strictly **forward-only** (`V1.0` through the current latest — check `db/migrations/` for the actual highest version, currently `V3.8`; don't rely on this number staying accurate as new migrations land).
 
 If a bad migration occurs in production:
 1. **Do not attempt manual reverse DDL on live tables.**
