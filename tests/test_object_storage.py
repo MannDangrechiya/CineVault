@@ -17,6 +17,7 @@ client = TestClient(app)
 # trusted from the caller-declared content_type.
 _REAL_JPEG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * 16
 _REAL_PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+_REAL_WEBP_BYTES = b"RIFF\x24\x00\x00\x00WEBPVP8 " + b"\x00" * 16
 
 
 def test_object_storage_upload_dev_mode(tmp_path):
@@ -149,3 +150,88 @@ def test_internal_artwork_upload_endpoint_rejects_fake_image():
 
     response = client.post("/internal/v1/artwork/upload", json=payload, headers=headers)
     assert response.status_code == 400
+
+
+def test_object_storage_accepts_valid_extensions(tmp_path):
+    adapter = LocalArtworkStorageAdapter(artwork_path=str(tmp_path))
+
+    # .jpg with JPEG
+    url_jpg = adapter.upload_artwork(file_bytes=_REAL_JPEG_BYTES, filename="poster1.jpg")
+    assert "poster1.jpg" in url_jpg
+
+    # .jpeg with JPEG
+    url_jpeg = adapter.upload_artwork(file_bytes=_REAL_JPEG_BYTES, filename="poster2.jpeg")
+    assert "poster2.jpeg" in url_jpeg
+
+    # .png with PNG
+    url_png = adapter.upload_artwork(file_bytes=_REAL_PNG_BYTES, filename="poster3.png")
+    assert "poster3.png" in url_png
+
+    # .webp with WebP
+    url_webp = adapter.upload_artwork(file_bytes=_REAL_WEBP_BYTES, filename="poster4.webp")
+    assert "poster4.webp" in url_webp
+
+
+def test_object_storage_rejects_disallowed_extension(tmp_path):
+    adapter = LocalArtworkStorageAdapter(artwork_path=str(tmp_path))
+
+    # JPEG disguised as executable
+    with pytest.raises(StorageError, match="Artwork extension '.*' does not match"):
+        adapter.upload_artwork(file_bytes=_REAL_JPEG_BYTES, filename="evil.exe")
+
+    # PNG disguised as HTML
+    with pytest.raises(StorageError, match="Artwork extension '.*' does not match"):
+        adapter.upload_artwork(file_bytes=_REAL_PNG_BYTES, filename="evil.html")
+
+
+def test_object_storage_rejects_mime_extension_mismatch(tmp_path):
+    adapter = LocalArtworkStorageAdapter(artwork_path=str(tmp_path))
+
+    # JPEG bytes with .png extension
+    with pytest.raises(StorageError, match="does not match detected content type 'image/jpeg'"):
+        adapter.upload_artwork(file_bytes=_REAL_JPEG_BYTES, filename="mismatch.png")
+
+    # PNG bytes with .jpg extension
+    with pytest.raises(StorageError, match="does not match detected content type 'image/png'"):
+        adapter.upload_artwork(file_bytes=_REAL_PNG_BYTES, filename="mismatch.jpg")
+
+
+def test_object_storage_rejects_missing_or_empty_extension(tmp_path):
+    adapter = LocalArtworkStorageAdapter(artwork_path=str(tmp_path))
+
+    with pytest.raises(StorageError, match="Artwork extension '' does not match"):
+        adapter.upload_artwork(file_bytes=_REAL_JPEG_BYTES, filename="poster_no_extension")
+
+    with pytest.raises(StorageError, match="Artwork extension '' does not match"):
+        adapter.upload_artwork(file_bytes=_REAL_JPEG_BYTES, filename=".jpg")
+
+    with pytest.raises(StorageError, match="Invalid artwork extension"):
+        adapter.generate_object_key("poster_no_extension")
+
+    with pytest.raises(StorageError, match="Invalid artwork extension"):
+        adapter.generate_object_key(".jpg")
+
+
+def test_internal_artwork_upload_endpoint_rejects_disallowed_extension():
+    base64_image = base64.b64encode(_REAL_JPEG_BYTES).decode("utf-8")
+    curator_token = generate_dev_jwt(
+        user_id="usr_curator_997",
+        email="curator3@cinevault.local",
+        username="curator3",
+        roles=["authenticated_user", "curator"],
+    )
+    headers = {"Authorization": f"Bearer {curator_token}"}
+
+    payload = {
+        "filename": "payload.exe",
+        "content_type": "image/jpeg",
+        "folder": "posters",
+        "file_base64": base64_image,
+    }
+
+    response = client.post("/internal/v1/artwork/upload", json=payload, headers=headers)
+    assert response.status_code == 400
+    err_body = response.json()
+    err_msg = err_body.get("error", {}).get("message", "") or err_body.get("detail", "")
+    assert "does not match" in err_msg or "Invalid artwork extension" in err_msg
+

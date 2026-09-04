@@ -30,6 +30,12 @@ logger = logging.getLogger("cinevault.storage")
 
 MAX_ARTWORK_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 ALLOWED_FOLDERS = {"posters", "backdrops"}
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+MIME_TO_EXTENSIONS = {
+    "image/jpeg": {".jpg", ".jpeg"},
+    "image/png": {".png"},
+    "image/webp": {".webp"},
+}
 _SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
 
 
@@ -108,6 +114,16 @@ class LocalArtworkStorageAdapter:
                 "dots, underscores, and hyphens."
             )
 
+        ext = Path(clean_filename).suffix.lower()
+        if not ext or ext not in ALLOWED_EXTENSIONS:
+            raise StorageError(
+                f"Invalid artwork extension '{ext}'. Allowed: {sorted(ALLOWED_EXTENSIONS)}."
+            )
+
+        stem = Path(clean_filename).stem
+        if not stem or stem.startswith("."):
+            raise StorageError("Filename must have a valid base name before extension.")
+
         hash_prefix = hashlib.sha256(clean_filename.encode()).hexdigest()[:8]
         return f"{folder}/{hash_prefix}_{clean_filename}"
 
@@ -136,7 +152,8 @@ class LocalArtworkStorageAdapter:
         Raises:
             StorageError: empty file, oversized file, content that doesn't
             match a real supported image type (checked via magic bytes, not
-            the caller-declared content_type), or an unsafe filename/folder.
+            the caller-declared content_type), an unsafe filename/folder,
+            or an extension mismatching the detected content type.
         """
         if not file_bytes:
             raise StorageError("Cannot upload empty artwork file.")
@@ -151,6 +168,15 @@ class LocalArtworkStorageAdapter:
             raise StorageError(
                 "File content does not match a supported image format "
                 "(JPEG, PNG, or WebP) — the declared content_type is not trusted."
+            )
+
+        clean_name = Path(filename).name.lower().replace(" ", "_")
+        file_ext = Path(clean_name).suffix.lower()
+        allowed_for_type = MIME_TO_EXTENSIONS.get(sniffed_type, set())
+        if file_ext not in allowed_for_type:
+            raise StorageError(
+                f"Artwork extension '{file_ext}' does not match detected content type '{sniffed_type}'. "
+                f"Allowed: {sorted(allowed_for_type)}."
             )
 
         object_key = self.generate_object_key(filename, folder=folder)

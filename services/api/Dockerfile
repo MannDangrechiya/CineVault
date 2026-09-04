@@ -34,7 +34,17 @@ COPY --from=builder /install /usr/local
 COPY services/api /app/services/api
 
 # Create non-root user for security hardening
-RUN useradd -m -u 1000 cinevault && chown -R cinevault:cinevault /app
+# Phase 3L live validation: also pre-create /data/artwork owned by this user.
+# docker-compose.prod.yml mounts the artwork-prod-data NAMED volume here —
+# Docker populates a fresh named volume from whatever the image already has
+# at that path (including ownership) on first use, so this is what makes the
+# curator artwork-upload endpoint (services/api/routers/internal.py) able to
+# write at all. Without it, the volume mount point defaults to root:root and
+# every upload_artwork() call fails with EACCES under the non-root cinevault
+# user below — confirmed by a real upload attempt during live validation.
+RUN useradd -m -u 1000 cinevault \
+    && mkdir -p /data/artwork \
+    && chown -R cinevault:cinevault /app /data/artwork
 USER cinevault
 
 ENV PYTHONPATH=/app
