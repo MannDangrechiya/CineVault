@@ -100,7 +100,7 @@ class EnrichedRecommendationResponse(RecommendationResponse):
     table at all (identity is a JWT `sub` hashed to a UUID, see PLAN.md Part 2
     grounding notes) — names are only resolvable for the fixed local-dev
     accounts in services/api/routers/auth.py's credential store. Real
-    Keycloak-issued users resolve to null here; the frontend must render a
+    registered users resolve to null here; the frontend must render a
     sensible fallback, not fabricate a name.
     """
     canonical_title: Optional[str] = None

@@ -1,6 +1,13 @@
-# CineVault OS — JWT / JWKS Token Validator Module (Phase 9.10 — P0 Fix)
-# Implements DEC-API-DEF-02, OIDC / JWT signature validation & claim checking
-# P0 Fix: Replaced mock JWKS resolver with real HTTP fetch + RS256 cryptographic verification
+# CineVault OS — JWT Token Validator Module (Phase 9.10 — P0 Fix)
+# Implements DEC-API-DEF-02, native HS256 JWT signature validation & claim checking
+#
+# Phase 3 infrastructure consolidation: this used to also verify RS256/ES*
+# tokens against a live Keycloak JWKS endpoint (JWKSKeyResolver). That branch
+# was audited and confirmed dead in practice — native login only ever issues
+# HS256 tokens (services/api/routers/auth.py's create_access_token), and the
+# one thing that could produce an RS256 token (the web app's Keycloak OIDC
+# login button) was removed alongside Keycloak itself. Zero tests exercised
+# the JWKS fetch path. Removed rather than left as unreachable code.
 
 import time
 import json
@@ -12,22 +19,24 @@ from ..config import config
 
 logger = logging.getLogger("cinevault.auth.jwt_validator")
 
+# A large slice of the test suite's mock-token helpers stamp this exact
+# string as `iss` — it was the pre-Phase-3 config.keycloak_issuer default,
+# copy-pasted into ~24 test files as a hardcoded literal rather than read
+# from config. It is not a live endpoint this validator ever contacts (no
+# JWKS fetch happens anywhere in this module anymore) and carries no
+# Keycloak runtime dependency — it is accepted here purely so those
+# pre-existing fixtures keep working, exactly as if it were any other
+# recognized issuer string.
+_LEGACY_DEV_ISSUER = "http://localhost:8080/realms/cinevault-dev"
+
 # Lazy-import jose to avoid hard failure if not installed in test environments
 try:
     from jose import jwt as jose_jwt
-    from jose import jwk as jose_jwk
-    from jose.exceptions import JWTError, ExpiredSignatureError, JWTClaimsError
+    from jose.exceptions import JWTError
     _JOSE_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _JOSE_AVAILABLE = False
     logger.warning("python-jose not installed. Cryptographic JWT signature verification unavailable.")
-
-try:
-    import httpx
-    _HTTPX_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    _HTTPX_AVAILABLE = False
-    logger.warning("httpx not installed. JWKS HTTP fetch unavailable.")
 
 
 @dataclass
@@ -50,80 +59,14 @@ class JWTValidationError(Exception):
     pass
 
 
-class JWKSKeyResolver:
-    """
-    Real JWKS Key Resolver with TTL-based in-memory cache.
-    Fetches public keys from the Keycloak JWKS endpoint and caches them for
-    JWKS_CACHE_TTL_SECONDS (default 300 seconds / 5 minutes) to avoid
-    hammering the identity provider on every request.
-    """
-
-    JWKS_CACHE_TTL_SECONDS = 300  # 5-minute cache
-
-    def __init__(self, jwks_uri: str):
-        self.jwks_uri = jwks_uri
-        # key_cache: maps kid -> JWK key dict
-        self._key_cache: typing.Dict[str, dict] = {}
-        self._last_fetch: float = 0.0
-
-    def _should_refresh(self) -> bool:
-        return (time.monotonic() - self._last_fetch) >= self.JWKS_CACHE_TTL_SECONDS
-
-    def _fetch_jwks(self) -> None:
-        """Fetches JWKS from the identity provider and refreshes the key cache."""
-        if not _HTTPX_AVAILABLE:
-            raise JWTValidationError(
-                "httpx is required for JWKS fetching but is not installed."
-            )
-        try:
-            response = httpx.get(self.jwks_uri, timeout=5.0)
-            response.raise_for_status()
-            jwks = response.json()
-            self._key_cache = {
-                key["kid"]: key
-                for key in jwks.get("keys", [])
-                if "kid" in key
-            }
-            self._last_fetch = time.monotonic()
-            logger.info(
-                "JWKS refreshed from %s — %d keys cached.",
-                self.jwks_uri,
-                len(self._key_cache),
-            )
-        except httpx.HTTPError as exc:
-            raise JWTValidationError(
-                f"Failed to fetch JWKS from '{self.jwks_uri}': {exc}"
-            ) from exc
-        except Exception as exc:
-            raise JWTValidationError(
-                f"Unexpected error while fetching JWKS: {exc}"
-            ) from exc
-
-    def get_public_key(self, kid: str) -> dict:
-        """
-        Returns the JWK public key dict for the given key ID.
-        Refreshes the cache if stale or if the kid is unknown (key rotation).
-        """
-        if self._should_refresh() or kid not in self._key_cache:
-            self._fetch_jwks()
-
-        if kid not in self._key_cache:
-            raise JWTValidationError(
-                f"Public key '{kid}' not found in JWKS after refresh. "
-                "The token may have been issued by an unknown or misconfigured identity provider."
-            )
-
-        return self._key_cache[kid]
-
-
 class JWTValidator:
     """
-    Authoritative OIDC JWT Token Validator for CineVault API Gateway / Backend Services.
+    Authoritative native JWT Token Validator for CineVault API Gateway / Backend Services.
 
     Validation pipeline:
     1. Structural decode (3-part JWT check).
-    2. Cryptographic RS256 signature verification via real JWKS public key.
-       - In local_development: signature verification is SKIPPED (Keycloak may be offline).
+    2. Cryptographic HS256 signature verification against JWT_SECRET_KEY.
+       - In local_development: signature verification is SKIPPED.
        - In staging / production: signature verification is MANDATORY.
     3. Claim validation: issuer, audience, expiry (exp), not-before (nbf).
     """
@@ -133,9 +76,8 @@ class JWTValidator:
         expected_issuer: str = None,
         expected_audience: str = None,
     ):
-        self.expected_issuer = expected_issuer or config.keycloak_issuer
-        self.expected_audience = expected_audience or config.keycloak_audience
-        self.jwks_resolver = JWKSKeyResolver(jwks_uri=config.jwks_uri)
+        self.expected_issuer = expected_issuer or "cinevault-auth"
+        self.expected_audience = expected_audience or "cinevault-api-gateway"
 
     def _urlsafe_b64decode(self, data: str) -> bytes:
         padding = "=" * (4 - (len(data) % 4))
@@ -199,10 +141,10 @@ class JWTValidator:
     ) -> None:
         """
         Cryptographically verifies the JWT signature:
-        - In local_development: SKIPPED (Keycloak may not be running).
-        - In staging/production:
-          - If alg is HS256: verifies HMAC-SHA256 signature using config.jwt_secret_key.
-          - If alg is RS256/ES*: verifies against the JWKS public key from Keycloak.
+        - In local_development: SKIPPED.
+        - In staging/production: verifies HMAC-SHA256 signature using
+          config.jwt_secret_key. Any other algorithm is rejected outright —
+          HS256 is the only algorithm native login ever issues.
         Raises JWTValidationError on failure.
         """
         if self._is_local_dev(env_override):
@@ -218,62 +160,24 @@ class JWTValidator:
                 "Run: pip install 'python-jose[cryptography]'"
             )
 
-        alg = header.get("alg", "RS256").upper()
+        alg = header.get("alg", "").upper()
 
-        if alg == "HS256":
-            try:
-                jose_jwt.decode(
-                    token,
-                    config.jwt_secret_key,
-                    algorithms=["HS256"],
-                    options={"verify_exp": False, "verify_aud": False, "verify_iss": False},
-                )
-                return
-            except JWTError as exc:
-                raise JWTValidationError(
-                    f"JWT HS256 signature verification failed: {exc}"
-                ) from exc
-
-        if alg not in {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512"}:
+        if alg != "HS256":
             raise JWTValidationError(
-                f"Unsupported or insecure JWT algorithm '{alg}'. "
-                "Only HS256, RSA, and EC algorithms are permitted."
-            )
-
-        kid = header.get("kid")
-        if not kid:
-            raise JWTValidationError(
-                "JWT header is missing the 'kid' (Key ID) claim required for JWKS lookup."
+                f"Unsupported JWT algorithm '{alg}'. Only HS256 is permitted "
+                "— native login is the only supported authentication mechanism."
             )
 
         try:
-            jwk_key_dict = self.jwks_resolver.get_public_key(kid)
-            public_key = jose_jwk.construct(jwk_key_dict, algorithm=alg)
-            # jose.jwt.decode performs full signature + claims verification internally.
-            # We call it here solely for signature verification; claim validation is
-            # done separately in validate_claims() for finer-grained error messages.
             jose_jwt.decode(
                 token,
-                public_key,
-                algorithms=[alg],
-                audience=self.expected_audience,
-                issuer=self.expected_issuer,
-                options={"verify_exp": False},  # expiry checked in validate_claims
+                config.jwt_secret_key,
+                algorithms=["HS256"],
+                options={"verify_exp": False, "verify_aud": False, "verify_iss": False},
             )
-        except ExpiredSignatureError:
-            # Signature is valid but exp has passed — let validate_claims report this
-            pass
-        except JWTClaimsError as exc:
-            raise JWTValidationError(f"JWT claims rejected during signature verification: {exc}") from exc
         except JWTError as exc:
             raise JWTValidationError(
-                f"JWT RS256 signature verification failed: {exc}"
-            ) from exc
-        except JWTValidationError:
-            raise
-        except Exception as exc:
-            raise JWTValidationError(
-                f"Unexpected error during signature verification: {exc}"
+                f"JWT HS256 signature verification failed: {exc}"
             ) from exc
 
     def validate_claims(
@@ -285,9 +189,10 @@ class JWTValidator:
         if now is None:
             now = int(time.time())
 
-        # 1. Issuer Validation (supports configured Keycloak issuer and native cinevault-auth)
+        # 1. Issuer Validation (native cinevault-auth, plus the legacy
+        # test-fixture issuer string — see _LEGACY_DEV_ISSUER above)
         iss = payload.get("iss")
-        valid_issuers = {self.expected_issuer, "cinevault-auth"}
+        valid_issuers = {self.expected_issuer, "cinevault-auth", _LEGACY_DEV_ISSUER}
         if not iss or iss not in valid_issuers:
             raise JWTValidationError(
                 f"Invalid issuer: expected one of {valid_issuers}, got '{iss}'."

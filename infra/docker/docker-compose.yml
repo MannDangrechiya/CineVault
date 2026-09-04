@@ -73,38 +73,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # 5. Identity: Keycloak Server (OIDC)
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0.0
-    container_name: cinevault-local-keycloak
-    command: start-dev --import-realm
-    environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-dev_keycloak_admin_password_change_me}
-      KC_HTTP_PORT: 8080
-      KC_HOSTNAME_STRICT: "false"
-    ports:
-      - "8080:8080"
-    volumes:
-      - ../../packages/config/keycloak/cinevault-realm-dev.json:/opt/keycloak/data/import/cinevault-realm-dev.json:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mailhog:
-        condition: service_started
-
-  # 5b. Local SMTP Sink: MailHog (P0 fix — Day 1-7 remediation)
-  # Keycloak's "Forgot password" flow needs an SMTP relay to send reset
-  # emails. MailHog accepts all mail on :1025 with no auth and exposes a
-  # web UI on :8025 to read what was "sent" — no real mail delivery, no
-  # external SMTP account needed for local development.
-  mailhog:
-    image: mailhog/mailhog:v1.0.1
-    container_name: cinevault-local-mailhog
-    ports:
-      - "1025:1025" # SMTP
-      - "8025:8025" # Web UI
-
   # 7. Telemetry: OpenTelemetry Collector
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest

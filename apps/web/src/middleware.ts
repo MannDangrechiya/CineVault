@@ -9,7 +9,7 @@ import {
   decryptSessionUnchecked,
   encryptSession,
 } from "@/lib/auth/session";
-import { exchangeRefreshToken } from "@/lib/auth/keycloak";
+import { exchangeRefreshToken } from "@/lib/auth/token-refresh";
 
 // Was missing most of the app (movies, series, social, clubs, friends,
 // oracle, import, pick) -- pages outside this list never got a chance at

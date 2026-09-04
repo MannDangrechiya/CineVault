@@ -153,7 +153,11 @@ def _generate_local_dev_jwt(
 ) -> str:
     """
     Generates an HS256-signed JWT for local development sessions.
-    Tagged with kid='cinevault-dev-key' which is rejected outside local_development.
+    Tagged with kid='cinevault-dev-key', which decode_unverified_token()
+    rejects outside local_development BEFORE iss/aud are ever read — so this
+    intentionally uses the same iss/aud shape as a real native token
+    (create_access_token above); rejection outside local dev relies solely
+    on the kid tag, not on these values being wrong.
     """
     if not _JOSE_AVAILABLE:
         raise HTTPException(
@@ -163,8 +167,8 @@ def _generate_local_dev_jwt(
 
     now = int(time.time())
     payload = {
-        "iss": config.keycloak_issuer,
-        "aud": config.keycloak_audience,
+        "iss": "cinevault-auth",
+        "aud": "cinevault-api-gateway",
         "sub": user_id,
         "email": email,
         "preferred_username": username,

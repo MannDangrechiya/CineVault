@@ -4,13 +4,8 @@
 # found SQLAlchemy already used NullPool — zero pooling of its own — and
 # delegated all connection-count control to PgBouncer's transaction-mode
 # pool. CI's test suite already ran this way, straight against
-# postgres:5432, with no PgBouncer container in the loop at all. Postgres's
-# own default max_connections is 100; with 4 uvicorn workers (see
-# services/api/Dockerfile) each opening up to pool_size + max_overflow
-# connections, the bounded pool below caps total usage at 4 * 10 = 40,
-# leaving headroom for Keycloak, Flyway, and manual psql/GUI access. Raise
-# postgres's max_connections before raising these if this ever needs to
-# scale past the "owner + a handful of friends" profile this stack targets.
+# postgres:5432, with no PgBouncer container in the loop at all. See the
+# pool-sizing comment below for how connection limits are handled instead.
 
 import socket
 import sys
@@ -41,10 +36,10 @@ async_db_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_pa
 # safely run this way — detect that case and keep it, everywhere else use a
 # real bounded pool sized for Postgres's default max_connections=100 across
 # 4 uvicorn workers (see services/api/Dockerfile): 4 * (pool_size +
-# max_overflow) = 40, leaving headroom for Keycloak, Flyway, and manual
-# psql/GUI access. Raise postgres's max_connections before raising these if
-# this ever needs to scale past the "owner + a handful of friends" profile
-# this stack targets.
+# max_overflow) = 40, leaving headroom for Flyway and manual psql/GUI
+# access. Raise postgres's max_connections before raising these if this
+# ever needs to scale past the "owner + a handful of friends" profile this
+# stack targets.
 _running_under_pytest = "pytest" in sys.modules
 _pool_kwargs: Dict[str, Any] = (
     {"poolclass": NullPool}

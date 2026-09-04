@@ -67,7 +67,6 @@ wait_for_service() {
 
 wait_for_service "cinevault-prod-postgres" 25 || true
 wait_for_service "cinevault-prod-valkey" 15 || true
-wait_for_service "cinevault-prod-rabbitmq" 20 || true
 
 echo -e "\n${CYAN}[INFO] Verifying Edge Gateway & API status...${NC}"
 sleep 5
@@ -78,11 +77,10 @@ echo -e "${GREEN}======================================================${NC}"
 echo -e "  🌐 Web Application:       http://localhost"
 echo -e "  🚀 Core REST API:         http://localhost/v1"
 echo -e "  📚 OpenAPI Documentation: http://localhost/docs (only if DOCS_ENABLED=true)"
-# R1 hardening pass: removed the RabbitMQ Management (15672) and PgBouncer
-# (6432) lines that used to print here — neither port is actually published
-# by docker-compose.prod.yml (RabbitMQ mgmt never was; PgBouncer's host
-# mapping was removed as part of this pass, see that file's pgbouncer
-# service comment). Both services remain reachable from other containers on
-# the internal Docker network; this banner only advertises what's actually
+# R1 hardening pass + Phase 3 infrastructure consolidation: removed the
+# RabbitMQ Management (15672) and PgBouncer (6432) lines that used to print
+# here — neither port was ever published by docker-compose.prod.yml, and
+# both services (RabbitMQ/Celery, PgBouncer) were later removed entirely
+# (see that file's history). This banner only advertises what's actually
 # reachable from the host/browser.
 echo -e "${GREEN}======================================================${NC}"

@@ -14,7 +14,6 @@ import {
   ShieldCheck,
   KeyRound,
   CheckCircle2,
-  ChevronDown,
   Loader2,
 } from "lucide-react";
 
@@ -30,7 +29,6 @@ function LoginContent() {
   const [mode, setMode] = useState<"signin" | "register">("signin");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState(errorParam || "");
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handleLocalSignIn = async (
     targetEmail?: string,
@@ -95,10 +93,6 @@ function LoginContent() {
       setErrorMessage("Unable to connect to authentication service.");
       setIsLoading(false);
     }
-  };
-
-  const handleKeycloakLogin = () => {
-    window.location.href = `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
   };
 
   return (
@@ -347,37 +341,6 @@ function LoginContent() {
           </form>
         </div>
       )}
-
-      {/* TERTIARY: Enterprise OIDC Accordion */}
-      <div className="pt-2">
-        <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          className="w-full flex items-center justify-between text-[11px] text-zinc-400 hover:text-zinc-200 py-1 transition-colors cursor-pointer"
-        >
-          <span className="flex items-center gap-1.5">
-            <Shield className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Enterprise Keycloak OIDC (PKCE S256)</span>
-          </span>
-          <ChevronDown
-            className={`w-3.5 h-3.5 transition-transform ${showAdvanced ? "rotate-180" : ""}`}
-          />
-        </button>
-
-        {showAdvanced && (
-          <div className="mt-3 p-3 rounded-xl bg-zinc-950/60 border border-zinc-850 space-y-2">
-            <p className="text-[10px] text-zinc-400 leading-relaxed">
-              Use when running against a centralized Keycloak identity provider on port 8080.
-            </p>
-            <button
-              onClick={handleKeycloakLogin}
-              className="w-full py-2 px-3 text-[11px] font-medium text-zinc-300 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg flex items-center justify-center gap-2 transition-colors cursor-pointer"
-            >
-              <Lock className="w-3 h-3 text-zinc-400" />
-              <span>Redirect to Keycloak Authorization</span>
-            </button>
-          </div>
-        )}
-      </div>
 
       {/* Footer Info */}
       <div className="pt-4 border-t border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-400">

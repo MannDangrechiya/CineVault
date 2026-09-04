@@ -189,7 +189,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between p-3 rounded-xl bg-zinc-950/60 border border-zinc-900">
               <div className="flex items-center gap-2 text-zinc-300">
                 <Shield className="w-4 h-4 text-emerald-400" />
-                <span>Identity & Auth: Keycloak OIDC + PKCE</span>
+                <span>Identity & Auth: Native (FastAPI HS256)</span>
               </div>
               <span className="text-violet-300 font-mono text-[11px]">Configured</span>
             </div>

@@ -78,17 +78,8 @@ class APIConfig(BaseModel):
     valkey_host: str = os.getenv("VALKEY_HOST", "localhost")
     valkey_port: int = int(os.getenv("VALKEY_PORT", "6379"))
 
-    # OIDC / Keycloak Authentication
-    keycloak_issuer: str = os.getenv(
-        "KEYCLOAK_ISSUER", "http://localhost:8080/realms/cinevault-dev"
-    )
-    keycloak_audience: str = os.getenv("KEYCLOAK_AUDIENCE", "cinevault-api-gateway")
-    jwks_uri: str = os.getenv(
-        "JWKS_URI",
-        "http://localhost:8080/realms/cinevault-dev/protocol/openid-connect/certs",
-    )
-
-    # Local dev JWT signing secret (HS256 — NOT used in staging/production)
+    # Native JWT signing secret (HS256 — the only auth mechanism; Keycloak/OIDC
+    # was removed in the Phase 3 infrastructure consolidation)
     # IMPORTANT: Override this in your .env file. Never commit the real value.
     jwt_secret_key: str = os.getenv(
         "JWT_SECRET_KEY",

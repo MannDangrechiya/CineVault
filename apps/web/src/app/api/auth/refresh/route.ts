@@ -13,7 +13,7 @@ import {
   decryptSessionUnchecked,
   encryptSession,
 } from "@/lib/auth/session";
-import { exchangeRefreshToken } from "@/lib/auth/keycloak";
+import { exchangeRefreshToken } from "@/lib/auth/token-refresh";
 
 export async function POST() {
   const cookieStore = await cookies();
@@ -38,7 +38,7 @@ export async function POST() {
   const refreshed = await exchangeRefreshToken(existingSession.refresh_token);
 
   if (!refreshed) {
-    // Refresh failed (expired/revoked refresh token, Keycloak unreachable, etc.)
+    // Refresh failed (expired/revoked refresh token, backend unreachable, etc.)
     // Destroy the session — do not keep serving the stale/expired tokens.
     cookieStore.delete(SESSION_COOKIE_NAME);
     return NextResponse.json(
@@ -56,7 +56,7 @@ export async function POST() {
 
   const newSession: SessionData = {
     access_token: refreshed.access_token,
-    // Keycloak rotates refresh tokens by default; fall back to the existing
+    // The backend rotates refresh tokens on use; fall back to the existing
     // one only if the response didn't include a new one.
     refresh_token: refreshed.refresh_token || existingSession.refresh_token,
     user: existingSession.user,

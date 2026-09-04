@@ -1,4 +1,9 @@
-# CineVault OS — Keycloak OIDC & JWKS Token Validation Integration Tests (Phase 9.10)
+# CineVault OS — Native JWT Validation Tests (Phase 9.10)
+# Originally written against Keycloak-issued OIDC/JWKS tokens; Keycloak was
+# audited and removed in the Phase 3 infrastructure consolidation (native
+# HS256 login was already the only thing actually issuing tokens — see
+# services/api/routers/auth.py's create_access_token). Rewritten to test
+# JWTValidator against that native token shape directly.
 
 import pytest
 import time
@@ -48,7 +53,7 @@ def test_claims_validation_expired_token():
     validator = JWTValidator()
     now = int(time.time())
     expired_payload = {
-        "iss": "http://localhost:8080/realms/cinevault-dev",
+        "iss": "cinevault-auth",
         "aud": "cinevault-api-gateway",
         "sub": "usr_test",
         "exp": now - 3600,

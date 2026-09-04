@@ -31,7 +31,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}
     volumes:
       - ../../packages/config/postgres/init-schemas.sql:/docker-entrypoint-initdb.d/01-init-schemas.sql:ro
-      - ../../packages/config/postgres/init-keycloak-db.sql:/docker-entrypoint-initdb.d/02-init-keycloak-db.sql:ro
       - postgres-prod-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-cinevault_admin} -d $${POSTGRES_DB:-cinevault}"]
@@ -65,47 +64,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # 6. Identity: Keycloak Server (OIDC) — Production
-  # Behind Caddy, which terminates TLS and proxies to this container over
-  # plain HTTP on the internal Docker network (KC_PROXY=edge tells Keycloak
-  # to trust Caddy's X-Forwarded-* headers for the real scheme/host). Not
-  # auto-imported with a realm — see packages/config/keycloak/README.md for
-  # the one-time production realm setup step. KEYCLOAK_HOSTNAME, ADMIN_PASSWORD
-  # have no fallback default here: an unset value fails the stack closed
-  # (Keycloak/Caddy refuse to start with an empty hostname) rather than
-  # silently booting against "localhost", which was the exact bug class W18
-  # fixed for the web BFF — production must always name an explicit host.
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0.0
-    container_name: cinevault-prod-keycloak
-    command: start
-    environment:
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set to your production auth domain, e.g. auth.cinevault.yourdomain.com}
-      KC_HOSTNAME_STRICT: "true"
-      KC_HTTP_ENABLED: "true"
-      KC_PROXY: edge
-      KC_HEALTH_ENABLED: "true"
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      # Reuses the app's Postgres role for now (same instance, own database)
-      # rather than provisioning a separate least-privilege `keycloak` role —
-      # a reasonable follow-up hardening step, not a regression versus the
-      # rest of this file's current access model.
-      KC_DB_USERNAME: ${POSTGRES_USER:-cinevault_admin}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set to a strong, unique password}
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"status\": \"UP\"' <&3"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 45s
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
   # 7. Object Storage: MinIO (self-hosted S3-compatible storage for canonical
   # artwork — chosen over AWS S3 to stay free-first/self-hostable, matching
   # docs/deployment.md's stated design goal). Not exposed on host ports
@@ -122,8 +80,8 @@ services:
       - minio-prod-data:/data
     healthcheck:
       # No curl/wget in this image (verified) — same bash /dev/tcp approach
-      # as the keycloak healthcheck above, reading the HTTP status line into
-      # a bash variable since grep isn't in this image either (verified).
+      # used elsewhere in this file for images without one, reading the HTTP
+      # status line into a bash variable since grep isn't in this image either.
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /minio/health/live HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r status <&3 && [[ \"$$status\" == *' 200 '* ]]"]
       interval: 10s
       timeout: 5s
@@ -207,13 +165,6 @@ services:
       S3_REGION: us-east-1
       CDN_BASE_URL: https://${CDN_HOSTNAME:?CDN_HOSTNAME must be set to your production artwork CDN domain, e.g. cdn.cinevault.yourdomain.com}/${S3_ARTWORK_BUCKET:-cinevault-artwork}
 
-      # OIDC: backend validates tokens against the SAME public HTTPS issuer
-      # browsers and the web server use (see nextjs-web below) rather than an
-      # internal-only hostname, so the `iss` claim Keycloak stamps into every
-      # token always matches what this service expects — no issuer mismatch.
-      KEYCLOAK_ISSUER: https://${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set}/realms/${KEYCLOAK_REALM:-cinevault}
-      KEYCLOAK_AUDIENCE: ${KEYCLOAK_CLIENT_ID:-cinevault-public-client}
-      JWKS_URI: https://${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set}/realms/${KEYCLOAK_REALM:-cinevault}/protocol/openid-connect/certs
       CORS_ALLOWED_ORIGINS: https://${SITE_ADDRESS:?SITE_ADDRESS must be set to your production app domain, e.g. cinevault.yourdomain.com}
     depends_on:
       postgres:
@@ -222,8 +173,6 @@ services:
         condition: service_healthy
       flyway:
         condition: service_completed_successfully
-      keycloak:
-        condition: service_healthy
       minio-init:
         condition: service_completed_successfully
     restart: unless-stopped
@@ -255,18 +204,11 @@ services:
       # Enforced twice: at container boot (apps/web/src/instrumentation.ts)
       # and again at the point of use (session.ts's getSecret()).
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a random 64+ character string, e.g. via `openssl rand -base64 48`}
-      # Used by the OIDC callback route to build the post-login redirect —
-      # unset, it falls back to http://localhost:3000 (apps/web/src/app/api/
-      # auth/callback/route.ts:16), which was silently wrong in a real deploy.
+      # Used by the logout route to build the post-logout redirect — unset,
+      # it falls back to http://localhost:3000
+      # (apps/web/src/app/api/auth/logout/route.ts), which was silently
+      # wrong in a real deploy.
       NEXT_PUBLIC_APP_URL: https://${SITE_ADDRESS:?SITE_ADDRESS must be set}
-      # Same public-issuer rationale as fastapi-backend above: KEYCLOAK_HOST
-      # is used server-side (token exchange) and NEXT_PUBLIC_KEYCLOAK_URL is
-      # sent to the browser for the login redirect — both must be the real
-      # public HTTPS auth domain, never an internal-only hostname.
-      KEYCLOAK_HOST: https://${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set}
-      NEXT_PUBLIC_KEYCLOAK_URL: https://${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-cinevault}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-cinevault-public-client}
       # No runtime CDN_HOSTNAME here on purpose: the image optimizer's
       # allowed-hosts list is frozen at build time (see build.args above),
       # so a container-runtime copy of this var would be silently ignored —
@@ -274,12 +216,10 @@ services:
     depends_on:
       fastapi-backend:
         condition: service_started
-      keycloak:
-        condition: service_healthy
     restart: unless-stopped
 
   # 11. Edge Gateway: Caddy Reverse Proxy (Ports 80 & 443)
-  # SITE_ADDRESS/KEYCLOAK_HOSTNAME drive the Caddyfile's site addresses (see
+  # SITE_ADDRESS/CDN_HOSTNAME drive the Caddyfile's site addresses (see
   # infra/docker/Caddyfile) — Caddy provisions/renews Let's Encrypt certs
   # automatically for each and redirects HTTP->HTTPS by default once a real
   # domain (not a bare port) is the site address.
@@ -288,7 +228,6 @@ services:
     container_name: cinevault-prod-caddy
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS must be set to your production app domain, e.g. cinevault.yourdomain.com}
-      KEYCLOAK_HOSTNAME: ${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME must be set to your production auth domain, e.g. auth.cinevault.yourdomain.com}
       CDN_HOSTNAME: ${CDN_HOSTNAME:?CDN_HOSTNAME must be set to your production artwork CDN domain, e.g. cdn.cinevault.yourdomain.com}
       ACME_EMAIL: ${ACME_EMAIL:-}
     ports:
@@ -302,7 +241,6 @@ services:
       - fastapi-backend
       - minio
       - nextjs-web
-      - keycloak
     restart: unless-stopped
 
 volumes:

@@ -44,14 +44,8 @@ JWT_SECRET_KEY=<GENERATE_64_CHAR_RANDOM_STRING_HERE>
 # without this (apps/web/src/instrumentation.ts).
 SESSION_SECRET=<GENERATE_64_CHAR_RANDOM_STRING_HERE>
 
-# ─── Keycloak (REQUIRED) ────────────────────────────────────────────────────
-# docker-compose.prod.yml refuses to start without KEYCLOAK_HOSTNAME and
-# KEYCLOAK_ADMIN_PASSWORD — these are no longer optional/commented-out.
-KEYCLOAK_HOSTNAME=auth.cinevault.yourdomain.com
-KEYCLOAK_REALM=cinevault
-KEYCLOAK_CLIENT_ID=cinevault-public-client
-KEYCLOAK_ADMIN_USER=admin
-KEYCLOAK_ADMIN_PASSWORD=<GENERATE_STRONG_PASSWORD_HERE>
+# Keycloak was removed in the Phase 3 infrastructure consolidation — native
+# HS256 login (JWT_SECRET_KEY above) is the only authentication mechanism.
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 # CORS_ALLOWED_ORIGINS is derived automatically from SITE_ADDRESS by
@@ -70,8 +64,8 @@ S3_SECRET_ACCESS_KEY=<GENERATE_STRONG_SECRET_KEY_HERE>
 S3_ARTWORK_BUCKET=cinevault-artwork
 
 # ─── Caddy / HTTPS / CDN (REQUIRED) ─────────────────────────────────────────
-# Point all three DNS records (SITE_ADDRESS, KEYCLOAK_HOSTNAME, CDN_HOSTNAME)
-# at this host BEFORE starting the stack, or Let's Encrypt's HTTP-01
+# Point both DNS records (SITE_ADDRESS, CDN_HOSTNAME) at this host BEFORE
+# starting the stack, or Let's Encrypt's HTTP-01
 # challenge will fail. CDN_HOSTNAME also now reaches the web image at
 # Docker-build time (image optimizer allowlist + client bundle) — see
 # apps/web/Dockerfile and docker-compose.prod.yml's nextjs-web build.args.

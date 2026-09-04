@@ -6,20 +6,21 @@ Write-Host "=================================================================" -
 
 $hasError = $false
 
-# 1. Audit Keycloak Realm Export
-Write-Host "`n[Check 1] Auditing Keycloak development realm export configuration..." -ForegroundColor Yellow
-$realmPath = "config/keycloak/cinevault-realm-dev.json"
-if (Test-Path $realmPath) {
-    Write-Host "  [OK] Realm export configuration file present: $realmPath" -ForegroundColor Green
-    $realmContent = Get-Content $realmPath -Raw
-    if ($realmContent -match "cinevault-dev" -and $realmContent -match "cinevault-public-client" -and $realmContent -match "S256") {
-        Write-Host "  [OK] PKCE S256 public client and realm settings verified." -ForegroundColor Green
+# 1. Audit Native Auth Router (Keycloak was removed — native HS256 login is
+# the only authentication mechanism, see the Phase 3 infrastructure
+# consolidation)
+Write-Host "`n[Check 1] Auditing native authentication router..." -ForegroundColor Yellow
+$authRouterPath = "services/api/routers/auth.py"
+if (Test-Path $authRouterPath) {
+    $authRouterContent = Get-Content $authRouterPath -Raw
+    if ($authRouterContent -match "create_access_token" -and $authRouterContent -match "HS256") {
+        Write-Host "  [OK] Native HS256 access-token issuance verified." -ForegroundColor Green
     } else {
-        Write-Host "  [ERROR] Invalid realm settings or missing S256 PKCE in realm export!" -ForegroundColor Red
+        Write-Host "  [ERROR] Native auth router missing expected HS256 token issuance!" -ForegroundColor Red
         $hasError = $true
     }
 } else {
-    Write-Host "  [ERROR] Missing Keycloak development realm configuration!" -ForegroundColor Red
+    Write-Host "  [ERROR] Missing native authentication router: $authRouterPath" -ForegroundColor Red
     $hasError = $true
 }
 

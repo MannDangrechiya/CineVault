@@ -1,14 +1,15 @@
 # CineVault OS — Local Dev User Directory (best-effort display-name resolution)
 #
-# This system has no persisted user-profile table: identity is a Keycloak JWT
+# This system has no persisted user-profile table: identity is a native JWT
 # `sub` deterministically hashed to a UUID (see PLAN.md Part 2 grounding
 # notes), so there is nowhere to look up an arbitrary user's real name given
 # their UUID. The only UUID->identity mapping that exists anywhere in this
 # codebase is the fixed local-dev credential store below (moved here from
 # routers/auth.py so routers/social.py can reuse it without a router-to-router
-# import). Real Keycloak-issued users in staging/production will not match
-# anything here — resolve_display_name() returns (None, None) for them, and
-# callers must render an honest fallback rather than fabricate a name.
+# import). Real staging/production users (registered via /v1/auth/register,
+# not one of the fixed local-dev accounts) will not match anything here —
+# resolve_display_name() returns (None, None) for them, and callers must
+# render an honest fallback rather than fabricate a name.
 
 import os
 from typing import Dict, Iterable, Optional, Tuple

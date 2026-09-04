@@ -1,12 +1,14 @@
 # CineVault OS — Production Edge Gateway & Reverse Proxy (Caddy v2)
 # Handles automatic HTTPS (Let's Encrypt), HTTP->HTTPS redirect, Brotli/Zstandard/Gzip
-# compression, security headers, and routing between FastAPI Backend, Next.js Web
-# Frontend, and Keycloak.
+# compression, security headers, and routing between FastAPI Backend and
+# Next.js Web Frontend. Keycloak was removed in the Phase 3 infrastructure
+# consolidation — native HS256 auth (already the only thing FastAPI actually
+# issues) is the sole authentication mechanism now, so there is no separate
+# identity-provider domain to route to.
 #
-# REQUIRES SITE_ADDRESS and KEYCLOAK_HOSTNAME to be set (see docker-compose.prod.yml
-# / .env.production.example) to real production domains, e.g.:
+# REQUIRES SITE_ADDRESS to be set (see docker-compose.prod.yml /
+# .env.production.example) to a real production domain, e.g.:
 #   SITE_ADDRESS=cinevault.yourdomain.com
-#   KEYCLOAK_HOSTNAME=auth.cinevault.yourdomain.com
 # A bare domain as the site address (no scheme, no port) is what makes Caddy
 # provision and auto-renew a Let's Encrypt certificate and automatically serve
 # plain HTTP on :80 that redirects to HTTPS on :443 — no separate :80 block is
@@ -118,7 +120,7 @@
 
     # Everything else under /internal/* (ingestion, reconciliation,
     # control-room curation, AI proposal review, artwork upload) requires a
-    # real Keycloak-issued JWT with Curator/SystemAdmin role (see
+    # real native JWT with Curator/SystemAdmin role (see
     # services/api/auth/dependencies.py's require_curator/require_system_admin)
     # — safe to keep public; the mobile app's Control Room screens depend on
     # reaching these routes through this domain.
@@ -170,32 +172,7 @@
     }
 }
 
-# 3. Identity Provider -> Keycloak (separate domain, own Let's Encrypt cert)
-{$KEYCLOAK_HOSTNAME} {
-    log {
-        output stdout
-        format console
-    }
-
-    encode zstd gzip
-
-    header {
-        X-Content-Type-Options nosniff
-        X-Frame-Options DENY
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        Referrer-Policy strict-origin-when-cross-origin
-        -Server
-    }
-
-    reverse_proxy keycloak:8080 {
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-    }
-}
-
-# 4. Artwork CDN -> MinIO (separate domain, own Let's Encrypt cert). Proxied
+# 3. Artwork CDN -> MinIO (separate domain, own Let's Encrypt cert). Proxied
 # 1:1 at the root so path-style object URLs (/<bucket>/<key>) resolve exactly
 # as boto3 wrote them — see fastapi-backend's CDN_BASE_URL in
 # docker-compose.prod.yml and services/api/storage.py's build_public_url.
