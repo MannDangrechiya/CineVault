@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/repositories/auth_repository_impl.dart';
 import '../../domain/entities/auth_session.dart';
 import '../../domain/repositories/auth_repository.dart';
+import 'sync_provider.dart' show appDatabaseProvider;
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  return AuthRepositoryImpl();
+  final db = ref.watch(appDatabaseProvider);
+  return AuthRepositoryImpl(db: db);
 });
 
 class AuthState {
@@ -103,6 +105,39 @@ class AuthNotifier extends StateNotifier<AuthState> {
         msg = 'Invalid email or password. Please verify demo credentials.';
       } else if (msg.contains('501')) {
         msg = 'Direct login disabled in current environment mode.';
+      }
+      state = state.copyWith(
+        isAuthenticated: false,
+        isLoading: false,
+        session: null,
+        errorMessage: msg,
+      );
+      return false;
+    }
+  }
+
+  Future<bool> register(String email, String password, String inviteCode) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final session = await _repository.register(email, password, inviteCode);
+      state = state.copyWith(
+        isAuthenticated: true,
+        isLoading: false,
+        session: session,
+      );
+      return true;
+    } catch (e) {
+      String msg = e.toString();
+      if (msg.contains('DioException') || msg.contains('SocketException') || msg.contains('connection')) {
+        msg = 'Unable to connect to CineVault server (port 8000). Please check if backend service is running.';
+      } else if (msg.contains('409') || msg.contains('already registered')) {
+        msg = 'Email is already registered. Please sign in instead.';
+      } else if (msg.contains('Invalid invite') || msg.contains('expired') || msg.contains('used')) {
+        msg = 'Invalid or expired invite code. Registration is strictly invite-only.';
+      } else if (msg.contains('Password must be')) {
+        msg = 'Password must be between 8 and 72 characters.';
+      } else if (msg.contains('Invalid email')) {
+        msg = 'Invalid email address format.';
       }
       state = state.copyWith(
         isAuthenticated: false,
