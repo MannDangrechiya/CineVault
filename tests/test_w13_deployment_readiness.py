@@ -74,8 +74,6 @@ def test_06_production_config_accepts_valid_secrets():
         environment="production",
         jwt_secret_key="a-secure-random-64-character-production-secret-key-that-is-not-default",
         postgres_password="a-secure-random-production-db-password-1234567890",
-        s3_access_key_id="real_production_s3_key_id",
-        s3_secret_access_key="real_production_s3_secret_key",
         cors_allowed_origins="https://cinevault.example.com",
         docs_enabled=False,
     )

@@ -64,54 +64,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # 7. Object Storage: MinIO (self-hosted S3-compatible storage for canonical
-  # artwork — chosen over AWS S3 to stay free-first/self-hostable, matching
-  # docs/deployment.md's stated design goal). Not exposed on host ports
-  # directly: reachable internally at http://minio:9000, and for public
-  # browser reads via Caddy's CDN_HOSTNAME site below.
-  minio:
-    image: minio/minio:RELEASE.2024-03-21T23-13-43Z
-    container_name: cinevault-prod-minio
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID must be set to a strong, unique access key}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY must be set to a strong, unique secret key}
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio-prod-data:/data
-    healthcheck:
-      # No curl/wget in this image (verified) — same bash /dev/tcp approach
-      # used elsewhere in this file for images without one, reading the HTTP
-      # status line into a bash variable since grep isn't in this image either.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /minio/health/live HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r status <&3 && [[ \"$$status\" == *' 200 '* ]]"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
-    restart: unless-stopped
-
-  # 7b. One-time, idempotent artwork bucket bootstrap: creates the bucket and
-  # sets it to anonymous-download (public GET only — no listing, no write) so
-  # browsers can load poster/backdrop URLs directly from CDN_HOSTNAME without
-  # per-request S3 credentials. Same one-shot restart:"no" pattern as flyway
-  # above; fastapi-backend waits on this completing successfully.
-  minio-init:
-    image: minio/mc:latest
-    container_name: cinevault-prod-minio-init
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >
-        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY_ID" "$$S3_SECRET_ACCESS_KEY" &&
-        mc mb --ignore-existing "local/$$S3_ARTWORK_BUCKET" &&
-        mc anonymous set download "local/$$S3_ARTWORK_BUCKET"
-    environment:
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID must be set to a strong, unique access key}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY must be set to a strong, unique secret key}
-      S3_ARTWORK_BUCKET: ${S3_ARTWORK_BUCKET:-cinevault-artwork}
-    depends_on:
-      minio:
-        condition: service_healthy
-    restart: "no"
-
   # 8. Core REST API: FastAPI Production Backend
   fastapi-backend:
     container_name: cinevault-prod-backend
@@ -151,29 +103,25 @@ services:
       # left at its insecure placeholder, so a real value is still required.
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set to a random 64+ character string}
 
-      # S3/CDN artwork storage — self-hosted MinIO (service 7/7b above).
-      # S3_ENDPOINT_URL stays internal (http://minio:9000, path-style,
-      # boto3-compatible); CDN_BASE_URL is the public read path browsers
-      # actually load images from, proxied by Caddy's CDN_HOSTNAME site to
-      # that same MinIO — see storage.py's build_public_url, which appends
-      # the object key directly onto CDN_BASE_URL with no bucket segment in
-      # between, so CDN_BASE_URL must itself end in "/<bucket>".
-      S3_ENDPOINT_URL: http://minio:9000
-      S3_ARTWORK_BUCKET: ${S3_ARTWORK_BUCKET:-cinevault-artwork}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID must be set to a strong, unique access key}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY must be set to a strong, unique secret key}
-      S3_REGION: us-east-1
-      CDN_BASE_URL: https://${CDN_HOSTNAME:?CDN_HOSTNAME must be set to your production artwork CDN domain, e.g. cdn.cinevault.yourdomain.com}/${S3_ARTWORK_BUCKET:-cinevault-artwork}
+      # Artwork storage — persistent local directory (MinIO was removed in
+      # the Phase 3 infrastructure consolidation: zero production traffic
+      # ever reached the upload endpoint, and canonical TMDB artwork is
+      # served from remote TMDB URLs, never stored here). Mounted from the
+      # artwork-prod-data volume below, shared read-only with Caddy's
+      # CDN_HOSTNAME site (infra/docker/Caddyfile), which serves it directly
+      # — no bucket segment or credentials needed for public reads.
+      ARTWORK_PATH: /data/artwork
+      CDN_BASE_URL: https://${CDN_HOSTNAME:?CDN_HOSTNAME must be set to your production artwork CDN domain, e.g. cdn.cinevault.yourdomain.com}
 
       CORS_ALLOWED_ORIGINS: https://${SITE_ADDRESS:?SITE_ADDRESS must be set to your production app domain, e.g. cinevault.yourdomain.com}
+    volumes:
+      - artwork-prod-data:/data/artwork
     depends_on:
       postgres:
         condition: service_healthy
       valkey:
         condition: service_healthy
       flyway:
-        condition: service_completed_successfully
-      minio-init:
         condition: service_completed_successfully
     restart: unless-stopped
 
@@ -237,9 +185,14 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-prod-data:/data
       - caddy-prod-config:/config
+      # Read-only: Caddy only ever serves artwork, never writes it — only
+      # fastapi-backend's curator-gated upload endpoint writes here (see its
+      # own mount above, which is read-write). Mounted at /srv/artwork, not
+      # /data/artwork, so it can't collide with Caddy's own state volume
+      # already mounted at /data above.
+      - artwork-prod-data:/srv/artwork:ro
     depends_on:
       - fastapi-backend
-      - minio
       - nextjs-web
     restart: unless-stopped
 
@@ -248,8 +201,8 @@ volumes:
     name: cinevault-prod-postgres-data
   valkey-prod-data:
     name: cinevault-prod-valkey-data
-  minio-prod-data:
-    name: cinevault-prod-minio-data
+  artwork-prod-data:
+    name: cinevault-prod-artwork-data
   caddy-prod-data:
     name: cinevault-prod-caddy-data
   caddy-prod-config:

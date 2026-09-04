@@ -1,133 +1,126 @@
-# CineVault OS — S3 Object Storage & CDN Artwork Adapter (P1 Fix)
-# Handles poster/backdrop image uploads to S3-compatible storage.
-# P1 Fix: Replaced in-memory Python dict with real boto3 S3 SDK calls to MinIO (dev)
-#         and AWS S3 (production). Added presigned URL generation and bucket bootstrap.
+# CineVault OS — Local Artwork Storage Adapter (Phase 3 infra consolidation)
+# Replaces MinIO/S3 with a persistent local directory (config.artwork_path),
+# served publicly and read-only by Caddy at CDN_HOSTNAME (see
+# infra/docker/Caddyfile). MinIO was audited and found to carry zero
+# production traffic — no client app anywhere calls the upload endpoint
+# below, and canonical TMDB artwork is served from remote TMDB URLs, never
+# stored here — so this is a storage-backend swap, not a data migration.
+#
+# Security hardening added as part of this swap: the upload endpoint's
+# input handling was safe only by accident of S3 key semantics (an S3
+# object key isn't a filesystem path). Backed by a real local directory,
+# the same gaps become real vulnerabilities, so this adapter now enforces:
+# - generate_object_key(): rejects path traversal (Path(...).name strips
+#   any directory components), restricts folder to a fixed allowlist, and
+#   restricts filenames to a safe character set
+# - _resolve_path(): a defense-in-depth check that the resolved path is
+#   still inside artwork_root, independent of generate_object_key
+# - upload_artwork(): enforces a real file-size cap and validates content
+#   against real magic bytes — the caller-declared content_type is never
+#   trusted on its own
 
-import io
 import logging
 import hashlib
+import re
+from pathlib import Path
 from typing import Optional
 from .config import config
 
 logger = logging.getLogger("cinevault.storage")
 
-# ---------------------------------------------------------------------------
-# boto3 availability guard
-# ---------------------------------------------------------------------------
-try:
-    import boto3
-    from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
-    _BOTO3_AVAILABLE = True
-except ImportError:  # pragma: no cover
-    _BOTO3_AVAILABLE = False
-    logger.warning(
-        "boto3 is not installed. MinIO/S3 storage is unavailable. "
-        "Run: pip install boto3"
-    )
+MAX_ARTWORK_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+ALLOWED_FOLDERS = {"posters", "backdrops"}
+_SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9_.-]+$")
 
 
 class StorageError(Exception):
-    """Raised when S3 object storage operations fail."""
+    """Raised when artwork storage operations fail or reject unsafe input."""
     pass
 
 
-class ObjectStorageAdapter:
-    """
-    S3-compatible Object Storage Adapter supporting MinIO (local dev) and AWS S3 (production).
+def _sniff_content_type(file_bytes: bytes) -> Optional[str]:
+    """Identifies the real image type from magic bytes, ignoring whatever
+    content_type the caller declared. Returns None if the bytes don't match
+    any supported image format."""
+    if file_bytes.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if file_bytes[:4] == b"RIFF" and file_bytes[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
-    In local_development with allow_seed_fallback=True: falls back to an in-memory
-    store if the boto3 client cannot connect to MinIO, to preserve offline dev experience.
-    In staging/production (allow_seed_fallback=False): raises StorageError immediately
-    if S3 operations fail — no silent fallback.
-    """
 
-    PRESIGNED_URL_EXPIRY_SECONDS = 3600  # 1 hour
+class LocalArtworkStorageAdapter:
+    """
+    Local-filesystem artwork storage adapter.
+
+    In local_development with allow_seed_fallback=True: falls back to an
+    in-memory store if artwork_root can't be created/written to, to preserve
+    offline dev experience. In staging/production (allow_seed_fallback=False):
+    raises StorageError immediately on any write failure — no silent fallback.
+    """
 
     def __init__(
         self,
-        endpoint_url: Optional[str] = None,
-        bucket_name: Optional[str] = None,
+        artwork_path: Optional[str] = None,
         cdn_base_url: Optional[str] = None,
     ):
-        self.endpoint_url = endpoint_url or config.s3_endpoint_url
-        self.bucket_name = bucket_name or config.s3_artwork_bucket
+        self.artwork_root = Path(artwork_path or config.artwork_path).resolve()
         self.cdn_base_url = cdn_base_url or config.cdn_base_url
-        # Fallback in-memory store — used ONLY in local_development when MinIO is offline
+        # Fallback in-memory store — used ONLY in local_development when the
+        # artwork directory can't be created/written to.
         self._in_memory_store: dict = {}
-        self._s3_client = None
-
-        if _BOTO3_AVAILABLE:
-            self._init_s3_client()
-
-    def _init_s3_client(self) -> None:
-        """Initializes the boto3 S3 client with MinIO-compatible settings."""
-        try:
-            self._s3_client = boto3.client(
-                "s3",
-                endpoint_url=self.endpoint_url,
-                aws_access_key_id=config.s3_access_key_id,
-                aws_secret_access_key=config.s3_secret_access_key,
-                region_name=config.s3_region,
-                # MinIO requires path-style addressing (not virtual-hosted-style)
-                config=boto3.session.Config(signature_version="s3v4"),
-            )
-            logger.info(
-                "S3 client initialized: endpoint=%s bucket=%s",
-                self.endpoint_url,
-                self.bucket_name,
-            )
-        except Exception as exc:
-            logger.error("Failed to initialize boto3 S3 client: %s", exc)
-            self._s3_client = None
-
-    def ensure_bucket_exists(self) -> None:
-        """
-        Ensures the artwork bucket exists, creating it if necessary.
-        Called at application startup. Raises StorageError if MinIO is unreachable
-        and allow_seed_fallback=False.
-        """
-        if not _BOTO3_AVAILABLE or self._s3_client is None:
-            if not config.allow_seed_fallback:
-                raise StorageError(
-                    "boto3 is not available and allow_seed_fallback=False. "
-                    "MinIO/S3 storage is required in this environment."
-                )
-            return
 
         try:
-            self._s3_client.head_bucket(Bucket=self.bucket_name)
-            logger.info("S3 bucket '%s' confirmed reachable.", self.bucket_name)
-        except ClientError as exc:
-            error_code = exc.response.get("Error", {}).get("Code", "")
-            if error_code in ("404", "NoSuchBucket"):
-                try:
-                    self._s3_client.create_bucket(Bucket=self.bucket_name)
-                    logger.info("S3 bucket '%s' created.", self.bucket_name)
-                except ClientError as create_exc:
-                    raise StorageError(
-                        f"Failed to create S3 bucket '{self.bucket_name}': {create_exc}"
-                    ) from create_exc
-            else:
-                raise StorageError(
-                    f"S3 bucket check failed with code '{error_code}': {exc}"
-                ) from exc
-        except EndpointConnectionError as exc:
+            self.artwork_root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
             if not config.allow_seed_fallback:
                 raise StorageError(
-                    f"Cannot connect to S3 endpoint '{self.endpoint_url}': {exc}. "
-                    "Ensure MinIO is running (docker-compose up minio)."
+                    f"Cannot create artwork storage directory '{self.artwork_root}': {exc}"
                 ) from exc
             logger.warning(
-                "MinIO unreachable at %s — falling back to in-memory storage "
-                "(local_development only).",
-                self.endpoint_url,
+                "Could not create artwork directory %s — falling back to "
+                "in-memory storage (local_development only): %s",
+                self.artwork_root,
+                exc,
             )
 
     def generate_object_key(self, filename: str, folder: str = "posters") -> str:
-        """Generates a deterministic content-addressed S3 object key."""
-        clean_filename = filename.lower().replace(" ", "_")
+        """Generates a safe, content-addressed relative storage key.
+
+        This key is joined directly onto a real filesystem path (see
+        _resolve_path), so it must never be able to escape artwork_root:
+        folder is restricted to a fixed allowlist, and Path(filename).name
+        strips any directory components a caller might smuggle in (e.g.
+        "../../etc/passwd", "a/b/c.jpg") before the remaining characters are
+        checked against a safe allowlist.
+        """
+        if folder not in ALLOWED_FOLDERS:
+            raise StorageError(
+                f"Invalid artwork folder '{folder}'. Allowed: {sorted(ALLOWED_FOLDERS)}."
+            )
+
+        clean_filename = Path(filename).name.lower().replace(" ", "_")
+        if not clean_filename or not _SAFE_FILENAME_RE.match(clean_filename):
+            raise StorageError(
+                "Filename must be non-empty and contain only letters, digits, "
+                "dots, underscores, and hyphens."
+            )
+
         hash_prefix = hashlib.sha256(clean_filename.encode()).hexdigest()[:8]
         return f"{folder}/{hash_prefix}_{clean_filename}"
+
+    def _resolve_path(self, object_key: str) -> Path:
+        """Joins object_key onto artwork_root and verifies the result is
+        still inside artwork_root — a defense-in-depth check independent of
+        generate_object_key's own validation."""
+        candidate = (self.artwork_root / object_key).resolve()
+        if candidate != self.artwork_root and self.artwork_root not in candidate.parents:
+            raise StorageError(
+                f"Object key '{object_key}' resolves outside artwork storage root."
+            )
+        return candidate
 
     def upload_artwork(
         self,
@@ -137,124 +130,69 @@ class ObjectStorageAdapter:
         folder: str = "posters",
     ) -> str:
         """
-        Uploads artwork image bytes to the S3/MinIO bucket.
-        Returns the public CDN URL (production) or MinIO endpoint URL (local dev).
+        Writes artwork image bytes to local disk under artwork_root.
+        Returns the public CDN URL.
 
         Raises:
-            StorageError: If the upload fails and allow_seed_fallback=False.
+            StorageError: empty file, oversized file, content that doesn't
+            match a real supported image type (checked via magic bytes, not
+            the caller-declared content_type), or an unsafe filename/folder.
         """
         if not file_bytes:
             raise StorageError("Cannot upload empty artwork file.")
 
-        allowed_types = {"image/jpeg", "image/png", "image/webp"}
-        if content_type.lower() not in allowed_types:
+        if len(file_bytes) > MAX_ARTWORK_SIZE_BYTES:
             raise StorageError(
-                f"Unsupported content type '{content_type}'. "
-                f"Allowed: {sorted(allowed_types)}."
+                f"Artwork file exceeds the {MAX_ARTWORK_SIZE_BYTES // (1024 * 1024)}MB size limit."
+            )
+
+        sniffed_type = _sniff_content_type(file_bytes)
+        if sniffed_type is None:
+            raise StorageError(
+                "File content does not match a supported image format "
+                "(JPEG, PNG, or WebP) — the declared content_type is not trusted."
             )
 
         object_key = self.generate_object_key(filename, folder=folder)
+        target_path = self._resolve_path(object_key)
 
-        # --- Real S3 upload ---
-        if _BOTO3_AVAILABLE and self._s3_client is not None:
-            try:
-                self._s3_client.put_object(
-                    Bucket=self.bucket_name,
-                    Key=object_key,
-                    Body=file_bytes,
-                    ContentType=content_type,
-                    ContentLength=len(file_bytes),
-                )
-                logger.info(
-                    "Uploaded artwork to s3://%s/%s (%d bytes)",
-                    self.bucket_name,
-                    object_key,
-                    len(file_bytes),
-                )
-                return self._resolve_public_url(object_key)
-            except (ClientError, EndpointConnectionError, NoCredentialsError) as exc:
-                if not config.allow_seed_fallback:
-                    raise StorageError(
-                        f"S3 upload failed for '{object_key}': {exc}"
-                    ) from exc
-                logger.warning(
-                    "S3 upload failed — falling back to in-memory store: %s", exc
-                )
-
-        # --- In-memory fallback (local_development only) ---
-        self._in_memory_store[object_key] = file_bytes
-        logger.debug(
-            "Stored artwork in-memory: key=%s (%d bytes)", object_key, len(file_bytes)
-        )
-        return self._resolve_public_url(object_key)
+        try:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(file_bytes)
+            logger.info(
+                "Wrote artwork to %s (%d bytes, sniffed as %s)",
+                target_path,
+                len(file_bytes),
+                sniffed_type,
+            )
+            return self._resolve_public_url(object_key)
+        except OSError as exc:
+            if not config.allow_seed_fallback:
+                raise StorageError(f"Failed to write artwork '{object_key}': {exc}") from exc
+            logger.warning("Artwork write failed — falling back to in-memory store: %s", exc)
+            self._in_memory_store[object_key] = file_bytes
+            return self._resolve_public_url(object_key)
 
     def get_object(self, object_key: str) -> Optional[bytes]:
         """
-        Retrieves raw bytes for an object from S3/MinIO.
-        Falls back to in-memory store in local_development if S3 is unavailable.
+        Reads raw bytes for an object from local disk.
+        Falls back to the in-memory store used by upload_artwork's
+        local_development fallback path.
 
-        Returns None if the object does not exist.
+        Returns None if the object does not exist anywhere.
         """
-        if _BOTO3_AVAILABLE and self._s3_client is not None:
-            try:
-                response = self._s3_client.get_object(
-                    Bucket=self.bucket_name, Key=object_key
-                )
-                return response["Body"].read()
-            except ClientError as exc:
-                error_code = exc.response.get("Error", {}).get("Code", "")
-                if error_code in ("NoSuchKey", "404"):
-                    return None
-                if not config.allow_seed_fallback:
-                    raise StorageError(
-                        f"S3 get_object failed for '{object_key}': {exc}"
-                    ) from exc
-                logger.warning("S3 get_object failed, checking in-memory: %s", exc)
-            except EndpointConnectionError as exc:
-                if not config.allow_seed_fallback:
-                    raise StorageError(
-                        f"Cannot connect to S3 to retrieve '{object_key}': {exc}"
-                    ) from exc
+        try:
+            path = self._resolve_path(object_key)
+            if path.is_file():
+                return path.read_bytes()
+        except (StorageError, OSError) as exc:
+            logger.warning("get_object failed for '%s': %s", object_key, exc)
 
-        # In-memory fallback
         return self._in_memory_store.get(object_key)
 
-    def get_presigned_url(
-        self,
-        object_key: str,
-        expires_in: int = PRESIGNED_URL_EXPIRY_SECONDS,
-    ) -> Optional[str]:
-        """
-        Generates a presigned GET URL for temporary direct access to a private S3 object.
-        Returns None if S3 is unavailable (falls back to direct URL in dev).
-        """
-        if _BOTO3_AVAILABLE and self._s3_client is not None:
-            try:
-                url = self._s3_client.generate_presigned_url(
-                    "get_object",
-                    Params={"Bucket": self.bucket_name, "Key": object_key},
-                    ExpiresIn=expires_in,
-                )
-                return url
-            except (ClientError, Exception) as exc:
-                logger.warning("generate_presigned_url failed: %s", exc)
-                if not config.allow_seed_fallback:
-                    # Unlike every other method in this file, this used to
-                    # fall back to a direct/public URL unconditionally, in
-                    # any environment -- masking a real S3 permissions/config
-                    # problem in production instead of surfacing an error.
-                    raise StorageError(f"Could not generate a presigned URL for '{object_key}': {exc}") from exc
-
-        # Fallback: direct MinIO URL — local_development only when
-        # allow_seed_fallback=True.
-        return self._resolve_public_url(object_key)
-
     def _resolve_public_url(self, object_key: str) -> str:
-        """Resolves the public URL for a stored object based on current environment."""
-        if config.environment in ("staging", "production"):
-            return f"{self.cdn_base_url.rstrip('/')}/{object_key}"
-        # Local dev: direct MinIO URL
-        return f"{self.endpoint_url.rstrip('/')}/{self.bucket_name}/{object_key}"
+        """Resolves the public URL Caddy serves this object at."""
+        return f"{self.cdn_base_url.rstrip('/')}/{object_key}"
 
 
-storage_adapter = ObjectStorageAdapter()
+storage_adapter = LocalArtworkStorageAdapter()

@@ -36,8 +36,8 @@ VALKEY_PORT=6379
 # producers). Valkey remains for cache/rate-limiting/idempotency.
 
 # ─── Authentication (REQUIRED) ─────────────────────────────────────────────────
-# API's local-dev HS256 fallback secret — still required even with Keycloak,
-# see services/api/config.py's insecure-default validator.
+# Signs every native access/refresh token — see services/api/config.py's
+# insecure-default validator, which refuses to boot on the placeholder value.
 JWT_SECRET_KEY=<GENERATE_64_CHAR_RANDOM_STRING_HERE>
 # Signs/encrypts the Next.js BFF session cookie (apps/web/src/lib/auth/session.ts).
 # NEW as of the R1 hardening pass — the web container now refuses to boot
@@ -55,13 +55,10 @@ SESSION_SECRET=<GENERATE_64_CHAR_RANDOM_STRING_HERE>
 # Disabled by default in production. Set to true if you want Swagger UI.
 DOCS_ENABLED=false
 
-# ─── S3 / MinIO Storage (REQUIRED) ──────────────────────────────────────────
-# These double as MinIO's own root credentials AND the app's S3 client
-# credentials (self-hosted, not tied to a real AWS account) — generate them
-# the same way you'd generate any other strong password.
-S3_ACCESS_KEY_ID=<GENERATE_STRONG_ACCESS_KEY_HERE>
-S3_SECRET_ACCESS_KEY=<GENERATE_STRONG_SECRET_KEY_HERE>
-S3_ARTWORK_BUCKET=cinevault-artwork
+# S3/MinIO removed in the Phase 3 infrastructure consolidation — artwork now
+# lives in a persistent Docker volume (docker-compose.prod.yml's
+# artwork-prod-data, mounted at ARTWORK_PATH=/data/artwork), no credentials
+# or bucket name needed. Nothing to set here.
 
 # ─── Caddy / HTTPS / CDN (REQUIRED) ─────────────────────────────────────────
 # Point both DNS records (SITE_ADDRESS, CDN_HOSTNAME) at this host BEFORE

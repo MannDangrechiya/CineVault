@@ -18,8 +18,6 @@ PROD_ENV = {
     "DEBUG": "false",
     "JWT_SECRET_KEY": "phase2-production-test-secret-key-that-is-very-long-and-secure-1234567890",
     "POSTGRES_PASSWORD": "custom_prod_db_password_1234567890",
-    "S3_ACCESS_KEY_ID": "custom_prod_s3_access_key",
-    "S3_SECRET_ACCESS_KEY": "custom_prod_s3_secret_key",
     "ALLOW_SEED_FALLBACK": "false",
 }
 

@@ -32,8 +32,6 @@ except ImportError:
 _INSECURE_DEFAULTS = {
     "jwt_secret_key": "cinevault-local-dev-jwt-secret-CHANGE-IN-PROD-00000000",
     "postgres_password": "dev_postgres_password_change_me",
-    "s3_access_key_id": "dev_s3_access_key",
-    "s3_secret_access_key": "dev_s3_secret_key",
 }
 
 
@@ -122,14 +120,13 @@ class APIConfig(BaseModel):
     tvdb_api_key: Optional[str] = os.getenv("TVDB_API_KEY")
     tmdb_api_key: Optional[str] = os.getenv("TMDB_API_KEY")
 
-    # S3 & CDN Storage Configuration
-    s3_endpoint_url: str = os.getenv("S3_ENDPOINT_URL", "http://localhost:9000")
-    s3_artwork_bucket: str = os.getenv("S3_ARTWORK_BUCKET", "cinevault-dev-artwork")
+    # Local Artwork Storage (MinIO/S3 was removed in the Phase 3
+    # infrastructure consolidation — audited to have zero production
+    # traffic, since no client app ever called the upload endpoint. Files
+    # now live in a persistent local directory served publicly by Caddy at
+    # CDN_HOSTNAME, see infra/docker/Caddyfile and services/api/storage.py)
+    artwork_path: str = os.getenv("ARTWORK_PATH", "./data/artwork")
     cdn_base_url: str = os.getenv("CDN_BASE_URL", "https://cdn.cinevault.org/artwork")
-    # P1 Fix: Added S3 access key fields (previously missing — boto3 couldn't authenticate)
-    s3_access_key_id: str = os.getenv("S3_ACCESS_KEY_ID", "dev_s3_access_key")
-    s3_secret_access_key: str = os.getenv("S3_SECRET_ACCESS_KEY", "dev_s3_secret_key")
-    s3_region: str = os.getenv("S3_REGION", "us-east-1")
 
     @model_validator(mode="after")
     def _refuse_unsafe_defaults_outside_local_dev(self) -> "APIConfig":

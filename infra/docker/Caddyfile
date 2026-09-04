@@ -172,14 +172,17 @@
     }
 }
 
-# 3. Artwork CDN -> MinIO (separate domain, own Let's Encrypt cert). Proxied
-# 1:1 at the root so path-style object URLs (/<bucket>/<key>) resolve exactly
-# as boto3 wrote them — see fastapi-backend's CDN_BASE_URL in
-# docker-compose.prod.yml and services/api/storage.py's build_public_url.
-# Only GET/HEAD reach here in practice: the artwork bucket is set to
-# anonymous *download* only (packages bootstrapped by the minio-init service
-# — no anonymous list/write), so this proxies public reads, not the S3 write
-# API surface.
+# 3. Artwork CDN -> local /srv/artwork (separate domain, own Let's Encrypt
+# cert). MinIO was removed in the Phase 3 infrastructure consolidation —
+# audited to have zero production traffic (no client app ever called the
+# upload endpoint). Caddy now serves the artwork-prod-data volume directly
+# (mounted read-only, see docker-compose.prod.yml) instead of proxying an
+# object-storage container; the object keys fastapi-backend writes (e.g.
+# "posters/<hash>_<filename>.jpg", see services/api/storage.py) are plain
+# relative paths under that root, so a URL like
+# https://{$CDN_HOSTNAME}/posters/<hash>_<filename>.jpg resolves directly to
+# /srv/artwork/posters/<hash>_<filename>.jpg with no rewriting needed. Only
+# GET/HEAD are meaningful here — file_server never accepts writes.
 {$CDN_HOSTNAME} {
     log {
         output stdout
@@ -194,10 +197,10 @@
         -Server
     }
 
-    reverse_proxy minio:9000 {
-        header_up Host {host}
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-    }
+    # No `browse` directive: directory listing stays off (Caddy's default)
+    # — this domain serves individual artwork files by their exact
+    # (content-addressed) path, never a browsable index of everything
+    # that's been uploaded.
+    root * /srv/artwork
+    file_server
 }

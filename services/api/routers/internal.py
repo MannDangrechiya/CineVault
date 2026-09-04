@@ -226,7 +226,7 @@ async def reject_candidate(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Reconciliation candidate '{candidate_id}' not found.")
     return result
 
-from ..storage import storage_adapter
+from ..storage import storage_adapter, StorageError
 
 class ArtworkUploadRequest(BaseModel):
     filename: str
@@ -252,20 +252,23 @@ async def upload_artwork(
     body: ArtworkUploadRequest,
     claims: SecurityTokenClaims = Depends(require_curator),
 ):
-    """Uploads artwork image to S3/MinIO object storage bucket and returns canonical CDN URL."""
+    """Uploads artwork image to local storage and returns its canonical CDN URL."""
     import base64
     try:
         file_bytes = base64.b64decode(body.file_base64)
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid base64 artwork content.")
 
-    cdn_url = storage_adapter.upload_artwork(
-        file_bytes=file_bytes,
-        filename=body.filename,
-        content_type=body.content_type,
-        folder=body.folder,
-    )
-    object_key = storage_adapter.generate_object_key(body.filename, folder=body.folder)
+    try:
+        cdn_url = storage_adapter.upload_artwork(
+            file_bytes=file_bytes,
+            filename=body.filename,
+            content_type=body.content_type,
+            folder=body.folder,
+        )
+        object_key = storage_adapter.generate_object_key(body.filename, folder=body.folder)
+    except StorageError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     return ArtworkUploadResponse(
         cdn_url=cdn_url,

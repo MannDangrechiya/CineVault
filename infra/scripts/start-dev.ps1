@@ -102,7 +102,6 @@ Write-Host "  * TV Series Catalog:   http://localhost:$WebPort/series" -Foregrou
 Write-Host "  * Personal Dashboard:  http://localhost:$WebPort/dashboard" -ForegroundColor White
 if (-not $NoDocker) {
     Write-Host "  ---------------------------------------------------------------" -ForegroundColor DarkGray
-    Write-Host "  * MinIO S3 Console:    http://localhost:9001 (minioadmin)" -ForegroundColor DarkGray
     Write-Host "  * Grafana Metrics:     http://localhost:3002" -ForegroundColor DarkGray
 }
 Write-Host "=================================================================" -ForegroundColor Green
