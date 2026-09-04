@@ -22,7 +22,6 @@ from services.api.auth.rbac import (
 from services.api.auth.audit import audit_logger, AuditLogger
 from services.api.telemetry import sanitize_value, JSONFormatter, metrics_collector
 from services.api.valkey import valkey_manager
-from services.api.rabbitmq import rabbitmq_manager, PayloadValidationError
 from services.api.database import AsyncSessionLocal
 from services.api.models.quality import ReconciliationCandidateModel, AIProposalStagingModel
 
@@ -186,10 +185,6 @@ class TestPhase6SecurityImplementation(unittest.TestCase):
         sanitized_email = sanitize_value("email", "user@example.com")
         self.assertEqual(sanitized_email, "[REDACTED]")
 
-        # Queue payload safety rejection for CAT-2 personal fields
-        with self.assertRaises(PayloadValidationError):
-            rabbitmq_manager.validate_payload_safety({"user_id": "123", "watch_event_notes": "my private notes"})
-
         # Cache sanitization for CAT-2 personal fields
         dirty_json = json.dumps({"title_id": "t1", "email": "user@test.com", "watch_event_notes": "sensitive"})
         clean_cache_val = valkey_manager._sanitize_cache_value(dirty_json)
@@ -207,13 +202,6 @@ class TestPhase6SecurityImplementation(unittest.TestCase):
 
     # 5. Secret & Provider Credential Isolation
     def test_provider_credential_isolation(self):
-        # Queue payload rejection for secrets
-        with self.assertRaises(PayloadValidationError):
-            rabbitmq_manager.validate_payload_safety({"provider": "TMDB", "auth_token": "secret_api_key_123"})
-
-        with self.assertRaises(PayloadValidationError):
-            rabbitmq_manager.validate_payload_safety({"provider": "KOBIS", "password": "super_secret_password"})
-
         # Telemetry secret redaction
         self.assertEqual(sanitize_value("secret", "my_api_key"), "[REDACTED]")
         self.assertEqual(sanitize_value("authorization", "Bearer secret_token"), "[REDACTED]")

@@ -265,7 +265,6 @@ class MetricsCollector:
         self.dependency_health: Dict[str, int] = {
             "pgbouncer": 1,
             "valkey": 1,
-            "rabbitmq": 1,
             "storage": 1,
             "search_index": 1,
         }

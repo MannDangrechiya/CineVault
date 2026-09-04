@@ -32,7 +32,6 @@ except ImportError:
 _INSECURE_DEFAULTS = {
     "jwt_secret_key": "cinevault-local-dev-jwt-secret-CHANGE-IN-PROD-00000000",
     "postgres_password": "dev_postgres_password_change_me",
-    "rabbitmq_password": "dev_rabbitmq_password_change_me",
     "s3_access_key_id": "dev_s3_access_key",
     "s3_secret_access_key": "dev_s3_secret_key",
 }
@@ -76,13 +75,6 @@ class APIConfig(BaseModel):
     # Cache & Rate Limiting (Valkey)
     valkey_host: str = os.getenv("VALKEY_HOST", "localhost")
     valkey_port: int = int(os.getenv("VALKEY_PORT", "6379"))
-
-    # Message Queue Broker (RabbitMQ AMQP 0-9-1)
-    rabbitmq_host: str = os.getenv("RABBITMQ_HOST", "localhost")
-    rabbitmq_port: int = int(os.getenv("RABBITMQ_PORT", "5672"))
-    rabbitmq_user: str = os.getenv("RABBITMQ_USER", "cinevault_dev")
-    rabbitmq_password: str = os.getenv("RABBITMQ_PASSWORD", "dev_rabbitmq_password_change_me")
-    rabbitmq_vhost: str = os.getenv("RABBITMQ_VHOST", "/")
 
     # OIDC / Keycloak Authentication
     keycloak_issuer: str = os.getenv(

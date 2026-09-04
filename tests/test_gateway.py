@@ -24,7 +24,7 @@ class TestGatewayAndProxyRouting(unittest.TestCase):
         response = self.client.get("/health/readiness")
         self.assertIn(response.status_code, [200, 503, 530])
         data = response.json()
-        self.assertIn("dependencies", data)
+        self.assertIn("checks", data)
 
     def test_correlation_id_propagation(self):
         custom_corr_id = "018f2e4a-7b31-7000-8000-999999999999"

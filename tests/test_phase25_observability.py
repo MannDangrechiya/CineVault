@@ -106,10 +106,10 @@ class TestPhase25Observability:
             "DEPENDENCY_DOWN",
             source_service="health-monitor",
             severity="ERROR",
-            dependency="rabbitmq",
+            dependency="valkey",
         )
         assert signal.signal_type == "SYSTEM"
-        assert signal.payload["dependency"] == "rabbitmq"
+        assert signal.payload["dependency"] == "valkey"
 
     def test_signal_router_filter_by_type(self):
         """get_recent_signals with signal_type filter returns only matching signals."""

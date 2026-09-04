@@ -52,14 +52,13 @@ class TestPhase31CICDWorkflows:
         assert "3.12" in py_versions
 
     def test_ci_workflow_has_services(self):
-        """Backend CI provisions Postgres, Valkey, and RabbitMQ container services."""
+        """Backend CI provisions Postgres and Valkey container services."""
         ci_path = os.path.join(WORKFLOWS_DIR, "ci.yml")
         with open(ci_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         services = data["jobs"]["backend-tests"]["services"]
         assert "postgres" in services
         assert "valkey" in services
-        assert "rabbitmq" in services
 
     def test_release_gate_workflow_valid_yaml(self):
         """release-gate.yml is valid YAML and parses properly."""

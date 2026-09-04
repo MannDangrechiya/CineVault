@@ -49,7 +49,6 @@ class TestProductionSecretValidation(unittest.TestCase):
                 "ENVIRONMENT",
                 "JWT_SECRET_KEY",
                 "POSTGRES_PASSWORD",
-                "RABBITMQ_PASSWORD",
                 "S3_ACCESS_KEY_ID",
                 "S3_SECRET_ACCESS_KEY",
             )
@@ -59,7 +58,6 @@ class TestProductionSecretValidation(unittest.TestCase):
                 "ENVIRONMENT": "production",
                 "JWT_SECRET_KEY": "a-real-random-production-secret",
                 "POSTGRES_PASSWORD": "a-real-random-pg-password",
-                "RABBITMQ_PASSWORD": "a-real-random-rmq-password",
                 "S3_ACCESS_KEY_ID": "AKIAREALKEYID",
                 "S3_SECRET_ACCESS_KEY": "a-real-random-s3-secret",
             }

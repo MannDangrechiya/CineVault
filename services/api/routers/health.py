@@ -8,7 +8,6 @@ from fastapi import APIRouter, status
 from fastapi.responses import JSONResponse
 from ..database import db_manager, async_check_db_health
 from ..valkey import valkey_manager
-from ..rabbitmq import rabbitmq_manager
 
 router = APIRouter(prefix="/health", tags=["Health"])
 
@@ -27,7 +26,6 @@ async def readiness_probe():
     Returns sanitized status without exposing internal topology."""
     db_health = db_manager.check_health()
     valkey_health = valkey_manager.check_health()
-    rabbitmq_health = rabbitmq_manager.check_health()
 
     # Also run a real SQL query to verify end-to-end DB connectivity
     db_query_ok = await async_check_db_health()
@@ -35,8 +33,7 @@ async def readiness_probe():
     is_ready = (
         db_health.get("status") == "HEALTHY" and
         db_query_ok and
-        valkey_health.get("status") == "HEALTHY" and
-        rabbitmq_health.get("status") == "HEALTHY"
+        valkey_health.get("status") == "HEALTHY"
     )
     status_code = status.HTTP_200_OK if is_ready else status.HTTP_503_SERVICE_UNAVAILABLE
 
@@ -47,7 +44,6 @@ async def readiness_probe():
         "checks": {
             "database": "ok" if (db_health.get("status") == "HEALTHY" and db_query_ok) else "degraded",
             "cache": "ok" if valkey_health.get("status") == "HEALTHY" else "degraded",
-            "queue": "ok" if rabbitmq_health.get("status") == "HEALTHY" else "degraded",
         }
     }
     return JSONResponse(status_code=status_code, content=payload)

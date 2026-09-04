@@ -1,6 +1,12 @@
-# CineVault OS — Single-Command Production Deployment Stack (Phase 4)
-# Orchestrates: Postgres (pgvector), PgBouncer, Valkey, RabbitMQ, Flyway,
-# FastAPI Production Backend, Celery AI Worker, Next.js Web Frontend, and Caddy Edge Proxy.
+# CineVault OS — Single-Command Production Deployment Stack (Phase 4; trimmed
+# in the Phase 3 infrastructure consolidation)
+# Orchestrates: Postgres (pgvector), PgBouncer, Valkey, Flyway, FastAPI
+# Production Backend, Next.js Web Frontend, and Caddy Edge Proxy.
+# RabbitMQ + the Celery ai-worker were removed — the audit found the worker's
+# three tasks were synthetic stubs (fake math-based embeddings, a fabricated
+# TMDB sync count) with zero producers anywhere in the codebase; the one real
+# AI workload (sentence-transformers embeddings) already runs synchronously
+# in FastAPI. See the Phase 3 removal commit for the full audit.
 
 # R1 hardening pass: this file and docker-compose.yml (dev) both live in
 # infra/docker/, so without an explicit project name Compose derives one from
@@ -85,22 +91,6 @@ services:
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # 5. Message & Task Broker: RabbitMQ
-  rabbitmq:
-    image: rabbitmq:4-management-alpine
-    container_name: cinevault-prod-rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-cinevault_app}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-change_me_super_secure_rabbitmq_pass}
-    volumes:
-      - rabbitmq-prod-data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
@@ -227,17 +217,6 @@ services:
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
 
-      # Queue — container env var name (RABBITMQ_PASSWORD) intentionally
-      # differs from the compose-interpolation var (RABBITMQ_PASS) below: the
-      # latter is what the `rabbitmq` service's own credentials are set from
-      # (see its RABBITMQ_DEFAULT_PASS above), the former is the name
-      # services/api/config.py actually reads.
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
-      RABBITMQ_USER: ${RABBITMQ_USER:-cinevault_app}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASS:?RABBITMQ_PASS must be set to a strong, unique password}
-      RABBITMQ_VHOST: /
-
       # Local-dev HS256 login fallback secret — disabled outside
       # local_development, but APIConfig still refuses to boot if this is
       # left at its insecure placeholder, so a real value is still required.
@@ -270,40 +249,12 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
       flyway:
         condition: service_completed_successfully
       keycloak:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-    restart: unless-stopped
-
-  # 9. Background AI Daemon: Celery Worker
-  ai-worker:
-    container_name: cinevault-prod-ai-worker
-    build:
-      context: ../..
-      dockerfile: services/ai_worker/Dockerfile
-    environment:
-      # services/ai_worker/worker.py only reads CELERY_BROKER_URL and
-      # CELERY_RESULT_BACKEND (confirmed) — it has no database connection
-      # code at all today (its embedding generation is in-memory/synthetic;
-      # nothing here persists results to Postgres yet). DATABASE_URL and
-      # ENVIRONMENT were previously set but read by nothing in this service;
-      # removed rather than left as misleading dead config. If/when this
-      # worker gains real DB access, wire the same PGBOUNCER_*/POSTGRES_*
-      # vars fastapi-backend uses above, not a DATABASE_URL string.
-      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-cinevault_app}:${RABBITMQ_PASS:?RABBITMQ_PASS must be set to a strong, unique password}@rabbitmq:5672//
-      CELERY_RESULT_BACKEND: redis://valkey:6379/1
-    depends_on:
-      postgres:
-        condition: service_healthy
-      valkey:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
     restart: unless-stopped
 
   # 10. Web Frontend: Next.js 15 Standalone Runner
@@ -388,8 +339,6 @@ volumes:
     name: cinevault-prod-postgres-data
   valkey-prod-data:
     name: cinevault-prod-valkey-data
-  rabbitmq-prod-data:
-    name: cinevault-prod-rabbitmq-data
   minio-prod-data:
     name: cinevault-prod-minio-data
   caddy-prod-data:

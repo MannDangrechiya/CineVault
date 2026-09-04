@@ -88,11 +88,11 @@ class TestObservabilityAndOperations(unittest.TestCase):
 
     def test_dependency_health_status_metrics_updates(self):
         metrics_collector.update_dependency_health("valkey", True)
-        metrics_collector.update_dependency_health("rabbitmq", False)
-        
+        metrics_collector.update_dependency_health("storage", False)
+
         output = metrics_collector.generate_prometheus_output()
         self.assertIn('cinevault_dependency_health_status{dependency="valkey"} 1', output)
-        self.assertIn('cinevault_dependency_health_status{dependency="rabbitmq"} 0', output)
+        self.assertIn('cinevault_dependency_health_status{dependency="storage"} 0', output)
 
     def test_health_readiness_and_liveness_probes(self):
         # Liveness

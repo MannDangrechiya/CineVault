@@ -99,24 +99,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # 4. Queue Broker: RabbitMQ (AMQP 0-9-1 / Management UI)
-  rabbitmq:
-    image: rabbitmq:4-management-alpine
-    container_name: cinevault-local-rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-cinevault_dev}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-dev_rabbitmq_password_change_me}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # 5. Identity: Keycloak Server (OIDC)
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.0
@@ -206,6 +188,5 @@ services:
 volumes:
   postgres-data:
   valkey-data:
-  rabbitmq-data:
   prometheus-data:
   minio-data:
