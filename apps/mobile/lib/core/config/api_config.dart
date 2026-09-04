@@ -1,15 +1,17 @@
 // CineVault OS — Client API Configuration Baseline (Phase 9.11)
-// Defines server endpoint routes, default timeouts, and Kong API Gateway routing
+// Defines server endpoint routes and default timeouts. Requests go straight
+// to Caddy (production) or the local FastAPI dev server — there is no API
+// gateway in front of it (Kong was audited and removed in Phase 3).
 
 import 'package:flutter/foundation.dart';
 
 class ApiConfig {
-  /// Base API URL resolved by environment and Kong API Gateway settings.
+  /// Base API URL resolved by environment.
   ///
   /// Selection priority:
   ///   1. Compile-time override via `--dart-define=API_BASE_URL=<url>`
-  ///   2. Production release mode → Kong Gateway fronted URL (`https://api.cinevault.org` / `http://localhost:8000`)
-  ///   3. Android debug default → `http://10.0.2.2:8000` (standard emulator→host Kong mapping)
+  ///   2. Production release mode → Caddy-fronted URL (`https://api.cinevault.org`)
+  ///   3. Android debug default → `http://127.0.0.1:8000` (host loopback via `adb reverse`)
   ///      For **physical devices**, pass your PC's LAN IP at build time:
   ///        flutter run --dart-define=API_BASE_URL=http://<YOUR_PC_LAN_IP>:8000
   ///   4. Everything else (iOS simulator, desktop, web) → `http://localhost:8000`

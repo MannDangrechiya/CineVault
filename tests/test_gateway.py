@@ -1,5 +1,8 @@
 # CineVault OS — Phase 3 Gateway & Proxy Test Suite
-# Validates local Kong routing configuration, correlation ID propagation, and health behavior
+# Validates FastAPI's edge-facing behavior (health, correlation ID propagation,
+# error shape) directly. Kong was audited and removed in the Phase 3
+# infrastructure consolidation — it was never a real dependency of these
+# checks (they exercise the FastAPI app via TestClient, not a live gateway).
 
 import unittest
 from fastapi.testclient import TestClient

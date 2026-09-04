@@ -1,87 +1,81 @@
-# CineVault OS — Kong Gateway Topology & Routing Architecture
+# CineVault OS — Edge Gateway Topology & Routing Architecture
+
+> **Phase 3 update:** Kong was audited and removed. It was never wired into
+> `docker-compose.prod.yml` (production never had a Kong service), and in dev
+> it collided on host port 8000 with FastAPI's own default bind — it wasn't a
+> reliably functioning part of the local workflow either. **Caddy is, and has
+> always effectively been, the sole edge gateway.** This document now
+> describes the real topology instead of the aspirational one.
 
 ## Overview
-CineVault OS uses **Kong Gateway (v3.6)** in DB-Less mode as the API Gateway for all incoming client and internal network traffic. Kong runs locally in Docker Compose on ports **8000** (Proxy) and **8001** (Admin API).
+
+CineVault OS uses **Caddy 2** as the sole public-facing reverse proxy and TLS
+terminator. It is the only container that publishes ports to the host
+(`80`/`443`) in production.
 
 ```
-[Flutter Client / Web UI]
-           │
-           │ HTTP Request (port 8000)
-           ▼
-┌────────────────────────────────────────────────────────┐
-│                   Kong Gateway                         │
-│  - DB-Less mode (/usr/local/kong/declarative/kong.yml) │
-│  - Plugins: Request Transformer, Rate Limiting, CORS   │
-└────────────────────────────────────────────────────────┘
-           │
-           │ Proxy (Host network / host.docker.internal:8000)
-           ▼
-┌────────────────────────────────────────────────────────┐
-│                   FastAPI Service                      │
-│  - OIDC / JWT Verification                             │
-│  - Async PostgreSQL (PgBouncer) + Valkey + RabbitMQ    │
-└────────────────────────────────────────────────────────┘
+                    INTERNET
+                       │
+                       ▼
+                  CADDY :443
+        (automatic HTTPS, security headers,
+         zstd/gzip compression)
+                       │
+        ┌──────────────┼──────────────┐
+        ▼              ▼              ▼
+   SITE_ADDRESS   KEYCLOAK_HOSTNAME  CDN_HOSTNAME
+   /v1,/ai,/social      │           (artwork reads)
+   /automations,        ▼
+   /internal/*      keycloak:8080
+   /health,/docs   (see Keycloak
+        │           decommission
+        ▼             note below)
+  fastapi-backend:8000
+        │
+   catch-all /*
+        ▼
+   nextjs-web:3000
 ```
 
----
+## Topology & Port Mapping (production)
 
-## Topology & Network Port Mapping
+| Component | Container Name | Host Port | Internal Port | Notes |
+|---|---|---|---|---|
+| **Caddy** | `cinevault-prod-caddy` | `80`, `443` | `80`, `443` | Only container exposed to the host |
+| **FastAPI Backend** | `cinevault-prod-backend` | — (internal only) | `8000` | Reached only via Caddy or the Docker network |
+| **Next.js Web** | `cinevault-prod-web` | — (internal only) | `3000` | Reached only via Caddy |
+| **Postgres** | `cinevault-prod-postgres` | — (internal only) | `5432` | Never published to host |
+| **Valkey** | `cinevault-prod-valkey` | — (internal only) | `6379` | Never published to host |
 
-| Component | Container Name | Host Port | Internal Port | Description |
-|-----------|----------------|-----------|---------------|-------------|
-| **Kong Proxy** | `cinevault-local-kong` | `8000` | `8000` | Primary entry point for client API requests |
-| **Kong Admin API** | `cinevault-local-kong` | `8001` | `8001` | Gateway administration and health inspection |
-| **FastAPI Backend** | Host process / Container | N/A | `8000` | FastAPI application listening on backend port |
-| **Valkey Cache** | `cinevault-local-valkey` | `6379` | `6379` | Shared Redis-compatible rate limiter storage |
-| **PgBouncer** | `cinevault-local-pgbouncer` | `6432` | `6432` | PostgreSQL connection pooler |
-| **Keycloak OIDC** | `cinevault-local-keycloak` | `8080` | `8080` | OIDC Realm & JWKS provider |
-| **MinIO Storage** | `cinevault-local-minio` | `9000` / `9001` | `9000` / `9001` | S3-compatible artwork storage & Web Console |
+Rate limiting and request routing are handled in FastAPI itself
+(`services/api/rate_limiter.py`, Valkey-backed) rather than by a gateway
+plugin — there is no separate API-gateway-level rate limiter.
 
----
+## Route configuration (`infra/docker/Caddyfile`)
 
-## Route Configuration (`kong.yml`)
+- `{$SITE_ADDRESS}` → `/v1/*`, `/ai/*`, `/social/*`, `/automations/*`,
+  `/internal/*` (except the three internal-only sub-paths below), `/health*`,
+  `/docs*`, `/openapi.json` → proxied to `fastapi-backend:8000`
+- `{$SITE_ADDRESS}` → `/internal/v1/jobs/*`, `/internal/v1/performance/*`,
+  `/internal/v1/observability/*` → **blocked at the edge** (`respond 404`);
+  these routers only check a spoofable header and are reachable
+  internally-only over the Docker network
+- `{$SITE_ADDRESS}` → `/metrics*` → **blocked at the edge** (unauthenticated
+  Prometheus text output; no scraper needs it public)
+- `{$SITE_ADDRESS}` → `/*` (catch-all) → `nextjs-web:3000`
+- `{$CDN_HOSTNAME}` → `/*` → artwork storage (see the storage-migration note
+  in `docs/storage_cdn.md` for the current backend)
 
-### 1. Public API Route
-- **Service Name**: `cinevault-public-api`
-- **Path Match**: `/v1`
-- **Upstream Target**: `http://host.docker.internal:8000/v1`
-- **Plugins**:
-  - `request-transformer`: Injects default `X-Correlation-ID` header.
-  - `rate-limiting`: 600 requests/minute backed by Valkey (`redis_host: valkey`, port 6379).
-  - `cors`: Permits cross-origin requests with `Authorization`, `Content-Type`, `X-Correlation-ID`, `X-Idempotency-Key` headers.
+Each site gets its own automatic Let's Encrypt certificate; HTTP is
+redirected to HTTPS by default.
 
-### 2. Internal Admin Route
-- **Service Name**: `cinevault-internal-api`
-- **Path Match**: `/internal/v1`
-- **Upstream Target**: `http://host.docker.internal:8000/internal/v1`
-- **Plugins**:
-  - `rate-limiting`: 1200 requests/minute.
-
-### 3. Health & Status Route
-- **Service Name**: `cinevault-health-api`
-- **Path Match**: `/health`
-- **Upstream Target**: `http://host.docker.internal:8000/health`
-
----
-
-## Local Verification Commands
+## Local verification
 
 ```bash
-# 1. Start the Docker infrastructure stack
-docker-compose up -d
-
-# 2. Check Kong Gateway status via Admin API (port 8001)
-curl -s http://localhost:8001/status | jq .
-
-# 3. List configured routes in Kong
-curl -s http://localhost:8001/routes | jq .
-
-# 4. Verify public API routing through Kong Proxy (port 8000)
-curl -i http://localhost:8000/v1/health
-
-# 5. Verify rate limiting headers in Kong response
-curl -i http://localhost:8000/v1/titles
-# Expected headers:
-# X-RateLimit-Limit-Minute: 600
-# X-RateLimit-Remaining-Minute: 599
+curl -i https://<SITE_ADDRESS>/health/liveness
+curl -i https://<SITE_ADDRESS>/v1/titles
 ```
+
+No gateway-specific admin API exists — Caddy is configured declaratively via
+`infra/docker/Caddyfile` and has no runtime admin endpoint exposed
+(`admin off` in production).

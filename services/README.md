@@ -2,7 +2,4 @@
 
 This directory houses the 3-tier microservice boundaries for CineVault OS:
 
-* `services/api/`: Public & Internal REST API microservices (FastAPI / Go, Kong Gateway integration, Keycloak OIDC authentication).
-* `services/ingestion/`: Asynchronous ingestion pipeline workers (RabbitMQ consumers, Provider adapters, Licensing Gate verification, Raw payload capture).
-* `services/quality/`: 8-layer Data Quality Verification Engine & Quarantine Processor (`CAT-6`).
-* `services/sync/`: Client Offline Sync Engine & Personal Data (`CAT-2`) dispute resolution service.
+* `services/api/`: Public & Internal REST API (FastAPI), served directly behind Caddy — no separate API gateway. Native HS256 authentication (see `services/api/routers/auth.py`); ingestion (`services/api/ingestion/`), quality checks, and sync all live inside this one service rather than as the separate `ingestion/`/`quality/`/`sync/` microservices this file used to describe.
