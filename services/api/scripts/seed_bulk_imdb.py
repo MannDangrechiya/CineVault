@@ -174,8 +174,8 @@ def parse_qualified_ratings(
 
 async def create_db_pool() -> asyncpg.Pool:
     """Constructs an asyncpg Connection Pool from application configuration."""
-    host = os.getenv("POSTGRES_HOST") or config.pgbouncer_host
-    port = int(os.getenv("POSTGRES_PORT") or config.pgbouncer_port)
+    host = os.getenv("POSTGRES_HOST") or config.postgres_host
+    port = int(os.getenv("POSTGRES_PORT") or config.postgres_port)
     user = config.postgres_user
     password = config.postgres_password
     database = config.postgres_db
@@ -529,7 +529,7 @@ async def main() -> None:
         pool = await create_db_pool()
     except Exception as e:
         logger.error("Failed to connect to database: %s", e)
-        logger.info("Please ensure PostgreSQL / PgBouncer is running.")
+        logger.info("Please ensure PostgreSQL is running.")
         sys.exit(1)
 
     try:

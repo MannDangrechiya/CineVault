@@ -65,9 +65,11 @@ class APIConfig(BaseModel):
         "true" if os.getenv("ENVIRONMENT", "local_development") == "local_development" else "false",
     ).lower() == "true"
 
-    # Database Integration (PgBouncer -> PostgreSQL)
-    pgbouncer_host: str = os.getenv("PGBOUNCER_HOST", os.getenv("POSTGRES_HOST", "localhost"))
-    pgbouncer_port: int = int(os.getenv("PGBOUNCER_PORT", os.getenv("POSTGRES_PORT", "5432")))
+    # Database Integration (direct to PostgreSQL — PgBouncer was removed in
+    # the Phase 3 infrastructure consolidation; SQLAlchemy owns pooling now,
+    # see database.py's bounded AsyncAdaptedQueuePool)
+    postgres_host: str = os.getenv("POSTGRES_HOST", "localhost")
+    postgres_port: int = int(os.getenv("POSTGRES_PORT", "5432"))
     postgres_db: str = os.getenv("POSTGRES_DB", "cinevault")
     postgres_user: str = os.getenv("POSTGRES_USER", "cinevault_dev")
     postgres_password: str = os.getenv("POSTGRES_PASSWORD", "dev_postgres_password_change_me")
@@ -171,7 +173,7 @@ class APIConfig(BaseModel):
     def database_url(self) -> str:
         return (
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.pgbouncer_host}:{self.pgbouncer_port}/{self.postgres_db}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
     @property

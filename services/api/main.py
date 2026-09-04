@@ -36,7 +36,7 @@ from .routers import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Initializing CineVault OS API Service Foundation...")
-    logger.info(f"Environment: {config.environment} | PgBouncer: {config.pgbouncer_host}:{config.pgbouncer_port} | Valkey: {config.valkey_host}:{config.valkey_port}")
+    logger.info(f"Environment: {config.environment} | Postgres: {config.postgres_host}:{config.postgres_port} | Valkey: {config.valkey_host}:{config.valkey_port}")
     yield
     logger.info("Shutting down CineVault OS API Service Foundation.")
 

@@ -52,36 +52,6 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # 3. Connection Pooler: PgBouncer
-  pgbouncer:
-    image: edoburu/pgbouncer:latest
-    container_name: cinevault-prod-pgbouncer
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB:-cinevault}
-      DB_USER: ${POSTGRES_USER:-cinevault_admin}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}
-      POOL_MODE: transaction
-      MAX_CLIENT_CONN: 1000
-      DEFAULT_POOL_SIZE: 25
-      LISTEN_PORT: 6432
-      AUTH_TYPE: scram-sha-256
-    # No host port mapping: the only consumer of PgBouncer is
-    # fastapi-backend, reached over the internal Docker network at
-    # pgbouncer:6432 (see its PGBOUNCER_HOST/PGBOUNCER_PORT below). Flyway
-    # and Keycloak both connect straight to postgres:5432, bypassing the
-    # pooler entirely. R1 hardening pass: this used to publish "6432:6432"
-    # to the host with no verified external consumer — repo-wide search
-    # found none — so the mapping was removed rather than left exposed. If
-    # you genuinely need host-level DB-client access (e.g. psql/a GUI tool
-    # from the ops workstation), add back a loopback-only mapping —
-    # "127.0.0.1:6432:6432" — rather than a bare "6432:6432".
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
   # 4. Cache & Results Store: Valkey (Linux Foundation RESP)
   valkey:
     image: valkey/valkey:8.0-alpine
@@ -195,20 +165,21 @@ services:
       # CELERY_BROKER_URL, or CELERY_RESULT_BACKEND (confirmed: zero
       # references anywhere in services/api) — those 4 vars used to be the
       # entire environment block here and did nothing. It reads the
-      # individual PGBOUNCER_*/POSTGRES_*/VALKEY_*/RABBITMQ_* vars below
-      # instead, none of which were being forwarded, so this container would
-      # always fall back to config.py's local_development defaults and then
-      # crash-loop on the insecure-default validator (ENVIRONMENT=production
-      # below). Fixed by forwarding what the app actually reads.
+      # individual POSTGRES_*/VALKEY_* vars below instead, none of which
+      # were being forwarded, so this container would always fall back to
+      # config.py's local_development defaults and then crash-loop on the
+      # insecure-default validator (ENVIRONMENT=production below). Fixed by
+      # forwarding what the app actually reads.
       ENVIRONMENT: production
       PORT: 8000
       LOG_LEVEL: warning
       DOCS_ENABLED: "false"
       ALLOW_SEED_FALLBACK: "false"
 
-      # Database (PgBouncer -> Postgres)
-      PGBOUNCER_HOST: pgbouncer
-      PGBOUNCER_PORT: 6432
+      # Database — direct to Postgres (PgBouncer was removed; SQLAlchemy's
+      # own bounded pool handles connection limits now, see database.py)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB:-cinevault}
       POSTGRES_USER: ${POSTGRES_USER:-cinevault_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set to a strong, unique password}

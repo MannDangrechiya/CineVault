@@ -45,7 +45,7 @@ def test_03_health_readiness_probe_sanitized():
     response_text = res.text.lower()
     assert "postgres_password" not in response_text
     assert "secret" not in response_text
-    assert "pgbouncer_host" not in response_text
+    assert "postgres_host" not in response_text
 
 
 def test_04_health_startup_probe():
@@ -116,8 +116,8 @@ def test_09_database_pgvector_cosine_similarity():
     """Verifies PostgreSQL pgvector extension and cosine similarity operators work on live DB."""
     async def _run_vector_check():
         import asyncpg
-        host = config.pgbouncer_host
-        port = config.pgbouncer_port
+        host = config.postgres_host
+        port = config.postgres_port
         conn = await asyncpg.connect(
             host=host,
             port=port,

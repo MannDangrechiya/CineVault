@@ -1,7 +1,7 @@
 # CineVault OS — Database Outage Safety Verification (W2 Task 6)
 #
 # Verifies the core safety invariant this whole W2 fallback-safety pass is
-# built on: a real Postgres/PgBouncer connection failure must produce a
+# built on: a real Postgres connection failure must produce a
 # real error (503 Service Unavailable) in staging/production
 # (config.allow_seed_fallback=False), never a 200 OK with fabricated data.
 # The local-dev convenience path (allow_seed_fallback=True) is exercised
@@ -26,10 +26,10 @@ from services.api.database import get_db
 
 class _FailingSessionContextManager:
     """Mimics AsyncSessionLocal() failing to connect -- raises on __aenter__,
-    the same way a real dead PgBouncer/Postgres socket would."""
+    the same way a real dead Postgres socket would."""
 
     async def __aenter__(self):
-        raise OSError("Connection refused (simulated PgBouncer outage)")
+        raise OSError("Connection refused (simulated Postgres outage)")
 
     async def __aexit__(self, exc_type, exc, tb):
         return False

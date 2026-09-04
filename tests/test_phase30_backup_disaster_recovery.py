@@ -30,7 +30,7 @@ def test_real_postgresql_backup_and_restore_disaster_recovery():
     """
     async def _test():
         # 1. Verify PostgreSQL connection configuration
-        admin_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_password}@{config.pgbouncer_host}:{config.pgbouncer_port}/postgres"
+        admin_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_password}@{config.postgres_host}:{config.postgres_port}/postgres"
         
         admin_engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
         
@@ -38,8 +38,8 @@ def test_real_postgresql_backup_and_restore_disaster_recovery():
         recovery_db_name = f"cinevault_dr_rec_{uuid.uuid4().hex[:8]}"
         backup_file_in_container = f"/tmp/{source_db_name}.dump"
         
-        source_db_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_password}@{config.pgbouncer_host}:{config.pgbouncer_port}/{source_db_name}"
-        recovery_db_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_password}@{config.pgbouncer_host}:{config.pgbouncer_port}/{recovery_db_name}"
+        source_db_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_password}@{config.postgres_host}:{config.postgres_port}/{source_db_name}"
+        recovery_db_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_password}@{config.postgres_host}:{config.postgres_port}/{recovery_db_name}"
 
         try:
             # Step 2: Create disposable source database using template cinevault

@@ -59,32 +59,6 @@ services:
       postgres:
         condition: service_healthy
 
-  # 2. Connection Pooler: PgBouncer
-  pgbouncer:
-    image: edoburu/pgbouncer:latest
-    container_name: cinevault-local-pgbouncer
-    restart: unless-stopped
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB:-cinevault}
-      DB_USER: ${POSTGRES_USER:-cinevault_dev}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev_postgres_password_change_me}
-      POOL_MODE: transaction
-      MAX_CLIENT_CONN: 1000
-      DEFAULT_POOL_SIZE: 20
-      # Without this, the image defaults to listening on 5432 internally,
-      # which doesn't match the 6432:6432 port mapping below (nothing reachable on 6432).
-      LISTEN_PORT: 6432
-      # Postgres 16 defaults to scram-sha-256 password encryption; PgBouncer's
-      # own default auth_type (md5) then fails backend auth with "wrong password type".
-      AUTH_TYPE: scram-sha-256
-    ports:
-      - "6432:6432"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   # 3. Cache: Valkey (Linux Foundation RESP)
   valkey:
     image: valkey/valkey:8.0-alpine

@@ -182,8 +182,8 @@ async def sync_missing_posters(
     own_pool = False
     if db_pool is None:
         try:
-            host = os.getenv("POSTGRES_HOST") or config.pgbouncer_host
-            port = int(os.getenv("POSTGRES_PORT") or config.pgbouncer_port)
+            host = os.getenv("POSTGRES_HOST") or config.postgres_host
+            port = int(os.getenv("POSTGRES_PORT") or config.postgres_port)
             db_pool = await asyncpg.create_pool(
                 host=host,
                 port=port,

@@ -1,34 +1,74 @@
 # CineVault OS — Database Integration Module
-# Connects API service to PostgreSQL via PgBouncer transaction pooler (ADR-001)
+# Connects API service directly to PostgreSQL (ADR-001, superseded by the
+# Phase 3 infrastructure consolidation: PgBouncer was removed after auditing
+# found SQLAlchemy already used NullPool — zero pooling of its own — and
+# delegated all connection-count control to PgBouncer's transaction-mode
+# pool. CI's test suite already ran this way, straight against
+# postgres:5432, with no PgBouncer container in the loop at all. Postgres's
+# own default max_connections is 100; with 4 uvicorn workers (see
+# services/api/Dockerfile) each opening up to pool_size + max_overflow
+# connections, the bounded pool below caps total usage at 4 * 10 = 40,
+# leaving headroom for Keycloak, Flyway, and manual psql/GUI access. Raise
+# postgres's max_connections before raising these if this ever needs to
+# scale past the "owner + a handful of friends" profile this stack targets.
 
 import socket
+import sys
 import logging
 from typing import Dict, Any, AsyncGenerator, Optional
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import AsyncAdaptedQueuePool, NullPool
 from .config import config
 
 logger = logging.getLogger("cinevault.database")
 
 # Build async database connection URL
-async_db_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_password}@{config.pgbouncer_host}:{config.pgbouncer_port}/{config.postgres_db}"
+async_db_url = f"postgresql+asyncpg://{config.postgres_user}:{config.postgres_password}@{config.postgres_host}:{config.postgres_port}/{config.postgres_db}"
+
+# asyncpg connections are bound to the event loop that created them.
+# A real pool (below) retains and reuses open connections across checkouts —
+# exactly what production wants, since one Uvicorn worker runs exactly one
+# long-lived event loop for its whole life. But this test suite runs many
+# unittest.IsolatedAsyncioTestCase / TestClient-based tests, each of which
+# gets its own fresh event loop, while this module's `engine` is a single
+# import-time singleton shared by all of them — a connection checked out in
+# one test's loop and reused in a later test's *different* loop raises
+# "got Future ... attached to a different loop" (confirmed the hard way: this
+# surfaced as ~130 unrelated-looking test failures the first time this pool
+# was made real, all downstream of the same cross-loop reuse). NullPool never
+# retains a connection between checkouts, which is why the suite has always
+# safely run this way — detect that case and keep it, everywhere else use a
+# real bounded pool sized for Postgres's default max_connections=100 across
+# 4 uvicorn workers (see services/api/Dockerfile): 4 * (pool_size +
+# max_overflow) = 40, leaving headroom for Keycloak, Flyway, and manual
+# psql/GUI access. Raise postgres's max_connections before raising these if
+# this ever needs to scale past the "owner + a handful of friends" profile
+# this stack targets.
+_running_under_pytest = "pytest" in sys.modules
+_pool_kwargs: Dict[str, Any] = (
+    {"poolclass": NullPool}
+    if _running_under_pytest
+    else {
+        "poolclass": AsyncAdaptedQueuePool,
+        "pool_size": 5,
+        "max_overflow": 5,
+        "pool_pre_ping": True,
+    }
+)
 
 engine = create_async_engine(
     async_db_url,
-    poolclass=NullPool,
     echo=config.debug,
     connect_args={
-        # PgBouncer runs in `transaction` pool mode (docker-compose.yml), which can
-        # hand a query to a different backend Postgres connection between statements.
-        # asyncpg's default server-side prepared-statement cache assumes a stable
-        # connection, so disable it to issue plain (unprepared) queries instead.
-        "statement_cache_size": 0,
-        # PgBouncer has no TLS configured; asyncpg's default SSL-first negotiation
-        # against a plaintext listener breaks the socket mid-handshake.
+        # No TLS between the API and Postgres on the internal Docker network
+        # (the Postgres container has no TLS configured); asyncpg's default
+        # SSL-first negotiation against a plaintext listener breaks the
+        # socket mid-handshake.
         "ssl": False,
         "timeout": 5.0,
-    }
+    },
+    **_pool_kwargs,
 )
 
 AsyncSessionLocal = async_sessionmaker(
@@ -40,11 +80,11 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 def is_db_available() -> bool:
-    """Fast probe of PgBouncer/Postgres connectivity."""
+    """Fast probe of Postgres connectivity."""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(0.2)
-        result = sock.connect_ex((config.pgbouncer_host, config.pgbouncer_port))
+        result = sock.connect_ex((config.postgres_host, config.postgres_port))
         sock.close()
         return result == 0
     except Exception:
@@ -100,17 +140,17 @@ async def get_db() -> AsyncGenerator[Optional[AsyncSession], None]:
             raise
 
 class DatabaseManager:
-    """Manages PgBouncer connection pool checks and health status."""
-    
+    """Manages Postgres connection checks and health status."""
+
     def __init__(self):
-        self.host = config.pgbouncer_host
-        self.port = config.pgbouncer_port
+        self.host = config.postgres_host
+        self.port = config.postgres_port
         self.db = config.postgres_db
         self.user = config.postgres_user
 
     def check_health(self) -> Dict[str, Any]:
         """
-        Verifies connectivity to PgBouncer socket.
+        Verifies connectivity to the Postgres socket.
         Returns health status dictionary for readiness probe.
         """
         try:
@@ -118,12 +158,11 @@ class DatabaseManager:
             sock.settimeout(0.5)
             result = sock.connect_ex((self.host, self.port))
             sock.close()
-            
+
             if result == 0:
                 return {
                     "status": "HEALTHY",
                     "target": f"{self.host}:{self.port}",
-                    "pool_mode": "transaction",
                     "database": self.db
                 }
             else:

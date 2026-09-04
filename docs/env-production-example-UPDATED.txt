@@ -24,10 +24,8 @@ POSTGRES_PORT=5432
 POSTGRES_DB=cinevault
 POSTGRES_USER=cinevault_admin
 POSTGRES_PASSWORD=<GENERATE_STRONG_PASSWORD_HERE>
-
-# ─── PgBouncer ────────────────────────────────────────────────────────────────
-PGBOUNCER_HOST=pgbouncer
-PGBOUNCER_PORT=6432
+# PgBouncer was removed in the Phase 3 infrastructure consolidation — the
+# API connects straight to postgres:5432 above via a bounded SQLAlchemy pool.
 
 # ─── Valkey Cache ─────────────────────────────────────────────────────────────
 VALKEY_HOST=valkey
