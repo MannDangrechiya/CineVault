@@ -1,0 +1,91 @@
+# CineVault OS — Production Environment Template
+# Copy to .env.prod and fill in ALL values before deploying.
+#
+# ⚠️  EVERY [SECRET] variable below MUST be changed from its placeholder.
+#     The application will REFUSE TO START in production mode with default secrets.
+#
+# R1 hardening pass: this replaces the previous .env.production.example,
+# which had drifted out of sync with infra/docker/docker-compose.prod.yml —
+# it was missing SESSION_SECRET, KEYCLOAK_HOSTNAME, CDN_HOSTNAME,
+# KEYCLOAK_ADMIN_USER/PASSWORD, and S3_ARTWORK_BUCKET as required variables,
+# even though the compose file already refused to boot without most of them.
+# See docs/deployment.md §2/§3 for the authoritative, up-to-date list this
+# was generated from. (Written to this path, not .env.production.example
+# directly, because this session's permission settings hard-deny writing any
+# .env* path — copy this file's contents over .env.production.example
+# yourself, then delete this .txt file.)
+
+ENVIRONMENT=production
+LOG_LEVEL=warning
+
+# ─── Database (REQUIRED) ─────────────────────────────────────────────────────
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_DB=cinevault
+POSTGRES_USER=cinevault_admin
+POSTGRES_PASSWORD=<GENERATE_STRONG_PASSWORD_HERE>
+
+# ─── PgBouncer ────────────────────────────────────────────────────────────────
+PGBOUNCER_HOST=pgbouncer
+PGBOUNCER_PORT=6432
+
+# ─── Valkey Cache ─────────────────────────────────────────────────────────────
+VALKEY_HOST=valkey
+VALKEY_PORT=6379
+
+# ─── RabbitMQ ─────────────────────────────────────────────────────────────────
+RABBITMQ_HOST=rabbitmq
+RABBITMQ_PORT=5672
+RABBITMQ_USER=cinevault_app
+RABBITMQ_PASS=<GENERATE_STRONG_PASSWORD_HERE>
+
+# ─── Authentication (REQUIRED) ─────────────────────────────────────────────────
+# API's local-dev HS256 fallback secret — still required even with Keycloak,
+# see services/api/config.py's insecure-default validator.
+JWT_SECRET_KEY=<GENERATE_64_CHAR_RANDOM_STRING_HERE>
+# Signs/encrypts the Next.js BFF session cookie (apps/web/src/lib/auth/session.ts).
+# NEW as of the R1 hardening pass — the web container now refuses to boot
+# without this (apps/web/src/instrumentation.ts).
+SESSION_SECRET=<GENERATE_64_CHAR_RANDOM_STRING_HERE>
+
+# ─── Keycloak (REQUIRED) ────────────────────────────────────────────────────
+# docker-compose.prod.yml refuses to start without KEYCLOAK_HOSTNAME and
+# KEYCLOAK_ADMIN_PASSWORD — these are no longer optional/commented-out.
+KEYCLOAK_HOSTNAME=auth.cinevault.yourdomain.com
+KEYCLOAK_REALM=cinevault
+KEYCLOAK_CLIENT_ID=cinevault-public-client
+KEYCLOAK_ADMIN_USER=admin
+KEYCLOAK_ADMIN_PASSWORD=<GENERATE_STRONG_PASSWORD_HERE>
+
+# ─── CORS ─────────────────────────────────────────────────────────────────────
+# CORS_ALLOWED_ORIGINS is derived automatically from SITE_ADDRESS by
+# docker-compose.prod.yml — do not set it by hand.
+
+# ─── API Documentation ────────────────────────────────────────────────────────
+# Disabled by default in production. Set to true if you want Swagger UI.
+DOCS_ENABLED=false
+
+# ─── S3 / MinIO Storage (REQUIRED) ──────────────────────────────────────────
+# These double as MinIO's own root credentials AND the app's S3 client
+# credentials (self-hosted, not tied to a real AWS account) — generate them
+# the same way you'd generate any other strong password.
+S3_ACCESS_KEY_ID=<GENERATE_STRONG_ACCESS_KEY_HERE>
+S3_SECRET_ACCESS_KEY=<GENERATE_STRONG_SECRET_KEY_HERE>
+S3_ARTWORK_BUCKET=cinevault-artwork
+
+# ─── Caddy / HTTPS / CDN (REQUIRED) ─────────────────────────────────────────
+# Point all three DNS records (SITE_ADDRESS, KEYCLOAK_HOSTNAME, CDN_HOSTNAME)
+# at this host BEFORE starting the stack, or Let's Encrypt's HTTP-01
+# challenge will fail. CDN_HOSTNAME also now reaches the web image at
+# Docker-build time (image optimizer allowlist + client bundle) — see
+# apps/web/Dockerfile and docker-compose.prod.yml's nextjs-web build.args.
+SITE_ADDRESS=cinevault.yourdomain.com
+CDN_HOSTNAME=cdn.cinevault.yourdomain.com
+ACME_EMAIL=you@yourdomain.com
+
+# ─── AI Provider (OPTIONAL) ──────────────────────────────────────────────────
+# Leave AI_PROVIDER unset to auto-detect from available keys,
+# or set to "mock" to disable AI features entirely (free-first default).
+# AI_PROVIDER=grok
+# GROK_API_KEY=<YOUR_GROK_API_KEY>
+# GROK_MODEL=grok-4

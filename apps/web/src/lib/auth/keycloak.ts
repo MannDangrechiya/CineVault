@@ -77,6 +77,30 @@ export async function exchangeRefreshToken(
     return exchangeLocalDevRefreshToken(refreshToken);
   }
 
+  const apiBaseUrl = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+
+  // 1. Native FastAPI refresh endpoint
+  try {
+    const nativeRes = await fetch(`${apiBaseUrl}/v1/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (nativeRes.ok) {
+      const nativeData = await nativeRes.json();
+      return {
+        access_token: nativeData.access_token,
+        refresh_token: nativeData.refresh_token,
+        expires_in: nativeData.expires_in || 86400,
+      };
+    }
+  } catch {
+    // If native refresh fails or backend is unreachable, proceed to Keycloak fallback
+  }
+
+  // 2. Keycloak fallback for backward compatibility
   const clientId = process.env.KEYCLOAK_CLIENT_ID || "cinevault-public-client";
 
   const params = new URLSearchParams({
@@ -90,6 +114,7 @@ export async function exchangeRefreshToken(
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: params.toString(),
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!response.ok) {

@@ -198,11 +198,12 @@ class JWTValidator:
         env_override: typing.Optional[str] = None,
     ) -> None:
         """
-        Cryptographically verifies the JWT RS256 signature against the JWKS public key.
-
+        Cryptographically verifies the JWT signature:
         - In local_development: SKIPPED (Keycloak may not be running).
-          A warning is emitted so developers are aware.
-        - In staging/production: MANDATORY. Raises JWTValidationError on failure.
+        - In staging/production:
+          - If alg is HS256: verifies HMAC-SHA256 signature using config.jwt_secret_key.
+          - If alg is RS256/ES*: verifies against the JWKS public key from Keycloak.
+        Raises JWTValidationError on failure.
         """
         if self._is_local_dev(env_override):
             logger.warning(
@@ -217,17 +218,32 @@ class JWTValidator:
                 "Run: pip install 'python-jose[cryptography]'"
             )
 
+        alg = header.get("alg", "RS256").upper()
+
+        if alg == "HS256":
+            try:
+                jose_jwt.decode(
+                    token,
+                    config.jwt_secret_key,
+                    algorithms=["HS256"],
+                    options={"verify_exp": False, "verify_aud": False, "verify_iss": False},
+                )
+                return
+            except JWTError as exc:
+                raise JWTValidationError(
+                    f"JWT HS256 signature verification failed: {exc}"
+                ) from exc
+
+        if alg not in {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512"}:
+            raise JWTValidationError(
+                f"Unsupported or insecure JWT algorithm '{alg}'. "
+                "Only HS256, RSA, and EC algorithms are permitted."
+            )
+
         kid = header.get("kid")
         if not kid:
             raise JWTValidationError(
                 "JWT header is missing the 'kid' (Key ID) claim required for JWKS lookup."
-            )
-
-        alg = header.get("alg", "RS256").upper()
-        if alg not in {"RS256", "RS384", "RS512", "ES256", "ES384", "ES512"}:
-            raise JWTValidationError(
-                f"Unsupported or insecure JWT algorithm '{alg}'. "
-                "Only RSA and EC algorithms are permitted."
             )
 
         try:
@@ -269,18 +285,19 @@ class JWTValidator:
         if now is None:
             now = int(time.time())
 
-        # 1. Issuer Validation
+        # 1. Issuer Validation (supports configured Keycloak issuer and native cinevault-auth)
         iss = payload.get("iss")
-        if not iss or iss != self.expected_issuer:
+        valid_issuers = {self.expected_issuer, "cinevault-auth"}
+        if not iss or iss not in valid_issuers:
             raise JWTValidationError(
-                f"Invalid issuer: expected '{self.expected_issuer}', got '{iss}'."
+                f"Invalid issuer: expected one of {valid_issuers}, got '{iss}'."
             )
 
         # 2. Audience Validation
         aud = payload.get("aud")
         if not aud:
             raise JWTValidationError("Missing audience claim 'aud'.")
-        valid_audiences = {self.expected_audience, "cinevault-public-client"}
+        valid_audiences = {self.expected_audience, "cinevault-public-client", "cinevault-api-gateway"}
         if isinstance(aud, list):
             if not valid_audiences.intersection(set(aud)):
                 raise JWTValidationError(
@@ -311,13 +328,16 @@ class JWTValidator:
         if not sub:
             raise JWTValidationError("Missing subject claim 'sub'.")
 
-        # Extract Realm Roles & Authentication Method Reference
-        realm_access = payload.get("realm_access", {})
-        roles = (
-            realm_access.get("roles", [])
-            if isinstance(realm_access, dict)
-            else []
-        )
+        # Extract Roles & Authentication Method Reference
+        if "roles" in payload and isinstance(payload["roles"], list):
+            roles = payload["roles"]
+        else:
+            realm_access = payload.get("realm_access", {})
+            roles = (
+                realm_access.get("roles", [])
+                if isinstance(realm_access, dict)
+                else []
+            )
         amr = payload.get("amr", [])
 
         return SecurityTokenClaims(

@@ -30,6 +30,38 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<AuthSessionEntity> register(String email, String password, String inviteCode) async {
+    final raw = await _remoteDatasource.register(email, password, inviteCode);
+    final session = AuthSessionEntity.fromJson(raw);
+
+    await _secureStorage.saveTokens(
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      userId: session.userId,
+    );
+
+    return session;
+  }
+
+  @override
+  Future<AuthSessionEntity> refreshSession() async {
+    final refreshToken = await _secureStorage.getRefreshToken();
+    if (refreshToken == null || refreshToken.isEmpty) {
+      throw Exception('No refresh token stored');
+    }
+    final raw = await _remoteDatasource.refresh(refreshToken);
+    final session = AuthSessionEntity.fromJson(raw);
+
+    await _secureStorage.saveTokens(
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      userId: session.userId,
+    );
+
+    return session;
+  }
+
+  @override
   Future<void> logout() async {
     await _secureStorage.clearSession();
   }
