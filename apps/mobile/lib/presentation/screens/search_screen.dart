@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../data/remote/search_remote_datasource.dart';
 import '../../domain/entities/title.dart';
 import '../providers/catalog_provider.dart';
+import '../widgets/glass/glass.dart';
 import 'title_detail_screen.dart';
 
 final searchDatasourceProvider = Provider<SearchRemoteDatasource>((ref) {
@@ -55,18 +56,21 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Catalog Search (8.3)'),
-      ),
+      extendBodyBehindAppBar: true,
+      appBar: const GlassAppBar(title: Text('Catalog Search (8.3)')),
       body: Column(
         children: [
+          GlassAppBar.contentSpacer(context),
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
                 hintText: 'Search titles, people, alternate names...',
-                prefixIcon: const Icon(Icons.search, color: AppTheme.primaryLightViolet),
+                prefixIcon: const Icon(
+                  Icons.search,
+                  color: AppTheme.primaryLightViolet,
+                ),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.send),
                   onPressed: () => _performSearch(_searchController.text),
@@ -77,61 +81,93 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
           Expanded(
             child: _isSearching
-                ? const Center(child: CircularProgressIndicator(semanticsLabel: 'Searching catalog'))
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      semanticsLabel: 'Searching catalog',
+                    ),
+                  )
                 : _errorMessage != null
-                    ? Center(child: Text(_errorMessage!, style: textTheme.bodyLarge))
-                    : _searchResults.isEmpty
-                        ? Center(
-                            child: Text(
-                              _searchController.text.isEmpty
-                                  ? 'Enter a query to search CineVault catalog.'
-                                  : 'No results found for "${_searchController.text}".',
-                              style: textTheme.bodyMedium,
+                ? Center(
+                    child: GlassCard(
+                      margin: const EdgeInsets.all(24),
+                      child: Text(_errorMessage!, style: textTheme.bodyLarge),
+                    ),
+                  )
+                : _searchResults.isEmpty
+                ? Center(
+                    child: GlassCard(
+                      margin: const EdgeInsets.all(24),
+                      child: Text(
+                        _searchController.text.isEmpty
+                            ? 'Enter a query to search CineVault catalog.'
+                            : 'No results found for "${_searchController.text}".',
+                        style: textTheme.bodyMedium,
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: _searchResults.length,
+                    itemBuilder: (context, index) {
+                      final item = _searchResults[index];
+                      return GlassCard(
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        padding: EdgeInsets.zero,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  TitleDetailScreen(titleId: item.titleId),
                             ),
-                          )
-                        : ListView.builder(
-                            itemCount: _searchResults.length,
-                            itemBuilder: (context, index) {
-                              final item = _searchResults[index];
-                              return ListTile(
-                                leading: Container(
-                                  width: 40,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.cardElevated,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  clipBehavior: Clip.antiAlias,
-                                  child: item.posterUrl != null && item.posterUrl!.isNotEmpty
-                                      ? Image.network(
-                                          item.posterUrl!,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (context, error, stackTrace) => Icon(
-                                            item.contentType == 'MOVIE' ? Icons.movie : Icons.tv,
-                                            color: AppTheme.primaryViolet,
-                                            size: 24,
-                                          ),
-                                        )
-                                      : Icon(
-                                          item.contentType == 'MOVIE' ? Icons.movie : Icons.tv,
+                          );
+                        },
+                        child: ListTile(
+                          leading: Container(
+                            width: 40,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: AppTheme.cardElevated,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            clipBehavior: Clip.antiAlias,
+                            child:
+                                item.posterUrl != null &&
+                                    item.posterUrl!.isNotEmpty
+                                ? Image.network(
+                                    item.posterUrl!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder:
+                                        (context, error, stackTrace) => Icon(
+                                          item.contentType == 'MOVIE'
+                                              ? Icons.movie
+                                              : Icons.tv,
                                           color: AppTheme.primaryViolet,
                                           size: 24,
                                         ),
-                                ),
-                                title: Text(item.primaryTitle, style: textTheme.titleMedium),
-                                subtitle: Text('${item.contentType} • ${item.releaseYear ?? "N/A"}'),
-                                trailing: const Icon(Icons.chevron_right),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => TitleDetailScreen(titleId: item.titleId),
-                                    ),
-                                  );
-                                },
-                              );
-                            },
+                                  )
+                                : Icon(
+                                    item.contentType == 'MOVIE'
+                                        ? Icons.movie
+                                        : Icons.tv,
+                                    color: AppTheme.primaryViolet,
+                                    size: 24,
+                                  ),
                           ),
+                          title: Text(
+                            item.primaryTitle,
+                            style: textTheme.titleMedium,
+                          ),
+                          subtitle: Text(
+                            '${item.contentType} • ${item.releaseYear ?? "N/A"}',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),

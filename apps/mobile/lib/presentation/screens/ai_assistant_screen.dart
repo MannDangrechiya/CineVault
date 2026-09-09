@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../providers/ai_assistant_provider.dart';
+import '../widgets/glass/glass.dart';
 import 'title_detail_screen.dart';
 
 class AiAssistantScreen extends ConsumerStatefulWidget {
@@ -31,11 +32,11 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('AI Assistant (8.8 Backend)'),
-      ),
+      extendBodyBehindAppBar: true,
+      appBar: const GlassAppBar(title: Text('AI Assistant (8.8 Backend)')),
       body: Column(
         children: [
+          GlassAppBar.contentSpacer(context),
           // Banner
           Container(
             padding: const EdgeInsets.all(12),
@@ -58,17 +59,29 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
           Expanded(
             child: aiState.chatHistory.isEmpty
                 ? Center(
-                    child: Padding(
+                    child: GlassCard(
+                      margin: const EdgeInsets.all(24.0),
                       padding: const EdgeInsets.all(24.0),
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.forum_outlined, size: 64, color: AppTheme.textMuted),
+                          const Icon(
+                            Icons.forum_outlined,
+                            size: 64,
+                            color: AppTheme.textMuted,
+                          ),
                           const SizedBox(height: 16),
                           Text('Try asking:', style: textTheme.titleMedium),
                           const SizedBox(height: 8),
-                          const Text('"Find me sci-fi movies from 2024 available on streaming"', style: TextStyle(color: AppTheme.textMuted)),
-                          const Text('"Suggest a dark comedy for tonight under 100 minutes"', style: TextStyle(color: AppTheme.textMuted)),
+                          const Text(
+                            '"Find me sci-fi movies from 2024 available on streaming"',
+                            style: TextStyle(color: AppTheme.textMuted),
+                          ),
+                          const Text(
+                            '"Suggest a dark comedy for tonight under 100 minutes"',
+                            style: TextStyle(color: AppTheme.textMuted),
+                          ),
                         ],
                       ),
                     ),
@@ -86,13 +99,19 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
                             // User Query Bubble
                             Align(
                               alignment: Alignment.centerRight,
-                              child: Container(
+                              child: GlassCard(
                                 padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.primaryViolet,
-                                  borderRadius: BorderRadius.circular(12),
+                                tintColor: AppTheme.primaryViolet,
+                                // Near-opaque: this bubble carries white text
+                                // (below) — the default 0.5 tint opacity
+                                // dropped contrast too far to read reliably.
+                                tintOpacity: 0.92,
+                                child: Text(
+                                  item.intent.rawQuery ??
+                                      item.intent.sanitizedQuery ??
+                                      '',
+                                  style: const TextStyle(color: Colors.white),
                                 ),
-                                child: Text(item.intent.rawQuery ?? item.intent.sanitizedQuery ?? '', style: const TextStyle(color: Colors.white)),
                               ),
                             ),
                             const SizedBox(height: 8),
@@ -100,51 +119,80 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
                             // Assistant Response Bubble
                             Align(
                               alignment: Alignment.centerLeft,
-                              child: Container(
+                              child: GlassCard(
                                 padding: const EdgeInsets.all(14),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.cardSurface,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppTheme.borderSubtle),
-                                ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       children: [
-                                        const Icon(Icons.auto_awesome, color: AppTheme.secondaryCyan, size: 18),
+                                        const Icon(
+                                          Icons.auto_awesome,
+                                          color: AppTheme.secondaryCyan,
+                                          size: 18,
+                                        ),
                                         const SizedBox(width: 6),
-                                        Text('Intent: ${item.intent.detectedIntentMode}', style: textTheme.bodySmall),
-                                        const Spacer(),
                                         Text(
-                                          item.isGrounded ? 'Grounded' : 'Ungrounded',
-                                          style: textTheme.bodySmall?.copyWith(
-                                            color: item.isGrounded ? AppTheme.secondaryCyan : AppTheme.stateError,
-                                          ),
+                                          'Intent: ${item.intent.detectedIntentMode}',
+                                          style: textTheme.bodySmall,
+                                        ),
+                                        const Spacer(),
+                                        GlassBadge(
+                                          label: item.isGrounded
+                                              ? 'Grounded'
+                                              : 'Ungrounded',
+                                          tint: item.isGrounded
+                                              ? AppTheme.secondaryCyan
+                                              : AppTheme.stateError,
                                         ),
                                       ],
                                     ),
-                                    const Divider(height: 16, color: AppTheme.borderSubtle),
-                                    Text(item.responseText, style: textTheme.bodyLarge),
+                                    const Divider(
+                                      height: 16,
+                                      color: AppTheme.borderSubtle,
+                                    ),
+                                    Text(
+                                      item.responseText,
+                                      style: textTheme.bodyLarge,
+                                    ),
                                     if (item.matchedTitles.isNotEmpty) ...[
                                       const SizedBox(height: 12),
-                                      Text('Matched Titles:', style: textTheme.titleMedium),
+                                      Text(
+                                        'Matched Titles:',
+                                        style: textTheme.titleMedium,
+                                      ),
                                       Wrap(
                                         spacing: 6,
-                                        children: item.matchedTitles.map((titleData) {
-                                          final titleId = titleData['title_id'] ?? titleData['id'] ?? '';
-                                          final titleName = titleData['canonical_title'] ?? titleData['title'] ?? 'Title';
+                                        children: item.matchedTitles.map((
+                                          titleData,
+                                        ) {
+                                          final titleId =
+                                              titleData['title_id'] ??
+                                              titleData['id'] ??
+                                              '';
+                                          final titleName =
+                                              titleData['canonical_title'] ??
+                                              titleData['title'] ??
+                                              'Title';
                                           return ActionChip(
-                                            avatar: const Icon(Icons.movie, size: 14),
+                                            avatar: const Icon(
+                                              Icons.movie,
+                                              size: 14,
+                                            ),
                                             label: Text(titleName),
-                                            onPressed: titleId.isNotEmpty ? () {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (_) => TitleDetailScreen(titleId: titleId),
-                                                ),
-                                              );
-                                            } : null,
+                                            onPressed: titleId.isNotEmpty
+                                                ? () {
+                                                    Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (_) =>
+                                                            TitleDetailScreen(
+                                                              titleId: titleId,
+                                                            ),
+                                                      ),
+                                                    );
+                                                  }
+                                                : null,
                                           );
                                         }).toList(),
                                       ),
@@ -163,7 +211,9 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
           if (aiState.isProcessing)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8.0),
-              child: LinearProgressIndicator(semanticsLabel: 'Processing AI Query'),
+              child: LinearProgressIndicator(
+                semanticsLabel: 'Processing AI Query',
+              ),
             ),
 
           // Input Bar
@@ -183,7 +233,9 @@ class _AiAssistantScreenState extends ConsumerState<AiAssistantScreen> {
                 const SizedBox(width: 8),
                 IconButton.filled(
                   icon: const Icon(Icons.send),
-                  style: IconButton.styleFrom(backgroundColor: AppTheme.primaryViolet),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppTheme.primaryViolet,
+                  ),
                   onPressed: _sendQuery,
                 ),
               ],
