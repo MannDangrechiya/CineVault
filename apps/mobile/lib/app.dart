@@ -15,6 +15,12 @@ import 'presentation/screens/swipe_discovery_screen.dart';
 import 'presentation/screens/sync_status_screen.dart';
 import 'presentation/screens/library_screen.dart';
 import 'presentation/screens/control_room_screen.dart';
+import 'presentation/screens/social_hub_screen.dart';
+import 'presentation/screens/clubs_screen.dart';
+import 'presentation/screens/invite_screen.dart';
+import 'presentation/screens/import_screen.dart';
+import 'presentation/screens/settings_screen.dart';
+import 'presentation/widgets/glass/glass.dart';
 
 class CineVaultApp extends StatelessWidget {
   const CineVaultApp({super.key});
@@ -124,9 +130,78 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
     final safeIndex = _currentIndex < screens.length ? _currentIndex : 0;
 
     return Scaffold(
-      appBar: AppBar(
+      // Note: extendBodyBehindAppBar is intentionally NOT set here — each
+      // embedded screen below has its own nested Scaffold+AppBar (see
+      // presentation/screens/*), so extending this outer body behind this
+      // outer app bar would overlap it with the inner screen's own app bar.
+      // extendBody is safe: each screen's own body content (lists/grids)
+      // naturally scrolls behind the shared GlassBottomNav below.
+      extendBody: true,
+      appBar: GlassAppBar(
         title: const Text('CineVault OS'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.people_outline),
+            tooltip: 'Social Hub',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SocialHubScreen()),
+              );
+            },
+          ),
+          // Secondary screens (clubs/challenges, invite/referrals, data
+          // import) live behind a "more" menu rather than as their own
+          // bottom-nav tabs or app-bar icons — the bar is already crowded
+          // (7-8 tabs), and none of these are visited as often as the tabs.
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'More',
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'clubs',
+                child: ListTile(
+                  leading: Icon(Icons.groups_outlined),
+                  title: Text('Watch Clubs'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'invite',
+                child: ListTile(
+                  leading: Icon(Icons.person_add_outlined),
+                  title: Text('Invite a Friend'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'import',
+                child: ListTile(
+                  leading: Icon(Icons.upload_file_outlined),
+                  title: Text('Import Watch History'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('Settings'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+            onSelected: (value) {
+              final Widget screen = switch (value) {
+                'clubs' => const ClubsScreen(),
+                'invite' => const InviteScreen(),
+                'import' => const ImportScreen(),
+                'settings' => const SettingsScreen(),
+                _ => throw StateError('Unknown menu selection: $value'),
+              };
+              Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Logout',
@@ -140,7 +215,7 @@ class _MainShellScreenState extends ConsumerState<MainShellScreen> {
         index: safeIndex,
         children: screens,
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: GlassBottomNav(
         currentIndex: safeIndex,
         onTap: (index) {
           setState(() {
