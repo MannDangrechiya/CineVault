@@ -89,10 +89,10 @@ class _ClubsScreenState extends ConsumerState<ClubsScreen> {
     final clubsAsync = ref.watch(myClubsProvider);
     return clubsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => _buildErrorBanner('Failed to load your clubs: $error'),
+      error: (error, _) => GlassErrorState(message: 'Failed to load your clubs: $error'),
       data: (clubs) {
         if (clubs.isEmpty) {
-          return _buildEmptyState(
+          return const GlassEmptyState(
             icon: Icons.groups_outlined,
             message: 'You have not joined or created any watch clubs yet.',
           );
@@ -224,10 +224,10 @@ class _ClubsScreenState extends ConsumerState<ClubsScreen> {
     final challengesAsync = ref.watch(activeChallengesProvider);
     return challengesAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => _buildErrorBanner('Failed to load active challenges: $error'),
+      error: (error, _) => GlassErrorState(message: 'Failed to load active challenges: $error'),
       data: (challenges) {
         if (challenges.isEmpty) {
-          return _buildEmptyState(
+          return const GlassEmptyState(
             icon: Icons.emoji_events_outlined,
             message: 'No active challenges right now. Check back soon.',
           );
@@ -343,42 +343,5 @@ class _ClubsScreenState extends ConsumerState<ClubsScreen> {
     } finally {
       if (mounted) setState(() => _joiningChallengeIds.remove(challengeId));
     }
-  }
-
-  // ---- Shared state widgets -------------------------------------------
-
-  Widget _buildEmptyState({required IconData icon, required String message}) {
-    return Center(
-      child: GlassCard(
-        margin: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 64, color: Colors.grey),
-            const SizedBox(height: 12),
-            Text(message, style: const TextStyle(color: Colors.grey), textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorBanner(String message) {
-    return Center(
-      child: GlassCard(
-        margin: const EdgeInsets.all(24),
-        tintColor: AppTheme.stateError,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, color: AppTheme.stateError),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(message, style: const TextStyle(color: AppTheme.stateError)),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

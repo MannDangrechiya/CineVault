@@ -362,7 +362,7 @@ void main() {
       final db = AppDatabase(NativeDatabase.memory());
 
       // Simulate a curator logging in and persisting session
-      final repo = AuthRepositoryImpl(
+      final _ = AuthRepositoryImpl(
         secureStorage: fakeStorage,
         db: db,
       );

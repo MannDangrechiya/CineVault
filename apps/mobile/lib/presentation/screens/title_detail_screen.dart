@@ -24,11 +24,6 @@ class TitleDetailScreen extends ConsumerStatefulWidget {
 
 class _TitleDetailScreenState extends ConsumerState<TitleDetailScreen> {
   // ── Rating (8.2 personal domain) ────────────────────────────────────
-  // NOTE: PersonalRemoteDatasource exposes no GET-by-title lookup for an
-  // existing rating (only setRating), so this always starts unrated (0)
-  // on screen entry rather than reflecting a rating saved on a previous
-  // visit. Picking a value still overwrites the backend rating via
-  // setRating() — it just isn't pre-filled here.
   int _selectedRating = 0;
   bool _isSubmittingRating = false;
 
@@ -45,6 +40,7 @@ class _TitleDetailScreenState extends ConsumerState<TitleDetailScreen> {
   void initState() {
     super.initState();
     _fetchReviews();
+    _fetchRatingAndNote();
   }
 
   @override
@@ -426,6 +422,23 @@ class _TitleDetailScreenState extends ConsumerState<TitleDetailScreen> {
       setState(() => _reviewsError = 'Failed to load reviews: $e');
     } finally {
       if (mounted) setState(() => _isLoadingReviews = false);
+    }
+  }
+
+  Future<void> _fetchRatingAndNote() async {
+    try {
+      final datasource = ref.read(personalRemoteDatasourceProvider);
+      final rating = await datasource.getUserRating(widget.titleId);
+      final note = await datasource.getUserNote(widget.titleId);
+      if (!mounted) return;
+      if (rating != null && rating > 0) {
+        setState(() => _selectedRating = rating);
+      }
+      if (note != null && note.isNotEmpty && _noteController.text.isEmpty) {
+        _noteController.text = note;
+      }
+    } catch (_) {
+      // Non-critical background lookup on title screen entry
     }
   }
 

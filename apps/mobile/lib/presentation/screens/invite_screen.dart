@@ -408,17 +408,9 @@ class _InviteScreenState extends ConsumerState<InviteScreen> {
   }
 
   Widget _buildErrorBanner(String message) {
-    return GlassCard(
-      tintColor: AppTheme.stateError,
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline, color: AppTheme.stateError),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(message, style: const TextStyle(color: AppTheme.stateError)),
-          ),
-        ],
-      ),
+    return GlassErrorState(
+      message: message,
+      margin: EdgeInsets.zero,
     );
   }
 }

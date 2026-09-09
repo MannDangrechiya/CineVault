@@ -125,17 +125,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 12),
           if (_exportError != null) ...[
-            GlassCard(
-              tintColor: AppTheme.stateError,
-              child: Row(
-                children: [
-                  const Icon(Icons.error_outline, color: AppTheme.stateError),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(_exportError!, style: const TextStyle(color: AppTheme.stateError)),
-                  ),
-                ],
-              ),
+            GlassErrorState(
+              message: _exportError!,
+              margin: EdgeInsets.zero,
             ),
             const SizedBox(height: 12),
           ],

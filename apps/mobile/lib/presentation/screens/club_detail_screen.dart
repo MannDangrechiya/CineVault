@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../domain/entities/social.dart';
+import '../providers/auth_provider.dart';
 import '../providers/social_provider.dart';
 import '../widgets/glass/glass.dart';
 
@@ -69,11 +70,17 @@ class _ClubDetailScreenState extends ConsumerState<ClubDetailScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
-                  return _buildErrorBanner('Failed to load club: ${snapshot.error}');
+                  return GlassErrorState(
+                    message: 'Failed to load club: ${snapshot.error}',
+                    onRetry: () => setState(_loadClub),
+                  );
                 }
                 final detail = snapshot.data;
                 if (detail == null) {
-                  return _buildErrorBanner('Club not found.');
+                  return GlassErrorState(
+                    message: 'Club not found.',
+                    onRetry: () => setState(_loadClub),
+                  );
                 }
                 return _buildContent(detail);
               },
@@ -91,25 +98,38 @@ class _ClubDetailScreenState extends ConsumerState<ClubDetailScreen> {
       children: [
         _buildClubHeader(club),
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            // NOTE: this always shows "Join Club" rather than detecting
-            // existing membership — this screen does not have the current
-            // authenticated user's id wired in, so it cannot reliably
-            // compare it against `detail.members`. Wire in the current
-            // user id (see auth_provider.dart) to add proper
-            // "already a member" detection here.
-            onPressed: _isJoining ? null : _joinClub,
-            icon: _isJoining
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Icon(Icons.group_add_outlined),
-            label: const Text('Join Club'),
-          ),
+        Builder(
+          builder: (context) {
+            final currentUserId = ref.watch(authProvider).session?.userId;
+            final isMember = currentUserId != null &&
+                detail.members.any((m) => m.userId == currentUserId);
+
+            if (isMember) {
+              return SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: null,
+                  icon: const Icon(Icons.check_circle_outline, color: AppTheme.accentGold),
+                  label: const Text('Member', style: TextStyle(color: AppTheme.accentGold)),
+                ),
+              );
+            }
+
+            return SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isJoining ? null : _joinClub,
+                icon: _isJoining
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.group_add_outlined),
+                label: const Text('Join Club'),
+              ),
+            );
+          },
         ),
         const SizedBox(height: 24),
         Text(
@@ -189,7 +209,10 @@ class _ClubDetailScreenState extends ConsumerState<ClubDetailScreen> {
           );
         }
         if (snapshot.hasError) {
-          return _buildErrorBanner('Failed to load activity feed: ${snapshot.error}');
+          return GlassErrorState(
+            message: 'Failed to load activity feed: ${snapshot.error}',
+            margin: const EdgeInsets.symmetric(vertical: 8),
+          );
         }
         final activities = snapshot.data ?? const <ClubActivityEntity>[];
         if (activities.isEmpty) {
@@ -217,25 +240,6 @@ class _ClubDetailScreenState extends ConsumerState<ClubDetailScreen> {
         trailing: Text(
           activity.createdAt.split('T').first,
           style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorBanner(String message) {
-    return Center(
-      child: GlassCard(
-        margin: const EdgeInsets.all(24),
-        tintColor: AppTheme.stateError,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline, color: AppTheme.stateError),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(message, style: const TextStyle(color: AppTheme.stateError)),
-            ),
-          ],
         ),
       ),
     );

@@ -57,6 +57,36 @@ class PersonalRemoteDatasource {
     return UserRatingEntity.fromJson(response.data);
   }
 
+  Future<int?> getUserRating(String titleId) async {
+    final response = await _apiClient.dio.get(
+      ApiConfig.ratingsEndpoint,
+      queryParameters: {'title_id': titleId},
+    );
+    final List data = response.data is List ? response.data : [];
+    if (data.isNotEmpty) {
+      final first = data.first;
+      if (first is Map<String, dynamic>) {
+        return (first['rating_value'] as num?)?.toInt();
+      }
+    }
+    return null;
+  }
+
+  Future<String?> getUserNote(String titleId) async {
+    final response = await _apiClient.dio.get(
+      ApiConfig.notesEndpoint,
+      queryParameters: {'title_id': titleId},
+    );
+    final List data = response.data is List ? response.data : [];
+    if (data.isNotEmpty) {
+      final first = data.first;
+      if (first is Map<String, dynamic>) {
+        return first['note_text'] as String?;
+      }
+    }
+    return null;
+  }
+
   Future<UserNoteEntity> upsertNote({
     required String titleId,
     required String noteText,

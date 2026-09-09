@@ -570,39 +570,11 @@ class _SocialHubScreenState extends ConsumerState<SocialHubScreen> {
   // ── Shared empty / error states ─────────────────────────────────────────
 
   Widget _buildEmptyState({required IconData icon, required String message}) {
-    return Center(
-      child: GlassCard(
-        margin: const EdgeInsets.all(24),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 64, color: Colors.grey),
-            const SizedBox(height: 12),
-            Text(message, style: const TextStyle(color: Colors.grey), textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
+    return GlassEmptyState(icon: icon, message: message);
   }
 
   Widget _buildErrorState(String message) {
-    return Center(
-      child: GlassCard(
-        margin: const EdgeInsets.all(16),
-        tintColor: AppTheme.stateError,
-        child: Row(
-          children: [
-            const Icon(Icons.error_outline, color: AppTheme.stateError),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(message, style: const TextStyle(color: AppTheme.stateError)),
-            ),
-          ],
-        ),
-      ),
-    );
+    return GlassErrorState(message: message);
   }
 }
 

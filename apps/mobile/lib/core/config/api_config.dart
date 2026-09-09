@@ -34,6 +34,15 @@ class ApiConfig {
     return 'http://127.0.0.1:8000';
   }
 
+  /// Web app base URL for sharing links (pick rooms, invites, titles).
+  static String get webAppUrl {
+    const overrideUrl = String.fromEnvironment('WEB_APP_URL');
+    if (overrideUrl.isNotEmpty) {
+      return overrideUrl;
+    }
+    return kReleaseMode ? 'https://cinevault.org' : 'http://localhost:3000';
+  }
+
   // Timeout settings
   static const Duration connectTimeout = Duration(seconds: 10);
   static const Duration receiveTimeout = Duration(seconds: 15);

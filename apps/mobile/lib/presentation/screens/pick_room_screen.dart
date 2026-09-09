@@ -8,8 +8,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/config/api_config.dart';
 import '../../core/theme/app_theme.dart';
 import '../../domain/entities/social.dart';
+import '../providers/auth_provider.dart';
 import '../providers/social_provider.dart';
 import '../widgets/glass/glass.dart';
 
@@ -97,9 +99,7 @@ class _PickRoomScreenState extends ConsumerState<PickRoomScreen> {
   }
 
   Future<void> _shareRoomLink() async {
-    // TODO: replace this hardcoded host with a shared web-base-URL constant
-    // once one exists in ApiConfig — no such constant is defined there yet.
-    final link = 'https://cinevault.org/pick/${widget.slug}';
+    final link = '${ApiConfig.webAppUrl}/pick/${widget.slug}';
     await Clipboard.setData(ClipboardData(text: link));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -137,7 +137,7 @@ class _PickRoomScreenState extends ConsumerState<PickRoomScreen> {
                 }
 
                 if (snapshot.hasError) {
-                  return _ErrorBanner(
+                  return GlassErrorState(
                     message: '${snapshot.error}',
                     onRetry: _refreshRoom,
                   );
@@ -145,7 +145,7 @@ class _PickRoomScreenState extends ConsumerState<PickRoomScreen> {
 
                 final room = snapshot.data;
                 if (room == null) {
-                  return _ErrorBanner(
+                  return GlassErrorState(
                     message: 'Pick room not found.',
                     onRetry: _refreshRoom,
                   );
@@ -170,43 +170,7 @@ class _PickRoomScreenState extends ConsumerState<PickRoomScreen> {
   }
 }
 
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message, required this.onRetry});
-
-  final String message;
-  final Future<void> Function() onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Center(
-      child: GlassCard(
-        margin: const EdgeInsets.all(24),
-        tintColor: AppTheme.stateError,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.error_outline, color: AppTheme.stateError, size: 48),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              style: textTheme.bodyMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PickRoomBody extends StatelessWidget {
+class _PickRoomBody extends ConsumerWidget {
   const _PickRoomBody({
     required this.room,
     required this.votingTitleIds,
@@ -224,8 +188,10 @@ class _PickRoomBody extends StatelessWidget {
   bool get _isOpen => room.status == 'OPEN';
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final textTheme = Theme.of(context).textTheme;
+    final currentUserId = ref.watch(authProvider).session?.userId;
+    final isHost = currentUserId != null && currentUserId == room.hostId;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -266,11 +232,7 @@ class _PickRoomBody extends StatelessWidget {
               ],
             ),
           ),
-        // Host-only enforcement should happen server-side: this button is
-        // shown to every viewer because the current user's identity isn't
-        // wired into this screen yet. Gate it by comparing `room.hostId`
-        // to the signed-in user's id once that's available here.
-        if (_isOpen)
+        if (_isOpen && isHost)
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
@@ -289,11 +251,10 @@ class _PickRoomBody extends StatelessWidget {
         Text('Candidates', style: textTheme.titleLarge),
         const SizedBox(height: 8),
         if (room.candidates.isEmpty)
-          GlassCard(
-            child: Text(
-              'No candidates in this pick room.',
-              style: textTheme.bodyMedium,
-            ),
+          const GlassEmptyState(
+            icon: Icons.how_to_vote_outlined,
+            message: 'No candidates in this pick room.',
+            margin: EdgeInsets.zero,
           )
         else
           ...room.candidates.map(
