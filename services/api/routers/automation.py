@@ -445,18 +445,69 @@ async def get_smart_watchlist(
         for we in SEED_WATCH_EVENTS.get(user_key, []):
             watched_title_ids.add(str(we.title_id))
 
-    # 3. Collect catalog titles with canonical metadata and runtimes
+    # 3. Collect friend recommendations in ACCEPTED status
+    accepted_recommendations: List[Dict[str, Any]] = []
+
+    if db is not None:
+        stmt = select(RecommendationModel).where(
+            and_(
+                RecommendationModel.recipient_id == active_user_uuid,
+                RecommendationModel.status == RecommendationStatusEnum.ACCEPTED.value,
+            )
+        )
+        res = await db.execute(stmt)
+        recs = res.scalars().all()
+        for r in recs:
+            accepted_recommendations.append({
+                "title_id": str(r.title_id),
+                "context_note": r.context_note,
+                "sender_id": str(r.sender_id),
+            })
+    else:
+        for r in SEED_RECOMMENDATIONS.values():
+            rec_recipient = resolve_social_uuid(r.recipient_id, "user_id")
+            if rec_recipient == active_user_uuid and r.status == RecommendationStatusEnum.ACCEPTED:
+                accepted_recommendations.append({
+                    "title_id": str(r.title_id),
+                    "context_note": r.context_note,
+                    "sender_id": str(r.sender_id),
+                })
+
+    # 4. Collect catalog titles with canonical metadata and runtimes
     catalog_items: Dict[str, Dict[str, Any]] = {}
 
     if db is not None:
-        # Real DB mode: catalog comes strictly from canonical.title. The
-        # hardcoded demo catalog (SEED_FALLBACK_TITLES) must never be mixed
-        # into a real response just because it's always been there --
-        # that would show fabricated demo movies alongside genuine ones to
-        # every real user, unconditionally, regardless of DB health.
-        stmt = select(TitleModel).options(selectinload(TitleModel.editions), selectinload(TitleModel.genres))
+        # Real DB mode: cap candidate pool to active titles, avoiding unpaginated 89k full-table scan
+        stmt = (
+            select(TitleModel)
+            .options(selectinload(TitleModel.editions), selectinload(TitleModel.genres))
+            .where(TitleModel.status_flag != "RETIRED")
+            .order_by(TitleModel.created_at.desc(), TitleModel.title_id.desc())
+            .limit(300)
+        )
         res = await db.execute(stmt)
-        db_titles = res.scalars().all()
+        db_titles = list(res.scalars().all())
+
+        # Ensure any friend-recommended titles are loaded even if outside the top candidate slice
+        loaded_ids = {t.title_id for t in db_titles}
+        missing_rec_uuids = []
+        for rec_item in accepted_recommendations:
+            try:
+                rec_uuid = uuid.UUID(rec_item["title_id"])
+                if rec_uuid not in loaded_ids:
+                    missing_rec_uuids.append(rec_uuid)
+            except (ValueError, TypeError):
+                pass
+
+        if missing_rec_uuids:
+            missing_stmt = (
+                select(TitleModel)
+                .options(selectinload(TitleModel.editions), selectinload(TitleModel.genres))
+                .where(TitleModel.title_id.in_(missing_rec_uuids))
+            )
+            extra_titles = (await db.execute(missing_stmt)).scalars().all()
+            db_titles.extend(extra_titles)
+
         for t in db_titles:
             t_id_str = str(t.title_id)
             runtime = None
@@ -485,34 +536,6 @@ async def get_smart_watchlist(
                 "backdrop_url": title_data.get("backdrop_url"),
             }
 
-    # 4. Collect friend recommendations in ACCEPTED status
-    accepted_recommendations: List[Dict[str, Any]] = []
-
-    if db is not None:
-        stmt = select(RecommendationModel).where(
-            and_(
-                RecommendationModel.recipient_id == active_user_uuid,
-                RecommendationModel.status == RecommendationStatusEnum.ACCEPTED.value,
-            )
-        )
-        res = await db.execute(stmt)
-        recs = res.scalars().all()
-        for r in recs:
-            accepted_recommendations.append({
-                "title_id": str(r.title_id),
-                "context_note": r.context_note,
-                "sender_id": str(r.sender_id),
-            })
-    else:
-        for r in SEED_RECOMMENDATIONS.values():
-            rec_recipient = resolve_social_uuid(r.recipient_id, "user_id")
-            if rec_recipient == active_user_uuid and r.status == RecommendationStatusEnum.ACCEPTED:
-                accepted_recommendations.append({
-                    "title_id": str(r.title_id),
-                    "context_note": r.context_note,
-                    "sender_id": str(r.sender_id),
-                })
-
     # 5. Partition titles into SmartWatchlistResponse categories
     weekend_epics: List[SmartWatchlistItem] = []
     quick_watches: List[SmartWatchlistItem] = []
@@ -525,7 +548,7 @@ async def get_smart_watchlist(
 
         runtime = item_info.get("runtime_minutes")
         if runtime is not None:
-            if runtime > 150:
+            if runtime > 150 and len(weekend_epics) < 50:
                 weekend_epics.append(
                     SmartWatchlistItem(
                         title_id=item_info["title_id"],
@@ -537,7 +560,7 @@ async def get_smart_watchlist(
                         backdrop_url=item_info.get("backdrop_url"),
                     )
                 )
-            elif runtime < 100:
+            elif runtime < 100 and len(quick_watches) < 50:
                 quick_watches.append(
                     SmartWatchlistItem(
                         title_id=item_info["title_id"],

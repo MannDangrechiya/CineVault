@@ -24,6 +24,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest import IsolatedAsyncioTestCase
+from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from jose import jwt as jose_jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -436,8 +437,10 @@ class TestNativeAuthPhase1(IsolatedAsyncioTestCase):
         self.assertEqual(denied_res.status_code, 403)
 
         # Admin -> 202 Accepted
-        allowed_res = self.client.post(
-            "/admin/sync-metadata",
-            headers={"Authorization": f"Bearer {admin_token}"},
-        )
-        self.assertEqual(allowed_res.status_code, 202)
+        with patch("services.api.routers.admin.sync_missing_posters", new_callable=AsyncMock) as mock_sync:
+            mock_sync.return_value = {"scanned": 0, "updated": 0, "failed": 0}
+            allowed_res = self.client.post(
+                "/admin/sync-metadata",
+                headers={"Authorization": f"Bearer {admin_token}"},
+            )
+            self.assertEqual(allowed_res.status_code, 202)
