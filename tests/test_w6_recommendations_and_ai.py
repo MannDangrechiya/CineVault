@@ -92,6 +92,7 @@ class PhaseW6RecommendationsAndAITestCase(IsolatedAsyncioTestCase):
             await session.flush()
 
             # 2. Seed Structured Catalog Works for W6 Test Suite
+            now = datetime.now(timezone.utc)
             # Title 1: Inception-like (Sci-Fi, Action, Directed by Nolan, 2010, 148 min)
             self.title_scifi_nolan = TitleModel(
                 title_id=uuid.uuid4(),
@@ -99,7 +100,8 @@ class PhaseW6RecommendationsAndAITestCase(IsolatedAsyncioTestCase):
                 content_type_id="movie",
                 canonical_title="Mind Matrix",
                 original_title="Mind Matrix",
-                production_year=2010
+                production_year=2010,
+                created_at=now,
             )
             # Title 2: Tenet-like (Sci-Fi, Action, Directed by Nolan, 2020, 150 min)
             self.title_action_nolan = TitleModel(
@@ -108,7 +110,8 @@ class PhaseW6RecommendationsAndAITestCase(IsolatedAsyncioTestCase):
                 content_type_id="movie",
                 canonical_title="Temporal Loop",
                 original_title="Temporal Loop",
-                production_year=2020
+                production_year=2020,
+                created_at=now,
             )
             # Title 3: Arrival-like (Sci-Fi, Drama, Directed by Denis, 2016, 116 min)
             self.title_scifi_denis = TitleModel(
@@ -117,7 +120,8 @@ class PhaseW6RecommendationsAndAITestCase(IsolatedAsyncioTestCase):
                 content_type_id="movie",
                 canonical_title="Contact Unknown",
                 original_title="Contact Unknown",
-                production_year=2016
+                production_year=2016,
+                created_at=now,
             )
             # Title 4: Drama / Short (Drama, 2022, 85 min)
             self.title_short_drama = TitleModel(
@@ -126,7 +130,8 @@ class PhaseW6RecommendationsAndAITestCase(IsolatedAsyncioTestCase):
                 content_type_id="movie",
                 canonical_title="Quiet Echoes",
                 original_title="Quiet Echoes",
-                production_year=2022
+                production_year=2022,
+                created_at=now,
             )
             # Title 5: Episodic Series (Sci-Fi TV Series with multiple episodes)
             self.title_series_scifi = TitleModel(
@@ -135,7 +140,8 @@ class PhaseW6RecommendationsAndAITestCase(IsolatedAsyncioTestCase):
                 content_type_id="show",
                 canonical_title="Starlight Chronicles",
                 original_title="Starlight Chronicles",
-                production_year=2023
+                production_year=2023,
+                created_at=now,
             )
             session.add_all([
                 self.title_scifi_nolan,

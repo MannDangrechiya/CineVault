@@ -4,6 +4,19 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-10-10 (Version Alignment, Catalog Restoration & Android Release Signing)
+
+### Changed
+- **Version alignment**: resolved the long-standing version drift flagged since W18 (`web=0.1.0`, `mobile=1.0.0+1`, `backend=1.0.0`, `CHANGELOG=1.0.0-rc18`, no git tag). `apps/web/package.json`/`package-lock.json` bumped `0.1.0` -> `1.0.0` to match the backend and mobile, which were already there. This release candidate series is promoted to a real `1.0.0`.
+
+### Added
+- **Automated Catalog Refresh & Metadata Sync Scheduler** (`services/api/scheduler.py`): recurring in-process jobs (APScheduler) re-run the existing bulk IMDb ingestion + genre/country backfill (weekly) and TMDB poster sync (daily, skipped honestly when no `TMDB_API_KEY` is set) so the catalog keeps itself current without a human hitting the `/admin` endpoints manually. Postgres advisory-lock guarded so it's safe across the 4 production uvicorn workers. New `GET /admin/scheduler/status`.
+- **Android release signing**: generated a real, self-managed release keystore (`apps/mobile/android/app/cinevault-release-key.jks`, git-ignored) and wired `key.properties`-driven signing into `apps/mobile/android/app/build.gradle.kts`, replacing the debug-key fallback release builds were silently using.
+
+### Fixed
+- **Dev catalog restored**: the local Postgres catalog had been reduced to 2 dev-seed rows since the 2026-09-02 data-loss incident. Re-ran `services/api/scripts/seed_bulk_imdb.py` + `backfill_genres_from_imdb.py` + `backfill_country_from_imdb.py` against IMDb's public datasets: 89,643 titles (70,758 movies / 18,885 TV series), 201,109 genre links across 28 genres, 89,625 country-of-origin rows (99.98%) — matching the original catalog's build quality.
+- `infra/docker/docker-compose.prod.yml`: `fastapi-backend` never forwarded `TMDB_API_KEY`/`KOBIS_API_KEY`/`TVDB_API_KEY` or the new scheduler env vars to the container — same class of gap as the earlier `SESSION_SECRET`/`CDN_HOSTNAME` fixes. Forwarded now.
+
 ## [1.0.0-rc18] - 2026-09-01 (W18 — Final Release Readiness & Production Audit)
 
 ### Fixed

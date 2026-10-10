@@ -16,6 +16,7 @@ from ..auth.jwt_validator import SecurityTokenClaims
 from ..config import config
 from ..ingestion.tmdb_worker import sync_missing_posters
 from ..rate_limiter import enforce_rate_limit
+from ..scheduler import get_scheduler_status
 from ..scripts.seed_bulk_imdb import (
     DEFAULT_BATCH_SIZE as BULK_DEFAULT_BATCH_SIZE,
     DEFAULT_MIN_VOTES as BULK_DEFAULT_MIN_VOTES,
@@ -225,3 +226,20 @@ async def trigger_bulk_catalog_sync(
         batch_size=effective_batch_size,
         triggered_at=triggered_at,
     )
+
+
+@router.get(
+    "/scheduler/status",
+    summary="View auto-update scheduler status (catalog refresh + poster sync)",
+)
+async def get_auto_update_scheduler_status(
+    claims: SecurityTokenClaims = Depends(require_system_admin),
+) -> Dict[str, Any]:
+    """
+    Reports whether the recurring catalog-refresh/poster-sync scheduler
+    (services/api/scheduler.py) is running on this worker process, each
+    job's next scheduled run, and the last result/error recorded for it.
+    Manual, immediate runs are still available via /admin/catalog/sync-bulk
+    and /admin/sync-metadata -- this endpoint only reports the timer.
+    """
+    return get_scheduler_status()

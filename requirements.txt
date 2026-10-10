@@ -64,3 +64,7 @@ pypdf==6.14.2
 # environment because it's installed here as a transitive dependency of
 # something else in the shared venv.
 openpyxl==3.1.5
+# services/api/scheduler.py: recurring in-process jobs (catalog refresh,
+# TMDB poster sync) started from the FastAPI lifespan — no separate
+# cron/worker process or message queue needed for this.
+apscheduler==3.11.3

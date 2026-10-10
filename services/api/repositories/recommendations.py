@@ -237,6 +237,7 @@ async def _load_catalog_from_db(
                                 or_(*conds)
                             )
                         )
+                        .order_by(TitleModel.created_at.desc(), TitleModel.title_id.desc())
                         .limit(limit)
                     )
                     seed_cands = (await db.execute(seed_cand_stmt)).scalars().all()

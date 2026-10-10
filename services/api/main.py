@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config import config
 from .errors import APIError, api_error_handler, http_exception_handler, validation_exception_handler, unhandled_exception_handler
+from .scheduler import start_scheduler, shutdown_scheduler
 from .telemetry import CorrelationAndMetricsMiddleware, logger
 from .routers import (
     health,
@@ -37,7 +38,9 @@ from .routers import (
 async def lifespan(app: FastAPI):
     logger.info("Initializing CineVault OS API Service Foundation...")
     logger.info(f"Environment: {config.environment} | Postgres: {config.postgres_host}:{config.postgres_port} | Valkey: {config.valkey_host}:{config.valkey_port}")
+    start_scheduler()
     yield
+    shutdown_scheduler()
     logger.info("Shutting down CineVault OS API Service Foundation.")
 
 app = FastAPI(

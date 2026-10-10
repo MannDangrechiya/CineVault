@@ -412,7 +412,7 @@ class GroqProviderAdapter(OpenAIProviderAdapter):
 
     def __init__(self, api_key: Optional[str] = None, client: Optional[Any] = None, model: Optional[str] = None):
         self.api_key = api_key or config.groq_api_key or os.getenv("GROQ_API_KEY")
-        self.model = model or config.groq_model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.model = model or config.groq_model or os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
         self.fallback = MockAIProviderAdapter()
         if client:
             self.client = client

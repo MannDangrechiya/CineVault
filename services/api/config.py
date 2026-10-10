@@ -106,7 +106,12 @@ class APIConfig(BaseModel):
     # Groq: OpenAI-compatible API (https://console.groq.com), free tier —
     # reuses OpenAIProviderAdapter with a different base_url + model.
     groq_api_key: Optional[str] = os.getenv("GROQ_API_KEY")
-    groq_model: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    # llama-3.3-70b-versatile (the old default) has been retired by Groq —
+    # confirmed live against GET /v1/models that it 404s with
+    # "model_not_found" as of this fix. openai/gpt-oss-120b is currently
+    # available and verified end-to-end (plain chat + response_format=
+    # json_object, both used by OpenAIProviderAdapter/GroqProviderAdapter).
+    groq_model: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     # xAI Grok: OpenAI-compatible API (https://docs.x.ai) — a different
     # provider from Groq above despite the similar name; also reuses
     # OpenAIProviderAdapter with a different base_url + model.
@@ -119,6 +124,23 @@ class APIConfig(BaseModel):
     kobis_api_key: Optional[str] = os.getenv("KOBIS_API_KEY")
     tvdb_api_key: Optional[str] = os.getenv("TVDB_API_KEY")
     tmdb_api_key: Optional[str] = os.getenv("TMDB_API_KEY")
+
+    # Automated Catalog Refresh & Metadata Sync (services/api/scheduler.py).
+    # Runs the same pipelines as the /admin/catalog/sync-bulk and
+    # /admin/sync-metadata endpoints on a recurring interval so new/updated
+    # titles keep appearing without a human triggering them manually.
+    auto_ingestion_enabled: bool = os.getenv("AUTO_INGESTION_ENABLED", "true").lower() == "true"
+    # IMDb's public datasets refresh daily, but a full catalog rescan +
+    # genre/country backfill re-downloads ~700MB total — weekly by default
+    # balances freshness against bandwidth/cost for the "friends-scale"
+    # deployment profile this stack targets. Override via env for a tighter
+    # cadence if that tradeoff is acceptable for your deployment.
+    catalog_refresh_interval_hours: int = int(os.getenv("CATALOG_REFRESH_INTERVAL_HOURS", "168"))
+    poster_sync_interval_hours: int = int(os.getenv("POSTER_SYNC_INTERVAL_HOURS", "24"))
+    poster_sync_batch_size: int = int(os.getenv("POSTER_SYNC_BATCH_SIZE", "500"))
+    poster_sync_max_batches: Optional[int] = (
+        int(os.getenv("POSTER_SYNC_MAX_BATCHES")) if os.getenv("POSTER_SYNC_MAX_BATCHES") else 20
+    )
 
     # Local Artwork Storage (MinIO/S3 was removed in the Phase 3
     # infrastructure consolidation — audited to have zero production
