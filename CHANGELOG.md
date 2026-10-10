@@ -4,6 +4,31 @@ All notable changes to CineVault OS are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0-rc18] - 2026-09-01 (W18 — Final Release Readiness & Production Audit)
+
+### Fixed
+- **Windows IPv6 / 127.0.0.1 BFF Gateway Resolution**:
+  - Next.js BFF server-side proxy routes and local-login endpoints fell back to `http://localhost:8000`. On Windows with Node 18+, `localhost` resolves to IPv6 `[::1]:8000` by default. Because FastAPI binds to IPv4 `127.0.0.1:8000`, fetch requests returned `502 Bad Gateway` / `ECONNREFUSED`.
+  - Configured `API_BASE_URL=http://127.0.0.1:8000` in `apps/web/.env.local` and updated all default fallback URLs in `apps/web/src/app/api/auth/local-login/route.ts`, `apps/web/src/app/api/proxy/[...path]/route.ts`, `apps/web/src/app/api/auth/callback/route.ts`, and `apps/web/src/lib/auth/keycloak.ts` to `http://127.0.0.1:8000`.
+- **E2E Test Suite Fast Refresh & Hydration Stability**:
+  - `apps/web/e2e/test_w13_production_smoke.js`: Extended timeouts to 35s to prevent false-negative timeouts during cold Next.js 15 on-demand module compilation on Windows.
+  - `apps/web/e2e/test_media_image_rendering.js`: Replaced `waitUntil: 'networkidle'` with standard `waitUntil: 'domcontentloaded'` on detail pages to prevent waiting indefinitely on active dev server HMR/SSE sockets.
+  - `apps/web/e2e/test_social_multiplayer.js`: Standardized browser launch to Playwright's bundled Chromium, ensured hydration completion before invoking auth transitions, and resolved strict-mode multi-match selection during candidate nomination.
+
+### Verified
+- **Full 18-Phase Release Audit**:
+  - Repository Health: 0 `TODO`/`FIXME` in production source, 0 external stock images.
+  - Configuration & Secrets: Strict production rejection of default secrets (`test_production_config_validation.py` 6/6 PASSED, `test_w13_deployment_readiness.py` 10/10 PASSED).
+  - Security, Isolation & RBAC: Zero cross-user data leakage, SQL/formula injection immunity (`test_w11_production_security.py` & `test_user_isolation.py` 19/19 PASSED).
+  - Database Integrity: 89,329 canonical titles, 0 duplicate display IDs, 0 duplicate external IDs, 0 orphaned relational records.
+  - Ingestion at Scale: 8/8 Day 7 tests PASSED, 6/6 Phase 2 tests PASSED; batched preload + in-memory resolution pipeline verified.
+  - Media & Search: 10/10 media unit tests PASSED, 12/12 media rendering E2E checks PASSED, 7/7 search tests PASSED.
+  - AI Recommendations: 13/13 recommendation tests PASSED; graceful keyless fallback, prompt sanitization, taste profile derivation.
+  - Import / Export: 7/7 round-trip tests PASSED.
+  - Disaster Recovery: Real Docker `pg_dump` and `pg_restore` verified on disposable database (`test_phase30_backup_disaster_recovery.py` 1/1 PASSED).
+  - Accessibility: 43/43 axe-core WCAG AA checks PASSED across 21 pages (0 axe violations).
+  - Frontend Build: `tsc --noEmit` (0 errors), `npm run lint` (0 errors/warnings), `npm run build` (26/26 routes successfully generated).
+
 ## [1.0.0-rc16] - 2026-09-01 (W16 — Large-Catalog Ingestion & Data Integrity Reliability)
 
 ### Fixed

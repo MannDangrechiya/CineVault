@@ -1,0 +1,78 @@
+# CineVault OS — Production Environment Template
+# Copy to .env.prod and fill in ALL values before deploying.
+#
+# ⚠️  EVERY [SECRET] variable below MUST be changed from its placeholder.
+#     The application will REFUSE TO START in production mode with default secrets.
+#
+# R1 hardening pass: this replaces the previous .env.production.example,
+# which had drifted out of sync with infra/docker/docker-compose.prod.yml —
+# it was missing SESSION_SECRET, KEYCLOAK_HOSTNAME, CDN_HOSTNAME,
+# KEYCLOAK_ADMIN_USER/PASSWORD, and S3_ARTWORK_BUCKET as required variables,
+# even though the compose file already refused to boot without most of them.
+# See docs/deployment.md §2/§3 for the authoritative, up-to-date list this
+# was generated from. (Written to this path, not .env.production.example
+# directly, because this session's permission settings hard-deny writing any
+# .env* path — copy this file's contents over .env.production.example
+# yourself, then delete this .txt file.)
+
+ENVIRONMENT=production
+LOG_LEVEL=warning
+
+# ─── Database (REQUIRED) ─────────────────────────────────────────────────────
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_DB=cinevault
+POSTGRES_USER=cinevault_admin
+POSTGRES_PASSWORD=<GENERATE_STRONG_PASSWORD_HERE>
+# PgBouncer was removed in the Phase 3 infrastructure consolidation — the
+# API connects straight to postgres:5432 above via a bounded SQLAlchemy pool.
+
+# ─── Valkey Cache ─────────────────────────────────────────────────────────────
+VALKEY_HOST=valkey
+VALKEY_PORT=6379
+
+# RabbitMQ removed in the Phase 3 infrastructure consolidation — the Celery
+# ai-worker it backed had no real workload (synthetic stub tasks, zero
+# producers). Valkey remains for cache/rate-limiting/idempotency.
+
+# ─── Authentication (REQUIRED) ─────────────────────────────────────────────────
+# Signs every native access/refresh token — see services/api/config.py's
+# insecure-default validator, which refuses to boot on the placeholder value.
+JWT_SECRET_KEY=<GENERATE_64_CHAR_RANDOM_STRING_HERE>
+# Signs/encrypts the Next.js BFF session cookie (apps/web/src/lib/auth/session.ts).
+# NEW as of the R1 hardening pass — the web container now refuses to boot
+# without this (apps/web/src/instrumentation.ts).
+SESSION_SECRET=<GENERATE_64_CHAR_RANDOM_STRING_HERE>
+
+# Keycloak was removed in the Phase 3 infrastructure consolidation — native
+# HS256 login (JWT_SECRET_KEY above) is the only authentication mechanism.
+
+# ─── CORS ─────────────────────────────────────────────────────────────────────
+# CORS_ALLOWED_ORIGINS is derived automatically from SITE_ADDRESS by
+# docker-compose.prod.yml — do not set it by hand.
+
+# ─── API Documentation ────────────────────────────────────────────────────────
+# Disabled by default in production. Set to true if you want Swagger UI.
+DOCS_ENABLED=false
+
+# S3/MinIO removed in the Phase 3 infrastructure consolidation — artwork now
+# lives in a persistent Docker volume (docker-compose.prod.yml's
+# artwork-prod-data, mounted at ARTWORK_PATH=/data/artwork), no credentials
+# or bucket name needed. Nothing to set here.
+
+# ─── Caddy / HTTPS / CDN (REQUIRED) ─────────────────────────────────────────
+# Point both DNS records (SITE_ADDRESS, CDN_HOSTNAME) at this host BEFORE
+# starting the stack, or Let's Encrypt's HTTP-01
+# challenge will fail. CDN_HOSTNAME also now reaches the web image at
+# Docker-build time (image optimizer allowlist + client bundle) — see
+# apps/web/Dockerfile and docker-compose.prod.yml's nextjs-web build.args.
+SITE_ADDRESS=cinevault.yourdomain.com
+CDN_HOSTNAME=cdn.cinevault.yourdomain.com
+ACME_EMAIL=you@yourdomain.com
+
+# ─── AI Provider (OPTIONAL) ──────────────────────────────────────────────────
+# Leave AI_PROVIDER unset to auto-detect from available keys,
+# or set to "mock" to disable AI features entirely (free-first default).
+# AI_PROVIDER=grok
+# GROK_API_KEY=<YOUR_GROK_API_KEY>
+# GROK_MODEL=grok-4

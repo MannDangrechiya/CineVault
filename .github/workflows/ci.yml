@@ -80,16 +80,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      rabbitmq:
-        image: rabbitmq:4.0-alpine
-        ports:
-          - 5672:5672
-        options: >-
-          --health-cmd "rabbitmq-diagnostics -q ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -147,8 +137,6 @@ jobs:
           DB_PORT: 5432
           VALKEY_HOST: localhost
           VALKEY_PORT: 6379
-          RABBITMQ_HOST: localhost
-          RABBITMQ_PORT: 5672
         run: |
           python -m pytest tests/ -v --durations=10 -k "not stage_5000 and not stage_1000 and not stage_500"
 

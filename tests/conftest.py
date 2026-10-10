@@ -22,6 +22,15 @@ if str(ROOT_DIR) not in sys.path:
 # silently call a real, non-deterministic external API instead of Mock.
 os.environ["AI_PROVIDER"] = "mock"
 
+# Same ordering constraint as AI_PROVIDER above: services.api.storage's
+# module-level `storage_adapter = LocalArtworkStorageAdapter()` singleton
+# reads config.artwork_path once at import time. Without this, tests that
+# exercise the upload endpoint would create a real ./data/artwork directory
+# inside the repo working tree (config.py's default is a relative path,
+# meant for a real deployment's cwd) instead of a throwaway location.
+import tempfile
+os.environ.setdefault("ARTWORK_PATH", tempfile.mkdtemp(prefix="cinevault-test-artwork-"))
+
 import pytest
 from services.api.main import app
 from services.api.database import get_db

@@ -20,8 +20,23 @@ export const SESSION_COOKIE_NAME = "cinevault_session";
 
 const INSECURE_DEFAULT_SESSION_SECRET = "cinevault-local-dev-session-secret-change-in-prod-32bytes!";
 
+// instrumentation.ts already refuses to boot the production server when
+// SESSION_SECRET is unset — this second check is defense-in-depth at the
+// actual point of use, so this function itself never silently signs a
+// production session with the public dev default even if some future code
+// path calls it before/outside that startup hook.
 function getSecret(): string {
-  return process.env.SESSION_SECRET || INSECURE_DEFAULT_SESSION_SECRET;
+  const secret = process.env.SESSION_SECRET;
+  if (secret) return secret;
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "SESSION_SECRET is not set — refusing to sign/verify a session cookie in production " +
+        "with the insecure development default."
+    );
+  }
+
+  return INSECURE_DEFAULT_SESSION_SECRET;
 }
 
 function uint8ArrayToBase64Url(bytes: Uint8Array): string {

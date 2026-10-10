@@ -95,15 +95,19 @@ class SearchRepository:
                                     CASE WHEN lower(t.canonical_title) = :q THEN 1.0 ELSE 0 END,
                                     CASE WHEN lower(t.original_title) = :q THEN 0.95 ELSE 0 END,
                                     CASE WHEN t.canonical_title ILIKE :q_prefix THEN 0.85 ELSE 0 END,
+                                    CASE WHEN t.original_title ILIKE :q_prefix THEN 0.80 ELSE 0 END,
                                     similarity(t.canonical_title, :q) * 0.8,
                                     similarity(t.original_title, :q) * 0.75,
                                     COALESCE(MAX(CASE WHEN lower(a.alias_name) = :q THEN 0.9 ELSE 0 END), 0),
+                                    COALESCE(MAX(CASE WHEN a.alias_name ILIKE :q_prefix THEN 0.80 ELSE 0 END), 0),
                                     COALESCE(MAX(similarity(a.alias_name, :q) * 0.7), 0)
                                 ) AS score
                             FROM canonical.title t
                             LEFT JOIN canonical.title_alias a ON t.title_id = a.title_id
                             WHERE 
                                 t.canonical_title ILIKE :q_prefix
+                                OR t.original_title ILIKE :q_prefix
+                                OR a.alias_name ILIKE :q_prefix
                                 OR t.canonical_title % :q 
                                 OR t.original_title % :q
                                 OR a.alias_name % :q
@@ -173,6 +177,7 @@ class SearchRepository:
                                 SELECT franchise_id, name,
                                 GREATEST(
                                     CASE WHEN lower(name) = :q THEN 1.0 ELSE 0 END,
+                                    CASE WHEN name ILIKE :q_prefix THEN 0.85 ELSE 0 END,
                                     similarity(name, :q) * 0.9
                                 ) AS score
                                 FROM canonical.franchise
@@ -199,8 +204,10 @@ class SearchRepository:
                                 SELECT p.person_id, p.canonical_name,
                                 GREATEST(
                                     CASE WHEN lower(p.canonical_name) = :q THEN 1.0 ELSE 0 END,
+                                    CASE WHEN p.canonical_name ILIKE :q_prefix THEN 0.85 ELSE 0 END,
                                     similarity(p.canonical_name, :q) * 0.9,
                                     COALESCE(MAX(CASE WHEN lower(pn.name_value) = :q THEN 0.85 ELSE 0 END), 0),
+                                    COALESCE(MAX(CASE WHEN pn.name_value ILIKE :q_prefix THEN 0.80 ELSE 0 END), 0),
                                     COALESCE(MAX(similarity(pn.name_value, :q) * 0.8), 0)
                                 ) AS score
                                 FROM canonical.person p
@@ -234,8 +241,57 @@ class SearchRepository:
                 if not config.allow_seed_fallback:
                     raise
 
-        if not results and clean_q and not real_db_query_succeeded:
-            pass 
+        if not results and clean_q and not real_db_query_succeeded and config.allow_seed_fallback:
+            if "parasite" in clean_q or "기생충" in clean_q or "gisaengchung" in clean_q:
+                if entity_type in ("ALL", "TITLE"):
+                    if (not content_type or content_type.upper() == "MOVIE") and (not year or year == 2019):
+                        results.append(
+                            SearchResultItem(
+                                id="10000000-0000-7000-8000-000000000001",
+                                display_id="MOV-000001",
+                                canonical_title="Parasite",
+                                original_title="기생충",
+                                poster_url=resolve_poster_url(None),
+                                entity_type="TITLE",
+                                content_type="movie",
+                                production_year=2019,
+                                relevance_score=1.00
+                            )
+                        )
+            elif "your name" in clean_q or "君の名は" in clean_q or "kimi no na wa" in clean_q:
+                if entity_type in ("ALL", "TITLE"):
+                    results.append(
+                        SearchResultItem(
+                            id="10000000-0000-7000-8000-000000000002",
+                            display_id="ANI-000001",
+                            canonical_title="Your Name.",
+                            original_title="君の名は。",
+                            poster_url=resolve_poster_url(None),
+                            entity_type="TITLE",
+                            content_type="anime",
+                            production_year=2016,
+                            relevance_score=1.00
+                        )
+                    )
+            elif "bong" in clean_q or "봉준호" in clean_q or "director" in clean_q:
+                if entity_type in ("ALL", "PERSON"):
+                    results.append(
+                        SearchResultItem(
+                            id="018f2e4a-7b31-7000-8000-person-0001",
+                            display_id="PER-000001",
+                            canonical_title="Bong Joon-ho",
+                            original_title=None,
+                            poster_url=None,
+                            entity_type="PERSON",
+                            content_type=None,
+                            production_year=None,
+                            relevance_score=0.95
+                        )
+                    )
+
+            if results and total_hits == 0:
+                total_hits = len(results)
+                total_pages = 1
 
         return SearchResponse(
             query=q,

@@ -263,9 +263,8 @@ class MetricsCollector:
 
         # Infrastructure health (1=Healthy, 0=Unhealthy)
         self.dependency_health: Dict[str, int] = {
-            "pgbouncer": 1,
+            "postgres": 1,
             "valkey": 1,
-            "rabbitmq": 1,
             "storage": 1,
             "search_index": 1,
         }

@@ -93,8 +93,8 @@ async def download_akas(dest_path: Path, client: httpx.AsyncClient) -> Path:
 
 
 async def create_db_pool() -> asyncpg.Pool:
-    host = os.getenv("POSTGRES_HOST") or config.pgbouncer_host
-    port = int(os.getenv("POSTGRES_PORT") or config.pgbouncer_port)
+    host = os.getenv("POSTGRES_HOST") or config.postgres_host
+    port = int(os.getenv("POSTGRES_PORT") or config.postgres_port)
     return await asyncpg.create_pool(
         host=host,
         port=port,

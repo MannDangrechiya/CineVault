@@ -183,6 +183,15 @@ class AppDatabase extends _$AppDatabase {
   Future<List<OfflineNoteRow>> getOfflineNotes() async {
     return await select(offlineNotes).get();
   }
+
+  /// Clears personal user data on logout or user switch (CAT-2 user isolation)
+  Future<void> clearPersonalData() async {
+    await delete(outboxMutations).go();
+    await delete(offlineWatchEvents).go();
+    await delete(offlineRatings).go();
+    await delete(offlineUserTitleStates).go();
+    await delete(offlineNotes).go();
+  }
 }
 
 LazyDatabase _openConnection() {

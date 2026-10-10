@@ -45,7 +45,7 @@ def test_03_health_readiness_probe_sanitized():
     response_text = res.text.lower()
     assert "postgres_password" not in response_text
     assert "secret" not in response_text
-    assert "pgbouncer_host" not in response_text
+    assert "postgres_host" not in response_text
 
 
 def test_04_health_startup_probe():
@@ -74,9 +74,6 @@ def test_06_production_config_accepts_valid_secrets():
         environment="production",
         jwt_secret_key="a-secure-random-64-character-production-secret-key-that-is-not-default",
         postgres_password="a-secure-random-production-db-password-1234567890",
-        rabbitmq_password="a-secure-random-production-mq-password-1234567890",
-        s3_access_key_id="real_production_s3_key_id",
-        s3_secret_access_key="real_production_s3_secret_key",
         cors_allowed_origins="https://cinevault.example.com",
         docs_enabled=False,
     )
@@ -117,8 +114,8 @@ def test_09_database_pgvector_cosine_similarity():
     """Verifies PostgreSQL pgvector extension and cosine similarity operators work on live DB."""
     async def _run_vector_check():
         import asyncpg
-        host = config.pgbouncer_host
-        port = config.pgbouncer_port
+        host = config.postgres_host
+        port = config.postgres_port
         conn = await asyncpg.connect(
             host=host,
             port=port,

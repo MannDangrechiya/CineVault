@@ -106,10 +106,10 @@ class TestPhase25Observability:
             "DEPENDENCY_DOWN",
             source_service="health-monitor",
             severity="ERROR",
-            dependency="rabbitmq",
+            dependency="valkey",
         )
         assert signal.signal_type == "SYSTEM"
-        assert signal.payload["dependency"] == "rabbitmq"
+        assert signal.payload["dependency"] == "valkey"
 
     def test_signal_router_filter_by_type(self):
         """get_recent_signals with signal_type filter returns only matching signals."""
@@ -140,7 +140,7 @@ class TestPhase25Observability:
     def test_span_tracker_start_and_finish(self):
         """Spans record duration and status correctly."""
         trace_id = uuid.uuid4().hex
-        span = span_tracker.start_span("DB_QUERY", "pgbouncer", trace_id=trace_id)
+        span = span_tracker.start_span("DB_QUERY", "postgres", trace_id=trace_id)
         time.sleep(0.01)
         span.finish(status="OK", query="SELECT title_id FROM canonical_titles LIMIT 1")
 

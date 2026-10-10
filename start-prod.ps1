@@ -68,7 +68,6 @@ function Wait-ContainerHealth {
 
 Wait-ContainerHealth -ContainerName "cinevault-prod-postgres" -MaxRetries 25 | Out-Null
 Wait-ContainerHealth -ContainerName "cinevault-prod-valkey" -MaxRetries 15 | Out-Null
-Wait-ContainerHealth -ContainerName "cinevault-prod-rabbitmq" -MaxRetries 20 | Out-Null
 
 Start-Sleep -Seconds 3
 
@@ -78,7 +77,11 @@ Write-Host "      CineVault OS Production Deployment Active!     " -ForegroundCo
 Write-Host "======================================================" -ForegroundColor Green
 Write-Host "  🌐 Web Application:       http://localhost" -ForegroundColor White
 Write-Host "  🚀 Core REST API:         http://localhost/v1" -ForegroundColor White
-Write-Host "  📚 OpenAPI Documentation: http://localhost/docs" -ForegroundColor White
-Write-Host "  🐰 RabbitMQ Management:   http://localhost:15672" -ForegroundColor White
-Write-Host "  🐘 PgBouncer Pooler:      localhost:6432" -ForegroundColor White
+Write-Host "  📚 OpenAPI Documentation: http://localhost/docs (only if DOCS_ENABLED=true)" -ForegroundColor White
+# R1 hardening pass + Phase 3 infrastructure consolidation: removed the
+# RabbitMQ Management (15672) and PgBouncer (6432) lines that used to print
+# here — neither port was ever published by docker-compose.prod.yml, and
+# both services (RabbitMQ/Celery, PgBouncer) were later removed entirely
+# (see that file's history). This banner only advertises what's actually
+# reachable from the host/browser.
 Write-Host "======================================================" -ForegroundColor Green

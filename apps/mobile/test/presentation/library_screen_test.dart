@@ -21,6 +21,15 @@ class FakeAuthRepository implements AuthRepository {
   Future<AuthSessionEntity> login(String email, String password) async => session!;
 
   @override
+  Future<AuthSessionEntity> register(String email, String password, String inviteCode) async => session!;
+
+  @override
+  Future<AuthSessionEntity> refreshSession() async {
+    if (session == null) throw Exception('No session stored');
+    return session!;
+  }
+
+  @override
   Future<void> logout() async {
     session = null;
   }

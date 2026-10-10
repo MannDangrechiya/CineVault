@@ -3,6 +3,17 @@
 
 version: '3.8'
 
+# R1 hardening pass: pairs with docker-compose.prod.yml's `name:
+# cinevault-prod` — see that file's comment for why this matters (dev/prod
+# share this directory and, without an explicit name, would derive the same
+# default project/network name). This codifies what was already true
+# operationally: the currently-running dev stack is already the
+# `cinevault-dev` project (confirmed via `docker compose ls` before this
+# change), so this addition does not rename, recreate, or restart anything
+# — it just makes that name permanent instead of relying on `-p cinevault-dev`
+# being typed by hand every time.
+name: cinevault-dev
+
 services:
   # 1. Database: PostgreSQL 16 with pgvector
   postgres:
@@ -32,38 +43,18 @@ services:
       retries: 5
 
   # 1b. Migration Engine: Flyway Community Edition
+  # Local dev only: loads db/migrations (versioned, shared with prod) PLUS
+  # db/dev-seed (repeatable synthetic seed data, dev-only — see
+  # db/dev-seed/R__seed_development_taxonomy.sql). docker-compose.prod.yml
+  # deliberately does NOT mount db/dev-seed, so the seed migration never runs
+  # in production. Do not add a db/dev-seed mount/location to any prod config.
   flyway:
     image: flyway/flyway:10-alpine
     container_name: cinevault-local-flyway
-    command: -url=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-cinevault} -user=${POSTGRES_USER:-cinevault_dev} -password=${POSTGRES_PASSWORD:-dev_postgres_password_change_me} -connectRetries=10 migrate
+    command: -url=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-cinevault} -user=${POSTGRES_USER:-cinevault_dev} -password=${POSTGRES_PASSWORD:-dev_postgres_password_change_me} -connectRetries=10 -locations=filesystem:/flyway/sql,filesystem:/flyway/dev-seed migrate
     volumes:
       - ../../db/migrations:/flyway/sql:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  # 2. Connection Pooler: PgBouncer
-  pgbouncer:
-    image: edoburu/pgbouncer:latest
-    container_name: cinevault-local-pgbouncer
-    restart: unless-stopped
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB:-cinevault}
-      DB_USER: ${POSTGRES_USER:-cinevault_dev}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev_postgres_password_change_me}
-      POOL_MODE: transaction
-      MAX_CLIENT_CONN: 1000
-      DEFAULT_POOL_SIZE: 20
-      # Without this, the image defaults to listening on 5432 internally,
-      # which doesn't match the 6432:6432 port mapping below (nothing reachable on 6432).
-      LISTEN_PORT: 6432
-      # Postgres 16 defaults to scram-sha-256 password encryption; PgBouncer's
-      # own default auth_type (md5) then fails backend auth with "wrong password type".
-      AUTH_TYPE: scram-sha-256
-    ports:
-      - "6432:6432"
+      - ../../db/dev-seed:/flyway/dev-seed:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,74 +72,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-  # 4. Queue Broker: RabbitMQ (AMQP 0-9-1 / Management UI)
-  rabbitmq:
-    image: rabbitmq:4-management-alpine
-    container_name: cinevault-local-rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-cinevault_dev}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-dev_rabbitmq_password_change_me}
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # 5. Identity: Keycloak Server (OIDC)
-  keycloak:
-    image: quay.io/keycloak/keycloak:24.0.0
-    container_name: cinevault-local-keycloak
-    command: start-dev --import-realm
-    environment:
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-dev_keycloak_admin_password_change_me}
-      KC_HTTP_PORT: 8080
-      KC_HOSTNAME_STRICT: "false"
-    ports:
-      - "8080:8080"
-    volumes:
-      - ../../packages/config/keycloak/cinevault-realm-dev.json:/opt/keycloak/data/import/cinevault-realm-dev.json:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mailhog:
-        condition: service_started
-
-  # 5b. Local SMTP Sink: MailHog (P0 fix — Day 1-7 remediation)
-  # Keycloak's "Forgot password" flow needs an SMTP relay to send reset
-  # emails. MailHog accepts all mail on :1025 with no auth and exposes a
-  # web UI on :8025 to read what was "sent" — no real mail delivery, no
-  # external SMTP account needed for local development.
-  mailhog:
-    image: mailhog/mailhog:v1.0.1
-    container_name: cinevault-local-mailhog
-    ports:
-      - "1025:1025" # SMTP
-      - "8025:8025" # Web UI
-
-  # 6. API Gateway: Kong Gateway (DB-Less)
-  kong:
-    image: kong:3.6
-    container_name: cinevault-local-kong
-    environment:
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: /usr/local/kong/declarative/kong.yml
-      KONG_PROXY_ACCESS_LOG: /dev/stdout
-      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-      KONG_PROXY_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_LISTEN: 0.0.0.0:8001
-    ports:
-      - "8000:8000"
-      - "8001:8001"
-    volumes:
-      - ../../packages/config/kong/kong.yml:/usr/local/kong/declarative/kong.yml:ro
 
   # 7. Telemetry: OpenTelemetry Collector
   otel-collector:
@@ -190,23 +113,14 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
 
-  # 11. Object Storage: MinIO (S3 Parity for local dev)
-  minio:
-    image: minio/minio:RELEASE.2024-03-21T23-13-43Z
-    container_name: cinevault-local-minio
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-dev_s3_access_key}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-dev_s3_secret_key}
-    command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    volumes:
-      - minio-data:/data
+  # Object storage (MinIO) was removed in the Phase 3 infrastructure
+  # consolidation — audited to zero production traffic, and local dev never
+  # needed it either (nothing in either client app calls the artwork upload
+  # endpoint). The API now writes artwork straight to a local directory
+  # (config.artwork_path, default "./data/artwork" relative to wherever the
+  # API process runs) with no container required.
 
 volumes:
   postgres-data:
   valkey-data:
-  rabbitmq-data:
   prometheus-data:
-  minio-data:

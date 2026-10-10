@@ -1,6 +1,24 @@
-# CineVault OS — Single-Command Production Deployment Stack (Phase 4)
-# Orchestrates: Postgres (pgvector), PgBouncer, Valkey, RabbitMQ, Flyway,
-# FastAPI Production Backend, Celery AI Worker, Next.js Web Frontend, and Caddy Edge Proxy.
+# CineVault OS — Single-Command Production Deployment Stack (Phase 4; trimmed
+# in the Phase 3 infrastructure consolidation)
+# Orchestrates: Postgres (pgvector), PgBouncer, Valkey, Flyway, FastAPI
+# Production Backend, Next.js Web Frontend, and Caddy Edge Proxy.
+# RabbitMQ + the Celery ai-worker were removed — the audit found the worker's
+# three tasks were synthetic stubs (fake math-based embeddings, a fabricated
+# TMDB sync count) with zero producers anywhere in the codebase; the one real
+# AI workload (sentence-transformers embeddings) already runs synchronously
+# in FastAPI. See the Phase 3 removal commit for the full audit.
+
+# R1 hardening pass: this file and docker-compose.yml (dev) both live in
+# infra/docker/, so without an explicit project name Compose derives one from
+# the containing directory — the SAME name for both files, risking a dev/prod
+# resource collision (specifically: neither file defines its own `networks:`
+# block, so both would fall back to a shared, identically-named default
+# network). Every service already has an explicit `container_name:` and every
+# volume already has an explicit `name:` below, which is what actually
+# prevented a collision so far — this `name:` closes the one remaining gap
+# (the default network) and makes `-p cinevault-prod` unnecessary to type by
+# hand. Pair with docker-compose.yml's `name: cinevault-dev`.
+name: cinevault-prod
 
 services:
   # 1. Primary Vector Database: PostgreSQL 16 with native pgvector extension
@@ -33,28 +51,6 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # 3. Connection Pooler: PgBouncer
-  pgbouncer:
-    image: edoburu/pgbouncer:latest
-    container_name: cinevault-prod-pgbouncer
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB:-cinevault}
-      DB_USER: ${POSTGRES_USER:-cinevault_admin}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}
-      POOL_MODE: transaction
-      MAX_CLIENT_CONN: 1000
-      DEFAULT_POOL_SIZE: 25
-      LISTEN_PORT: 6432
-      AUTH_TYPE: scram-sha-256
-    ports:
-      - "6432:6432"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
   # 4. Cache & Results Store: Valkey (Linux Foundation RESP)
   valkey:
     image: valkey/valkey:8.0-alpine
@@ -68,85 +64,120 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # 5. Message & Task Broker: RabbitMQ
-  rabbitmq:
-    image: rabbitmq:4-management-alpine
-    container_name: cinevault-prod-rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-cinevault_app}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-change_me_super_secure_rabbitmq_pass}
-    volumes:
-      - rabbitmq-prod-data:/var/lib/rabbitmq
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  # 6. Core REST API: FastAPI Production Backend
+  # 8. Core REST API: FastAPI Production Backend
   fastapi-backend:
     container_name: cinevault-prod-backend
     build:
       context: ../..
       dockerfile: services/api/Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cinevault_admin}:${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}@pgbouncer:6432/${POSTGRES_DB:-cinevault}
-      REDIS_URL: redis://valkey:6379/0
-      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-cinevault_app}:${RABBITMQ_PASS:-change_me_super_secure_rabbitmq_pass}@rabbitmq:5672//
-      CELERY_RESULT_BACKEND: redis://valkey:6379/1
+      # P0 fix: services/api/config.py never reads DATABASE_URL, REDIS_URL,
+      # CELERY_BROKER_URL, or CELERY_RESULT_BACKEND (confirmed: zero
+      # references anywhere in services/api) — those 4 vars used to be the
+      # entire environment block here and did nothing. It reads the
+      # individual POSTGRES_*/VALKEY_* vars below instead, none of which
+      # were being forwarded, so this container would always fall back to
+      # config.py's local_development defaults and then crash-loop on the
+      # insecure-default validator (ENVIRONMENT=production below). Fixed by
+      # forwarding what the app actually reads.
       ENVIRONMENT: production
       PORT: 8000
+      LOG_LEVEL: warning
+      DOCS_ENABLED: "false"
+      ALLOW_SEED_FALLBACK: "false"
+
+      # Database — direct to Postgres (PgBouncer was removed; SQLAlchemy's
+      # own bounded pool handles connection limits now, see database.py)
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-cinevault}
+      POSTGRES_USER: ${POSTGRES_USER:-cinevault_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set to a strong, unique password}
+
+      # Cache
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+
+      # Local-dev HS256 login fallback secret — disabled outside
+      # local_development, but APIConfig still refuses to boot if this is
+      # left at its insecure placeholder, so a real value is still required.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set to a random 64+ character string}
+
+      # Artwork storage — persistent local directory (MinIO was removed in
+      # the Phase 3 infrastructure consolidation: zero production traffic
+      # ever reached the upload endpoint, and canonical TMDB artwork is
+      # served from remote TMDB URLs, never stored here). Mounted from the
+      # artwork-prod-data volume below, shared read-only with Caddy's
+      # CDN_HOSTNAME site (infra/docker/Caddyfile), which serves it directly
+      # — no bucket segment or credentials needed for public reads.
+      ARTWORK_PATH: /data/artwork
+      CDN_BASE_URL: https://${CDN_HOSTNAME:?CDN_HOSTNAME must be set to your production artwork CDN domain, e.g. cdn.cinevault.yourdomain.com}
+
+      CORS_ALLOWED_ORIGINS: https://${SITE_ADDRESS:?SITE_ADDRESS must be set to your production app domain, e.g. cinevault.yourdomain.com}
+    volumes:
+      - artwork-prod-data:/data/artwork
     depends_on:
       postgres:
         condition: service_healthy
       valkey:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
       flyway:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  # 7. Background AI Daemon: Celery Worker
-  ai-worker:
-    container_name: cinevault-prod-ai-worker
-    build:
-      context: ../..
-      dockerfile: services/ai_worker/Dockerfile
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cinevault_admin}:${POSTGRES_PASSWORD:-change_me_super_secure_postgres_pass}@pgbouncer:6432/${POSTGRES_DB:-cinevault}
-      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-cinevault_app}:${RABBITMQ_PASS:-change_me_super_secure_rabbitmq_pass}@rabbitmq:5672//
-      CELERY_RESULT_BACKEND: redis://valkey:6379/1
-      ENVIRONMENT: production
-    depends_on:
-      postgres:
-        condition: service_healthy
-      valkey:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # 8. Web Frontend: Next.js 15 Standalone Runner
+  # 10. Web Frontend: Next.js 15 Standalone Runner
   nextjs-web:
     container_name: cinevault-prod-web
     build:
       context: ../..
       dockerfile: apps/web/Dockerfile
+      args:
+        # Build-time, not container-runtime — verified against the actual
+        # built image (R1 hardening pass). Next.js freezes
+        # images.remotePatterns into .next/required-server-files.json during
+        # `next build`; the standalone server does not re-read CDN_HOSTNAME
+        # when the container starts. The Dockerfile derives both the
+        # server-side image-optimizer host (CDN_HOSTNAME) and the
+        # client-bundle-inlined copy (NEXT_PUBLIC_CDN_HOSTNAME, read by
+        # apps/web/src/lib/media.ts) from this one arg — see its comment.
+        CDN_HOSTNAME: ${CDN_HOSTNAME:?CDN_HOSTNAME must be set to your production artwork CDN domain, e.g. cdn.cinevault.yourdomain.com}
     environment:
       NODE_ENV: production
       API_BASE_URL: http://fastapi-backend:8000
       NEXT_PUBLIC_API_BASE_URL: ""
       PORT: 3000
+      # No fallback in production — an unset value now fails the stack
+      # closed instead of silently signing the BFF session cookie
+      # (apps/web/src/lib/auth/session.ts) with a public, hardcoded default.
+      # Enforced twice: at container boot (apps/web/src/instrumentation.ts)
+      # and again at the point of use (session.ts's getSecret()).
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be set to a random 64+ character string, e.g. via `openssl rand -base64 48`}
+      # Used by the logout route to build the post-logout redirect — unset,
+      # it falls back to http://localhost:3000
+      # (apps/web/src/app/api/auth/logout/route.ts), which was silently
+      # wrong in a real deploy.
+      NEXT_PUBLIC_APP_URL: https://${SITE_ADDRESS:?SITE_ADDRESS must be set}
+      # No runtime CDN_HOSTNAME here on purpose: the image optimizer's
+      # allowed-hosts list is frozen at build time (see build.args above),
+      # so a container-runtime copy of this var would be silently ignored —
+      # leaving one here would be misleading, not harmless.
     depends_on:
-      - fastapi-backend
+      fastapi-backend:
+        condition: service_started
     restart: unless-stopped
 
-  # 9. Edge Gateway: Caddy Reverse Proxy (Ports 80 & 443)
+  # 11. Edge Gateway: Caddy Reverse Proxy (Ports 80 & 443)
+  # SITE_ADDRESS/CDN_HOSTNAME drive the Caddyfile's site addresses (see
+  # infra/docker/Caddyfile) — Caddy provisions/renews Let's Encrypt certs
+  # automatically for each and redirects HTTP->HTTPS by default once a real
+  # domain (not a bare port) is the site address.
   caddy:
     image: caddy:2-alpine
     container_name: cinevault-prod-caddy
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?SITE_ADDRESS must be set to your production app domain, e.g. cinevault.yourdomain.com}
+      CDN_HOSTNAME: ${CDN_HOSTNAME:?CDN_HOSTNAME must be set to your production artwork CDN domain, e.g. cdn.cinevault.yourdomain.com}
+      ACME_EMAIL: ${ACME_EMAIL:-}
     ports:
       - "80:80"
       - "443:443"
@@ -154,6 +185,12 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-prod-data:/data
       - caddy-prod-config:/config
+      # Read-only: Caddy only ever serves artwork, never writes it — only
+      # fastapi-backend's curator-gated upload endpoint writes here (see its
+      # own mount above, which is read-write). Mounted at /srv/artwork, not
+      # /data/artwork, so it can't collide with Caddy's own state volume
+      # already mounted at /data above.
+      - artwork-prod-data:/srv/artwork:ro
     depends_on:
       - fastapi-backend
       - nextjs-web
@@ -164,8 +201,8 @@ volumes:
     name: cinevault-prod-postgres-data
   valkey-prod-data:
     name: cinevault-prod-valkey-data
-  rabbitmq-prod-data:
-    name: cinevault-prod-rabbitmq-data
+  artwork-prod-data:
+    name: cinevault-prod-artwork-data
   caddy-prod-data:
     name: cinevault-prod-caddy-data
   caddy-prod-config:

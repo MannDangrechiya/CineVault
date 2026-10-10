@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     let tokenExpiresInSeconds = 7 * 24 * 60 * 60;
 
     // 1. First attempt to authenticate against FastAPI backend /v1/auth/login if online
-    const apiBaseUrl = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+    const apiBaseUrl = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
     try {
       const backendRes = await fetch(`${apiBaseUrl}/v1/auth/login`, {

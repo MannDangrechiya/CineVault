@@ -8,6 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../domain/entities/title.dart';
 import '../providers/catalog_provider.dart';
 import '../providers/sync_provider.dart';
+import '../widgets/glass/glass.dart';
 import 'title_detail_screen.dart';
 
 enum SwipeDirection { left, right, up, down, none }
@@ -34,7 +35,8 @@ class _SwipeDiscoveryScreenState extends ConsumerState<SwipeDiscoveryScreen>
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
         title: const Row(
           children: [
             Icon(Icons.style, color: AppTheme.accentGold),
@@ -62,33 +64,44 @@ class _SwipeDiscoveryScreenState extends ConsumerState<SwipeDiscoveryScreen>
           ),
         ],
       ),
-      body: catalogState.isLoading
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: AppTheme.primaryViolet),
-                  SizedBox(height: 16),
-                  Text('Loading cards for discovery deck...'),
-                ],
-              ),
-            )
-          : catalogState.titles.isEmpty
-              ? Center(
-                  child: Text('No titles available to swipe.', style: textTheme.bodyLarge),
-                )
-              : _currentIndex >= catalogState.titles.length
-                  ? _buildCompletedDeckView(context)
-                  : _buildCardStack(context, catalogState.titles),
+      body: Column(
+        children: [
+          GlassAppBar.contentSpacer(context),
+          Expanded(
+            child: catalogState.isLoading
+                ? const Center(
+                    child: GlassCard(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: AppTheme.primaryViolet),
+                          SizedBox(height: 16),
+                          Text('Loading cards for discovery deck...'),
+                        ],
+                      ),
+                    ),
+                  )
+                : catalogState.titles.isEmpty
+                    ? Center(
+                        child: GlassCard(
+                          child: Text('No titles available to swipe.', style: textTheme.bodyLarge),
+                        ),
+                      )
+                    : _currentIndex >= catalogState.titles.length
+                        ? _buildCompletedDeckView(context)
+                        : _buildCardStack(context, catalogState.titles),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildCompletedDeckView(BuildContext context) {
     return Center(
-      child: Padding(
+      child: GlassCard(
         padding: const EdgeInsets.all(32.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.check_circle_outline, size: 80, color: AppTheme.secondaryCyan),
             const SizedBox(height: 16),
@@ -155,7 +168,7 @@ class _SwipeDiscoveryScreenState extends ConsumerState<SwipeDiscoveryScreen>
                       scale: 0.94,
                       child: Opacity(
                         opacity: 0.6,
-                        child: _buildTitleCard(context, nextTitle, isTop: false),
+                        child: _buildTitleCard(context, nextTitle, isTop: false, isDragging: false),
                       ),
                     ),
                   ),
@@ -184,7 +197,7 @@ class _SwipeDiscoveryScreenState extends ConsumerState<SwipeDiscoveryScreen>
                       alignment: Alignment.center,
                       child: Stack(
                         children: [
-                          _buildTitleCard(context, currentTitle, isTop: true),
+                          _buildTitleCard(context, currentTitle, isTop: true, isDragging: _isDragging),
 
                           // Swipe Overlay Badges
                           _buildSwipeBadges(),
@@ -446,7 +459,19 @@ class _SwipeDiscoveryScreenState extends ConsumerState<SwipeDiscoveryScreen>
     );
   }
 
-  Widget _buildTitleCard(BuildContext context, CanonicalTitleEntity title, {required bool isTop}) {
+  Widget _buildTitleCard(
+    BuildContext context,
+    CanonicalTitleEntity title, {
+    required bool isTop,
+    required bool isDragging,
+  }) {
+    // Real blur (BackdropFilter) is expensive to recompute every frame, and
+    // the top card's transform changes on every onPanUpdate — dropping to
+    // the cheap tint-only look for the few hundred ms of an active drag
+    // avoids re-running the blur pass at 60fps mid-gesture, then restores
+    // the full glass look once the card settles or is released.
+    final infoPanelBlur = isTop && isDragging ? GlassBlurTier.none : GlassBlurTier.md;
+
     return Card(
       elevation: isTop ? 10 : 2,
       clipBehavior: Clip.antiAlias,
@@ -489,92 +514,71 @@ class _SwipeDiscoveryScreenState extends ConsumerState<SwipeDiscoveryScreen>
 
             // Content Information Layer
             Positioned(
-              bottom: 20,
-              left: 20,
-              right: 20,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Year & Content Type Badge
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primaryViolet,
-                          borderRadius: BorderRadius.circular(12),
+              bottom: 16,
+              left: 16,
+              right: 16,
+              child: GlassContainer(
+                blurTier: infoPanelBlur,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Year & Content Type Badge
+                    Row(
+                      children: [
+                        GlassBadge(label: title.contentType, tint: AppTheme.primaryViolet),
+                        const SizedBox(width: 8),
+                        if (title.releaseYear != null)
+                          GlassBadge(label: '${title.releaseYear}', tint: Colors.white),
+                        const Spacer(),
+                        const GlassBadge(
+                          label: '8.5',
+                          tint: AppTheme.accentGold,
+                          icon: Icons.star,
                         ),
-                        child: Text(
-                          title.contentType,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Title Name
+                    Text(
+                      title.primaryTitle,
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        height: 1.1,
                       ),
-                      const SizedBox(width: 8),
-                      if (title.releaseYear != null)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '${title.releaseYear}',
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      const Spacer(),
-                      const Icon(Icons.star, color: AppTheme.accentGold, size: 18),
-                      const SizedBox(width: 4),
-                      const Text(
-                        '8.5',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+
+                    // Genre Chips
+                    if (title.genres.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        title.genres.join(' • '),
+                        style: const TextStyle(color: AppTheme.secondaryCyan, fontSize: 14),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
 
-                  // Title Name
-                  Text(
-                    title.primaryTitle,
-                    style: const TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      height: 1.1,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-
-                  // Genre Chips
-                  if (title.genres.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      title.genres.join(' • '),
-                      style: const TextStyle(color: AppTheme.secondaryCyan, fontSize: 14),
-                    ),
-                  ],
-
-                  // Overview / Synopsis
-                  if (title.overview != null && title.overview!.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      title.overview!,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        height: 1.3,
+                    // Overview / Synopsis
+                    if (title.overview != null && title.overview!.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        title.overview!,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                          height: 1.3,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ],
@@ -696,24 +700,16 @@ class _ActionButton extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        InkWell(
-          onTap: onTap,
+        GlassContainer(
+          blurTier: GlassBlurTier.sm,
           borderRadius: BorderRadius.circular(30),
-          child: Container(
+          borderColor: color.withValues(alpha: 0.4),
+          padding: EdgeInsets.zero,
+          child: IconButton(
+            icon: Icon(icon, color: color, size: 28),
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppTheme.cardElevated,
-              border: Border.all(color: color.withValues(alpha: 0.4), width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: color.withValues(alpha: 0.15),
-                  blurRadius: 10,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-            child: Icon(icon, color: color, size: 28),
+            splashRadius: 30,
+            onPressed: onTap,
           ),
         ),
         const SizedBox(height: 4),

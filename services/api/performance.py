@@ -353,7 +353,7 @@ class PerformanceBenchmarkReporter:
             "benchmark_tiers": {
                 "description": "Evidence-based scale tiers. Measure before optimizing.",
                 "tiers": [5_000, 10_000, 100_000, 1_000_000],
-                "current_baseline": "Design supports up to 100,000 titles with PostgreSQL + PgBouncer + Valkey cache",
+                "current_baseline": "Design supports up to 100,000 titles with PostgreSQL (bounded SQLAlchemy pool) + Valkey cache",
             },
         }
 

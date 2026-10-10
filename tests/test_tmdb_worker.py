@@ -135,14 +135,24 @@ class TestTMDBWorker(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_conn.execute.call_count, 2)
 
 
+from services.api.routers.auth import generate_dev_jwt
+
+
 class TestAdminSyncMetadataEndpoint(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
+        self.admin_token = generate_dev_jwt(
+            user_id="usr_sysadmin_worker_test",
+            email="admin@cinevault.local",
+            username="sysadmin",
+            roles=["authenticated_user", "system_admin"],
+        )
+        self.admin_headers = {"Authorization": f"Bearer {self.admin_token}"}
 
     @patch("services.api.routers.admin.sync_missing_posters", new_callable=AsyncMock)
     def test_post_admin_sync_metadata(self, mock_sync):
         mock_sync.return_value = {"processed": 0, "synced": 0, "not_found": 0, "errors": 0}
-        response = self.client.post("/admin/sync-metadata", json={"batch_size": 100})
+        response = self.client.post("/admin/sync-metadata", json={"batch_size": 100}, headers=self.admin_headers)
         self.assertEqual(response.status_code, 202)
         data = response.json()
         self.assertEqual(data["status"], "ACCEPTED")
@@ -152,7 +162,7 @@ class TestAdminSyncMetadataEndpoint(unittest.TestCase):
     @patch("services.api.ingestion.tmdb_worker.sync_missing_posters", new_callable=AsyncMock)
     def test_post_automations_sync_metadata(self, mock_sync):
         mock_sync.return_value = {"processed": 0, "synced": 0, "not_found": 0, "errors": 0}
-        response = self.client.post("/automations/sync-metadata?batch_size=50")
+        response = self.client.post("/automations/sync-metadata?batch_size=50", headers=self.admin_headers)
         self.assertEqual(response.status_code, 202)
         data = response.json()
         self.assertEqual(data["status"], "ACCEPTED")
