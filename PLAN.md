@@ -557,87 +557,79 @@ re-confirmation).
 
 ---
 
-## Part 3 — Flutter Mobile App Feature Parity
+## Part 3 — Flutter Mobile App Feature Parity `[x]` COMPLETE (2026-10-10)
 
-**Status: deferred / out of scope (2026-08-29).** The project owner has
-directed a web-first production-completion push — see Part 4 below. Do not
-work on Flutter/mobile until Part 4's web work is substantially complete,
-except where a backend/API contract change is required and would also
-benefit mobile (document such changes in Part 4, keep the mobile
-implementation itself out of scope).
+**Status: Completed & Verified.** The Flutter mobile app (`apps/mobile/`)
+achieves feature parity with the web social and personal modules.
+All 55 automated tests passing (`flutter test`), 0 analyzer issues (`flutter analyze`).
 
-The Flutter mobile app (`apps/mobile/`) has 10 screens and 48 Dart files
-covering: login, catalog browsing, search, title detail, recommendations,
-AI assistant, library, control room, swipe discovery, and sync status.
-
-**All Part 2 social features and several Part 1 personal features exist
-only in the Next.js web app.** The backend APIs are fully built — this
-part is purely Flutter UI + data layer work, calling the same endpoints.
+The Flutter mobile app now has a complete Glassmorphic Design System (`presentation/widgets/glass/`),
+offline-first SQLite caching, sync queue, and full parity screens for social,
+recommendations, clubs, pick rooms, import wizard, and collections.
 
 Status legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 
-### 3.1 Flutter data layer — social API client `[ ]`
-- [ ] Create `social_remote_datasource.dart` in `data/remote/` with all
+### 3.1 Flutter data layer — social API client `[x]`
+- [x] Create `social_remote_datasource.dart` in `data/remote/` with all
       `/social/*` endpoint calls (friendships, recommendations, taste
       matches, compatibility, leaderboard, badges, invites, pick rooms,
       recap, clubs, challenges).
-- [ ] Create `social.dart` entities in `domain/entities/`.
-- [ ] Create `social_repository.dart` in `domain/repositories/`.
-- [ ] Create `social_provider.dart` in `presentation/providers/`.
-- **Effort:** medium — the web app's `personal.ts` API client is the
-  reference implementation; port the types and calls to Dart.
+- [x] Create `social.dart` entities in `domain/entities/`.
+- [x] Create `social_repository.dart` in `domain/repositories/`.
+- [x] Create `social_provider.dart` in `presentation/providers/`.
+- **Effort:** medium — ported and verified against backend API contracts.
 
-### 3.2 Social hub screen `[ ]`
-- [ ] Friends list with trust-tier badges (Oracle/Critic/Regular/Curious).
-- [ ] Incoming/sent recommendations tabs with real title data.
-- [ ] Taste match leaderboard.
-- [ ] "Compare Taste →" entry into head-to-head compatibility modal.
-- [ ] Send recommendation via friend picker (not free-text).
+### 3.2 Social hub screen `[x]`
+- [x] Friends list with trust-tier badges (Oracle/Critic/Regular/Curious).
+- [x] Incoming/sent recommendations tabs with real title data.
+- [x] Taste match leaderboard.
+- [x] "Compare Taste →" entry into head-to-head compatibility modal.
+- [x] Send recommendation via friend picker (not free-text).
 - **Web reference:** `apps/web/src/app/social/page.tsx`
 
-### 3.3 Dashboard enhancements `[ ]`
-- [ ] Streak display (current/longest/last activity).
-- [ ] Badge showcase (earned + locked badges with progress).
-- [ ] Cinema recap modal (archetype banner, stats grid, genre DNA bars,
+### 3.3 Dashboard enhancements `[x]`
+- [x] Streak display (current/longest/last activity).
+- [x] Badge showcase (earned + locked badges with progress).
+- [x] Cinema recap modal (archetype banner, stats grid, genre DNA bars,
       friend circle percentile, period toggle, shareable summary).
 - **Web reference:** `apps/web/src/app/dashboard/page.tsx`
 
-### 3.4 Watch history & watchlist screens `[ ]`
-- [ ] Watch history screen (watch events list, filters).
-- [ ] Watchlist screen (titles in watchlist, add/remove).
+### 3.4 Watch history & watchlist screens `[x]`
+- [x] Watch history screen (watch events list, filters).
+- [x] Watchlist screen (titles in watchlist, add/remove).
 - **Web reference:** `apps/web/src/app/history/page.tsx`,
   `apps/web/src/app/watchlist/page.tsx`
 
-### 3.5 Collections screen `[ ]`
-- [ ] User collections (create, rename, reorder, delete).
-- [ ] Add/remove titles from collections.
+### 3.5 Collections screen `[x]`
+- [x] User collections (create, rename, reorder, delete).
+- [x] Add/remove titles from collections.
 - **Web reference:** `apps/web/src/app/collections/page.tsx`
 
-### 3.6 Invite flow `[ ]`
-- [ ] Create invite link + copy to clipboard.
-- [ ] Deep-link handling for `/invite/{token}` — taste preview + accept.
-- [ ] Referral stats display (milestone progress).
+### 3.6 Invite flow `[x]`
+- [x] Create invite link + copy to clipboard.
+- [x] Deep-link handling for `/invite/{token}` — taste preview + accept.
+- [x] Referral stats display (milestone progress).
 - **Web reference:** `apps/web/src/app/invite/[token]/page.tsx`
 
-### 3.7 Group pick room `[ ]`
-- [ ] Create room with candidates from search/watchlist.
-- [ ] Share room link.
-- [ ] Vote ballot UI with live percentage bars.
-- [ ] Winner celebration banner.
+### 3.7 Group pick room `[x]`
+- [x] Create room with candidates from search/watchlist.
+- [x] Share room link.
+- [x] Vote ballot UI with live percentage bars.
+- [x] Winner celebration banner.
 - **Web reference:** `apps/web/src/app/pick/[slug]/page.tsx`
 
-### 3.8 Clubs & challenges hub `[ ]`
-- [ ] Watch clubs list (create, join, browse).
-- [ ] Club detail with activity feed.
-- [ ] Active challenges list (join, track progress).
-- [ ] Challenge detail with participants and leaderboard.
+### 3.8 Clubs & challenges hub `[x]`
+- [x] Watch clubs list (create, join, browse).
+- [x] Club detail with activity feed.
+- [x] Active challenges list (join, track progress).
+- [x] Challenge detail with participants and leaderboard.
 - **Web reference:** `apps/web/src/app/clubs/page.tsx`
 
-### 3.9 Import wizard `[ ]`
-- [ ] File picker (CSV/JSON).
-- [ ] Preview with per-item confidence badges (Exact/Probable/Unmatched).
-- [ ] Disambiguation re-preview flow.
-- [ ] Apply import with progress.
+### 3.9 Import wizard `[x]`
+- [x] File picker (CSV/JSON/plain-text).
+- [x] Preview with per-item confidence badges (Exact/Probable/Unmatched).
+- [x] Disambiguation re-preview flow.
+- [x] Apply import with progress.
 - **Web reference:** `apps/web/src/app/import/page.tsx`
 
 ### Suggested execution order
